@@ -11,6 +11,7 @@ import { getDefaultTools, getToolByName, resolveExtraTools } from "./tools.js";
 import { createClient, streamMessage, type StreamEvent, type ApiClient } from "./services/api.js";
 import { resolveHarness, parseXmlToolCalls, buildXmlToolSection } from "./harness.js";
 import { resolveFallback, streamWithFailover, isInfraError } from "./providers/failover.js";
+import { renderSystemPrompt } from "./prompt.js";
 import { canUseTool, promptUser } from "./services/permissions.js";
 import { hookSystem } from "./hooks/system.js";
 import { ContextCompactor } from "./compact/index.js";
@@ -578,47 +579,12 @@ export class QueryEngine {
   }
 
   private buildSystemPrompt(toolDefs: Anthropic.Tool[] = []): string {
-    const base = `你是一个运行在用户终端中的 AI 编程助手。你可以读写文件、执行命令、搜索代码来帮助完成编程任务。
-
-## 工具
-- Read：读取文件内容（支持 offset/limit 读取大文件）
-- Write：创建/覆盖文件（自动创建父目录）
-- Edit：精确文本替换（old_string 必须精确匹配）
-- Glob：按模式查找文件
-- Grep：使用正则表达式搜索文件内容
-- Bash：执行 Shell 命令
-
-## 原则
-1. 先理解意图再行动；不确定时先询问
-2. 修改文件前先读取
-3. 使用项目现有的库和代码风格
-4. 不添加不必要的注释
-5. 遵循安全最佳实践
-6. 破坏性命令前先确认
-7. 用用户的语言回复`;
-
-    let prompt = base;
-
-    // 注入项目规则
-    if (this.projectRules) {
-      prompt += formatRulesForPrompt(this.projectRules);
-    }
-
-    // 注入工具状态
-    const stateText = formatToolStateForPrompt(this.toolState);
-    if (stateText) {
-      prompt += `\n\n## 当前状态\n${stateText}`;
-    }
-
-    if (resolveHarness() === "xml" && toolDefs.length > 0) {
-      const section = buildXmlToolSection(toolDefs);
-      if (section) prompt += `\n\n## 工具调用（XML 格式）\n${section}`;
-    }
-
-    if (this.config.appendSystemPrompt) {
-      prompt += "\n\n" + this.config.appendSystemPrompt;
-    }
-    return prompt;
+    void toolDefs;
+    return renderSystemPrompt(this.tools, {
+      rulesText: this.projectRules ? formatRulesForPrompt(this.projectRules) : undefined,
+      stateText: formatToolStateForPrompt(this.toolState) || undefined,
+      append: this.config.appendSystemPrompt,
+    });
   }
 
   private estimateTokens(messages: Anthropic.MessageParam[]): number {
