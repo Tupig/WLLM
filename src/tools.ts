@@ -23,28 +23,35 @@ import {
   PackageInstallTool, PackageUninstallTool, PackageListTool,
   RunScriptTool,
 } from "./tools/PackageManager.js";
+import { QuestionTool } from "./tools/Question.js";
 
 export function getDefaultTools(): Tool[] {
   return [
-    // 文件操作
     FileReadTool, FileWriteTool, FileEditTool,
     GlobTool, GrepTool, BashTool,
-    // Git
-    GitStatusTool, GitDiffTool, GitCommitTool, GitUndoTool,
-    // Web
-    WebSearchTool, WebFetchTool,
-    // 文档
+    GitStatusTool, GitDiffTool,
+    WebSearchTool, QuestionTool,
+  ];
+}
+
+export function getExtraTools(): Tool[] {
+  return [
+    GitCommitTool, GitUndoTool,
+    WebFetchTool,
     ImageReadTool, DocReadTool,
-    // 重构
     RenameSymbolTool, ExtractFunctionTool, MoveFileTool,
     InlineVariableTool, ExtractConstantTool,
-    // 分析
-    CodeStatsTool, ListFunctionsTool, DependencyAnalysisTool,
-    ComplexityAnalysisTool,
-    // 包管理
+    CodeStatsTool, ListFunctionsTool, DependencyAnalysisTool, ComplexityAnalysisTool,
     PackageInstallTool, PackageUninstallTool, PackageListTool,
     RunScriptTool,
   ];
+}
+
+export function resolveExtraTools(): Tool[] {
+  const raw = process.env.PILOT_EXTRA_TOOLS;
+  if (!raw || !raw.trim()) return [];
+  const wanted = new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+  return getExtraTools().filter((t) => wanted.has(t.name));
 }
 
 export function getToolByName(tools: Tool[], name: string): Tool | undefined {

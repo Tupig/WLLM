@@ -7,7 +7,7 @@ import chalk from "chalk";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { Tool, ToolUseContext, CanUseToolFn } from "./Tool.js";
-import { getDefaultTools, getToolByName } from "./tools.js";
+import { getDefaultTools, getToolByName, resolveExtraTools } from "./tools.js";
 import { createClient, streamMessage, type StreamEvent, type ApiClient } from "./services/api.js";
 import { resolveHarness, parseXmlToolCalls, buildXmlToolSection } from "./harness.js";
 import { resolveFallback, streamWithFailover, isInfraError } from "./providers/failover.js";
@@ -127,7 +127,7 @@ export class QueryEngine {
 
   constructor(config: QueryEngineConfig) {
     this.config = config;
-    this.tools = getDefaultTools();
+    this.tools = [...getDefaultTools(), ...resolveExtraTools()];
     this.client = createClient();
     const fbKind = resolveFallback();
     if (fbKind && fbKind !== (this.client.type as string)) {
