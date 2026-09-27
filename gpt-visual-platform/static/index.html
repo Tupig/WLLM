@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="format-detection" content="telephone=no" />
+  <meta name="theme-color" content="#0071e3" />
+  <title>Unity MMORPG 自动化测试平台</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
+  <script src="/static/js/vendor/tailwind.js"></script>
+  <link rel="stylesheet" href="/static/css/styles.css?v=13">
+</head>
+<body class="min-h-screen">
+  <div class="wb-layout">
+
+    <!-- 侧边导航 -->
+    <aside class="wb-sidebar">
+      <div class="wb-brand">
+        <h1>测试平台</h1>
+        <p>Unity MMORPG · v2</p>
+      </div>
+      <nav id="wb-nav" class="wb-nav" aria-label="功能导航">
+        <button type="button" class="wb-nav-item active" data-view="overview"><span class="wb-nav-icon">📊</span> 工作台</button>
+        <button type="button" class="wb-nav-item" data-view="jobs"><span class="wb-nav-icon">📋</span> 任务管理</button>
+        <button type="button" class="wb-nav-item" data-view="agents"><span class="wb-nav-icon">🤖</span> Agent</button>
+        <button type="button" class="wb-nav-item" data-view="skills"><span class="wb-nav-icon">🧩</span> 技能</button>
+        <button type="button" class="wb-nav-item" data-view="create"><span class="wb-nav-icon">➕</span> 创建任务</button>
+      </nav>
+      <div class="wb-sidebar-footer">
+        <div id="server-status" class="text-xs text-gray-500 flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full bg-gray-300"></span> 连接中…</div>
+        <div class="text-xs text-gray-400 mt-1">MIT License · 仅限可信内网</div>
+      </div>
+    </aside>
+
+    <!-- 主区域 -->
+    <div class="wb-main">
+      <header class="wb-topbar">
+        <h2 id="view-title" class="text-lg font-semibold">工作台</h2>
+        <div class="flex items-center gap-2">
+          <button class="apple-button">文档</button>
+          <button class="apple-button secondary">设置</button>
+        </div>
+      </header>
+
+      <div class="wb-content">
+
+        <!-- 视图：工作台（总览） -->
+        <section id="view-overview" class="wb-view">
+          <div id="onboarding" class="hidden mb-6 p-4 bg-blue-50 border border-blue-100 rounded-xl">
+            <div class="flex items-start justify-between gap-3">
+              <div class="space-y-1.5">
+                <h3 class="text-sm font-semibold text-blue-900">👋 还没有接入任何 Agent</h3>
+                <p class="text-xs text-blue-800 leading-relaxed">三步开始测试：① 在执行机上运行 Agent（单文件 <code class="bg-blue-100 px-1 rounded">unity-agent</code>，无需安装 Python）→ ② 在「创建任务」提交测试 → ③ 在「任务管理」查看结果，点击任务可展开详情。</p>
+                <p class="text-xs text-blue-700">快速启动 Agent：<code class="bg-blue-100 px-1.5 py-0.5 rounded select-all">PLATFORM_URL=http://localhost:9111 AGENT_SKILLS=PlayMode,AIAgent ./unity-agent</code></p>
+              </div>
+              <button id="onboarding-close" class="text-blue-400 hover:text-blue-600 text-sm px-1 shrink-0" title="不再显示">✕</button>
+            </div>
+          </div>
+
+          <!-- 状态概览卡片 -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            <div class="apple-card compact animate-on-scroll transform-layer">
+              <h3 class="text-base font-medium text-gray-700 mb-1">总技能数</h3>
+              <div class="text-2xl font-semibold" id="skill-count">0</div>
+              <p class="text-xs text-gray-500 mt-1">集成测试能力</p>
+            </div>
+            <div class="apple-card compact animate-on-scroll transform-layer" style="animation-delay: 0.05s;">
+              <h3 class="text-base font-medium text-gray-700 mb-1">活跃 Agent</h3>
+              <div class="text-2xl font-semibold" id="agent-count">0</div>
+              <p class="text-xs text-gray-500 mt-1">各环境测试执行器</p>
+            </div>
+            <div class="apple-card compact animate-on-scroll transform-layer" style="animation-delay: 0.1s;">
+              <h3 class="text-base font-medium text-gray-700 mb-1">任务总数</h3>
+              <div class="text-2xl font-semibold" id="job-count">0</div>
+              <p class="text-xs text-gray-500 mt-1">累计测试任务</p>
+            </div>
+            <div class="apple-card compact animate-on-scroll transform-layer" style="animation-delay: 0.15s;">
+              <h3 class="text-base font-medium text-gray-700 mb-1">进行中</h3>
+              <div class="text-2xl font-semibold" id="running-count">0</div>
+              <p class="text-xs text-gray-500 mt-1">正在执行的任务</p>
+            </div>
+          </div>
+
+          <!-- 最近任务 + Agent 概览 -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+            <div class="lg:col-span-2 animate-on-scroll">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-base font-semibold">最近任务</h3>
+                <button type="button" data-goto="jobs" class="text-xs text-blue-600 hover:text-blue-700">查看全部 →</button>
+              </div>
+              <div id="recent-jobs" class="apple-card p-3">加载中…</div>
+            </div>
+            <div class="animate-on-scroll" style="animation-delay: 0.1s;">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-base font-semibold">Agent 概览</h3>
+                <button type="button" data-goto="agents" class="text-xs text-blue-600 hover:text-blue-700">管理 →</button>
+              </div>
+              <div id="agents-mini" class="apple-card p-3">加载中…</div>
+            </div>
+          </div>
+
+          <!-- 快捷操作 -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 animate-on-scroll">
+            <button type="button" data-goto="create" class="apple-card text-left hover:border-blue-300 transition-colors">
+              <div class="text-lg mb-1">➕</div>
+              <div class="text-sm font-medium">创建测试任务</div>
+              <p class="text-xs text-gray-500 mt-0.5">AI 探索 / Airtest / Unity 测试</p>
+            </button>
+            <button type="button" data-goto="agents" class="apple-card text-left hover:border-blue-300 transition-colors">
+              <div class="text-lg mb-1">🤖</div>
+              <div class="text-sm font-medium">查看 Agent</div>
+              <p class="text-xs text-gray-500 mt-0.5">在线状态与技能清单</p>
+            </button>
+            <button type="button" data-goto="skills" class="apple-card text-left hover:border-blue-300 transition-colors">
+              <div class="text-lg mb-1">🧩</div>
+              <div class="text-sm font-medium">浏览技能</div>
+              <p class="text-xs text-gray-500 mt-0.5">平台支持的测试能力</p>
+            </button>
+          </div>
+        </section>
+
+        <!-- 视图：任务管理 -->
+        <section id="view-jobs" class="wb-view hidden">
+          <div class="flex flex-wrap items-center gap-1.5 mb-3" id="job-filter" role="group" aria-label="任务状态筛选">
+            <button type="button" data-status="all" class="job-filter-chip active px-2.5 py-1 text-xs rounded-full border border-gray-200 bg-white text-gray-700">全部</button>
+            <button type="button" data-status="running" class="job-filter-chip px-2.5 py-1 text-xs rounded-full border border-gray-200 bg-white text-gray-700">进行中</button>
+            <button type="button" data-status="pending" class="job-filter-chip px-2.5 py-1 text-xs rounded-full border border-gray-200 bg-white text-gray-700">排队中</button>
+            <button type="button" data-status="passed" class="job-filter-chip px-2.5 py-1 text-xs rounded-full border border-gray-200 bg-white text-gray-700">通过</button>
+            <button type="button" data-status="failed" class="job-filter-chip px-2.5 py-1 text-xs rounded-full border border-gray-200 bg-white text-gray-700">失败</button>
+            <input type="search" id="job-search" placeholder="搜索 ID / 平台 / 目标…" aria-label="搜索任务" class="ml-auto apple-input !py-1 !text-xs w-56" />
+          </div>
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-xs text-gray-400">点击任务展开详情（重试 / 取消 / 删除 / 执行记录）</p>
+            <button type="button" id="cleanup-jobs" class="px-2.5 py-1 text-xs rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-colors" title="删除全部已完成（通过/失败/已取消）的任务">🧹 清理已完成</button>
+          </div>
+          <div id="jobs" class="apple-card p-4">加载中…</div>
+        </section>
+
+        <!-- 视图：Agent -->
+        <section id="view-agents" class="wb-view hidden">
+          <div id="agents" class="apple-card p-4">加载中…</div>
+        </section>
+
+        <!-- 视图：技能 -->
+        <section id="view-skills" class="wb-view hidden">
+          <div id="skills" class="apple-card p-4">加载中…</div>
+        </section>
+
+        <!-- 视图：创建任务 -->
+        <section id="view-create" class="wb-view hidden">
+          <div class="apple-card p-5">
+            <form id="create-job" class="space-y-4">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label for="job-type" class="block text-xs font-medium text-gray-700 mb-1.5">任务类型</label>
+                  <select name="job_type" id="job-type" class="apple-select w-full">
+                    <option value="basic">环境自检（真实执行 · 内置/Agent）</option>
+                    <option value="unitylog">Unity 日志扫描（错误/异常统计）</option>
+                    <option value="deviceinv">设备清单（ADB 资产盘点）</option>
+                    <option value="gameperf">游戏性能测试（帧率/卡顿/内存 · Android）</option>
+                    <option value="webcheck">网站检查（内置 · 无需 Agent）</option>
+                    <option value="apicheck">接口测试（内置 · 无需 Agent）</option>
+                    <option value="apiflow">接口流程（内置 · 多步骤链）</option>
+                    <option value="apiload">性能冒烟（内置 · 并发压测）</option>
+                    <option value="portcheck">端口检查（内置 · 登录服/网关）</option>
+                    <option value="certcheck">证书检查（内置 · 到期监控）</option>
+                    <option value="dnscheck">DNS 检查（内置 · 解析断言）</option>
+                    <option value="ai">AI 探索测试（自然语言，Android）</option>
+                    <option value="airtest">Airtest 脚本（.air，Android/Windows）</option>
+                    <option value="gpt">GPT 生成用例并执行</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="job-platform" class="block text-xs font-medium text-gray-700 mb-1.5">平台</label>
+                  <select name="platform" id="job-platform" class="apple-select w-full">
+                    <option value="windows">Windows</option>
+                    <option value="mac">Mac</option>
+                    <option value="linux">Linux</option>
+                    <option value="web">Web</option>
+                    <option value="android">Android</option>
+                    <option value="ios">iOS</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1.5">所需技能（可选，仅具备这些技能的 Agent 会领取）</label>
+                <div class="apple-input p-3 bg-white">
+                  <div class="flex items-center mb-3 pb-3 border-b border-gray-100">
+                    <input type="checkbox" id="select-all-skills" class="skill-checkbox mr-3 text-blue-500 focus:ring-blue-200 border-gray-200 rounded" />
+                    <label for="select-all-skills" class="text-sm font-medium text-gray-700">全选/取消全选</label>
+                  </div>
+                  <div id="skills-list" class="max-h-56 overflow-y-auto space-y-1.5 pr-2">
+                    <div class="text-gray-500 text-xs">加载技能中...</div>
+                  </div>
+                  <input type="hidden" name="required_skills" id="selected-skills" />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div id="field-unity-path">
+                  <label for="unity-project-path" class="block text-xs font-medium text-gray-700 mb-1.5">Unity 项目路径（可选）</label>
+                  <input type="text" id="unity-project-path" name="unity_project_path" placeholder="/path/to/UnityProject" class="apple-input w-full" />
+                </div>
+                <div id="field-test-filter">
+                  <label for="test-filter-input" class="block text-xs font-medium text-gray-700 mb-1.5">测试过滤（可选）</label>
+                  <input type="text" id="test-filter-input" name="test_filter" placeholder="test name" class="apple-input w-full" />
+                </div>
+              </div>
+
+              <!-- Unity 日志扫描专用选项 -->
+              <div id="unitylog-extra" class="hidden space-y-3 border-t border-gray-200 pt-4">
+                <h3 class="text-xs font-medium text-gray-700">Unity 日志扫描配置</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div class="md:col-span-2">
+                    <label for="ul-path" class="block text-xs font-medium text-gray-700 mb-1.5">日志路径（可选，缺省自动定位 Player.log）</label>
+                    <input type="text" id="ul-path" name="ul_path" placeholder="~/Library/Logs/Unity/Player.log" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="ul-max" class="block text-xs font-medium text-gray-700 mb-1.5">错误/异常数上限（默认 0）</label>
+                    <input type="number" id="ul-max" name="ul_max" value="0" min="0" class="apple-input w-full" />
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400">扫描 Error/Exception/Fatal 行并统计；超出阈值即失败。由对应平台的 Agent 执行（读取本机 Unity 日志）。</p>
+              </div>
+
+              <!-- 设备清单专用选项 -->
+              <div id="deviceinv-extra" class="hidden space-y-3 border-t border-gray-200 pt-4">
+                <h3 class="text-xs font-medium text-gray-700">设备清单（ADB）</h3>
+                <p class="text-xs text-gray-500 leading-relaxed">枚举 Agent 机器上通过 ADB 连接的 Android 设备：型号 / 系统版本 / 分辨率 / 电量，清单随结果落档。无参数，选 Android 平台提交即可。</p>
+              </div>
+
+              <!-- 游戏性能测试专用选项 -->
+              <div id="gameperf-extra" class="hidden space-y-3 border-t border-gray-200 pt-4">
+                <h3 class="text-xs font-medium text-gray-700">游戏性能测试配置（帧率 / 卡顿 / 内存）</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div class="md:col-span-2">
+                    <label for="gp-package" class="block text-xs font-medium text-gray-700 mb-1.5">游戏包名</label>
+                    <input type="text" id="gp-package" name="gp_package" placeholder="com.example.game" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="gp-duration" class="block text-xs font-medium text-gray-700 mb-1.5">采样时长 秒（5-300）</label>
+                    <input type="number" id="gp-duration" name="gp_duration" value="30" min="5" max="300" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="gp-launch" class="block text-xs font-medium text-gray-700 mb-1.5">拉起 Activity（可选）</label>
+                    <input type="text" id="gp-launch" name="gp_launch" placeholder="com.example.game/.MainActivity" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="gp-jank" class="block text-xs font-medium text-gray-700 mb-1.5">卡顿率上限 %（默认 20）</label>
+                    <input type="number" id="gp-jank" name="gp_jank" value="20" min="1" max="100" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="gp-fps" class="block text-xs font-medium text-gray-700 mb-1.5">帧率下限 FPS（默认 30）</label>
+                    <input type="number" id="gp-fps" name="gp_fps" value="30" min="1" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="gp-mem" class="block text-xs font-medium text-gray-700 mb-1.5">内存峰值上限 MB（可选）</label>
+                    <input type="number" id="gp-mem" name="gp_mem" placeholder="600" min="1" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="gp-serial" class="block text-xs font-medium text-gray-700 mb-1.5">设备序列号（可选）</label>
+                    <input type="text" id="gp-serial" name="gp_serial" placeholder="emulator-5554" class="apple-input w-full" />
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400">基于 adb dumpsys gfxinfo/meminfo（PerfDog 思路精简版）：可选拉起游戏 → 重置帧统计 → 采样窗口 → 输出平均帧率/卡顿率/帧耗时百分位/内存峰值。需 Android Agent。</p>
+              </div>
+
+              <!-- 网站检查专用选项 -->
+              <div id="webcheck-extra" class="hidden space-y-3 border-t border-gray-200 pt-4">
+                <h3 class="text-xs font-medium text-gray-700">网站检查配置</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div class="md:col-span-2">
+                    <label for="wc-url" class="block text-xs font-medium text-gray-700 mb-1.5">检查地址</label>
+                    <input type="text" id="wc-url" name="wc_url" placeholder="https://example.com" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="wc-status" class="block text-xs font-medium text-gray-700 mb-1.5">期望状态码</label>
+                    <input type="number" id="wc-status" name="wc_status" value="200" class="apple-input w-full" />
+                  </div>
+                  <div class="md:col-span-2">
+                    <label for="wc-keyword" class="block text-xs font-medium text-gray-700 mb-1.5">响应须包含关键词（可选）</label>
+                    <input type="text" id="wc-keyword" name="wc_keyword" placeholder="ok" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="wc-repeat" class="block text-xs font-medium text-gray-700 mb-1.5">循环间隔（分钟，0=单次）</label>
+                    <input type="number" id="wc-repeat" name="wc_repeat" value="0" min="0" class="apple-input w-full" />
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400">由编排服务内置执行，无需 Agent；循环模式下每次完成后自动排下一次（监控模式）。</p>
+              </div>
+
+              <!-- 接口测试专用选项 -->
+              <div id="apicheck-extra" class="hidden space-y-3 border-t border-gray-200 pt-4">
+                <h3 class="text-xs font-medium text-gray-700">接口测试配置</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <label for="ac-method" class="block text-xs font-medium text-gray-700 mb-1.5">方法</label>
+                    <select id="ac-method" name="ac_method" class="apple-select w-full">
+                      <option value="GET">GET</option><option value="POST">POST</option>
+                      <option value="PUT">PUT</option><option value="DELETE">DELETE</option>
+                    </select>
+                  </div>
+                  <div class="md:col-span-3">
+                    <label for="ac-url" class="block text-xs font-medium text-gray-700 mb-1.5">接口地址</label>
+                    <input type="text" id="ac-url" name="ac_url" placeholder="https://api.example.com/v1/user" class="apple-input w-full" />
+                  </div>
+                  <div class="md:col-span-2">
+                    <label for="ac-headers" class="block text-xs font-medium text-gray-700 mb-1.5">请求头（每行 Key: Value）</label>
+                    <textarea id="ac-headers" name="ac_headers" rows="2" placeholder="Authorization: Bearer xxx" class="apple-input w-full"></textarea>
+                  </div>
+                  <div class="md:col-span-2">
+                    <label for="ac-body" class="block text-xs font-medium text-gray-700 mb-1.5">请求体（可选）</label>
+                    <textarea id="ac-body" name="ac_body" rows="2" placeholder='{"a":1}' class="apple-input w-full"></textarea>
+                  </div>
+                  <div>
+                    <label for="ac-status" class="block text-xs font-medium text-gray-700 mb-1.5">期望状态码</label>
+                    <input type="number" id="ac-status" name="ac_status" value="200" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="ac-keyword" class="block text-xs font-medium text-gray-700 mb-1.5">包含关键词（可选）</label>
+                    <input type="text" id="ac-keyword" name="ac_keyword" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="ac-latency" class="block text-xs font-medium text-gray-700 mb-1.5">延迟上限 ms（可选）</label>
+                    <input type="number" id="ac-latency" name="ac_latency" placeholder="500" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="ac-repeat" class="block text-xs font-medium text-gray-700 mb-1.5">循环间隔（分钟，0=单次）</label>
+                    <input type="number" id="ac-repeat" name="ac_repeat" value="0" min="0" class="apple-input w-full" />
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400">支持自定义方法/请求头/请求体与三重断言（状态码/关键词/延迟）；自签名 HTTPS 目标可勾选跳过校验。</p>
+                <label class="inline-flex items-center gap-2 text-xs text-gray-600"><input type="checkbox" id="ac-insecure" name="ac_insecure" class="mr-1" />跳过 TLS 校验（自签名目标）</label>
+              </div>
+
+              <!-- 接口流程专用选项 -->
+              <div id="apiflow-extra" class="hidden space-y-3 border-t border-gray-200 pt-4">
+                <h3 class="text-xs font-medium text-gray-700">接口流程配置（多步骤链）</h3>
+                <label for="af-steps" class="sr-only">步骤定义</label>
+                <textarea id="af-steps" name="af_steps" rows="8" class="apple-input w-full font-mono text-xs" placeholder='[
+  {"name":"登录","request":{"method":"POST","url":"https://api.example.com/login","body":"{"u":"a","p":"b"}"},
+   "save":{"token":"data.token"}},
+  {"name":"查信息","request":{"method":"GET","url":"https://api.example.com/me?token={{token}}"},
+   "expect":{"status":200,"keyword":"ok"}}
+]'></textarea>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                  <div>
+                    <label for="af-repeat" class="block text-xs font-medium text-gray-700 mb-1.5">循环间隔（分钟，0=单次）</label>
+                    <input type="number" id="af-repeat" name="af_repeat" value="0" min="0" class="apple-input w-full" />
+                  </div>
+                  <div class="md:col-span-2 flex items-center gap-2 text-xs text-gray-600">
+                    <input type="checkbox" id="af-insecure" name="af_insecure" /><label for="af-insecure">跳过 TLS 校验（自签名目标）</label>
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400">前序步骤可用 save 从响应 JSON 提取变量（点路径，如 data.token），后续步骤用 {{变量名}} 引用；任一步失败即停止。支持「失败/成功」重试与循环监控。</p>
+              </div>
+
+              <!-- 性能冒烟专用选项 -->
+              <div id="apiload-extra" class="hidden space-y-3 border-t border-gray-200 pt-4">
+                <h3 class="text-xs font-medium text-gray-700">性能冒烟配置</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div class="md:col-span-2">
+                    <label for="al-url" class="block text-xs font-medium text-gray-700 mb-1.5">目标地址</label>
+                    <input type="text" id="al-url" name="al_url" placeholder="https://api.example.com/v1/list" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="al-total" class="block text-xs font-medium text-gray-700 mb-1.5">总请数（≤1000）</label>
+                    <input type="number" id="al-total" name="al_total" value="50" min="1" max="1000" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="al-concurrency" class="block text-xs font-medium text-gray-700 mb-1.5">并发数（≤50）</label>
+                    <input type="number" id="al-concurrency" name="al_concurrency" value="5" min="1" max="50" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="al-status" class="block text-xs font-medium text-gray-700 mb-1.5">期望状态码</label>
+                    <input type="number" id="al-status" name="al_status" value="200" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="al-p95" class="block text-xs font-medium text-gray-700 mb-1.5">p95 延迟上限 ms（可选）</label>
+                    <input type="number" id="al-p95" name="al_p95" placeholder="500" class="apple-input w-full" />
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400">轻量压测（k6 思路简化版）：全部请求状态码正确且 p95 达标才算通过；失败请求会给出错误样本。</p>
+              </div>
+
+              <!-- 端口检查专用选项 -->
+              <div id="portcheck-extra" class="hidden space-y-3 border-t border-gray-200 pt-4">
+                <h3 class="text-xs font-medium text-gray-700">端口检查配置（TCP 连通性）</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div class="md:col-span-2">
+                    <label for="pc-host" class="block text-xs font-medium text-gray-700 mb-1.5">主机（登录服/网关地址）</label>
+                    <input type="text" id="pc-host" name="pc_host" placeholder="gate.example.com" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="pc-port" class="block text-xs font-medium text-gray-700 mb-1.5">端口</label>
+                    <input type="number" id="pc-port" name="pc_port" placeholder="7777" min="1" max="65535" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="pc-timeout" class="block text-xs font-medium text-gray-700 mb-1.5">超时 ms（可选）</label>
+                    <input type="number" id="pc-timeout" name="pc_timeout" value="3000" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="pc-latency" class="block text-xs font-medium text-gray-700 mb-1.5">连接延迟上限 ms（可选）</label>
+                    <input type="number" id="pc-latency" name="pc_latency" placeholder="200" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="pc-repeat" class="block text-xs font-medium text-gray-700 mb-1.5">循环间隔（分钟，0=单次）</label>
+                    <input type="number" id="pc-repeat" name="pc_repeat" value="0" min="0" class="apple-input w-full" />
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400">由编排服务内置执行；循环模式适合登录服/网关端口的长效监控，失败自动 webhook 告警（见部署指南）。</p>
+              </div>
+
+              <!-- 证书检查专用选项 -->
+              <div id="certcheck-extra" class="hidden space-y-3 border-t border-gray-200 pt-4">
+                <h3 class="text-xs font-medium text-gray-700">证书检查配置（TLS 到期监控）</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div class="md:col-span-2">
+                    <label for="cc-host" class="block text-xs font-medium text-gray-700 mb-1.5">域名（HTTPS 服务）</label>
+                    <input type="text" id="cc-host" name="cc_host" placeholder="api.example.com" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="cc-port" class="block text-xs font-medium text-gray-700 mb-1.5">端口（可选，默认 443）</label>
+                    <input type="number" id="cc-port" name="cc_port" value="443" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="cc-days" class="block text-xs font-medium text-gray-700 mb-1.5">剩余天数下限（默认 14）</label>
+                    <input type="number" id="cc-days" name="cc_days" value="14" min="1" class="apple-input w-full" />
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400">读取对端证书的到期时间与签发者，剩余天数低于阈值即失败；适合官网/账号服证书到期监控。自签名证书也可检查。</p>
+              </div>
+
+              <!-- DNS 检查专用选项 -->
+              <div id="dnscheck-extra" class="hidden space-y-3 border-t border-gray-200 pt-4">
+                <h3 class="text-xs font-medium text-gray-700">DNS 检查配置（解析断言）</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label for="dc-host" class="block text-xs font-medium text-gray-700 mb-1.5">域名</label>
+                    <input type="text" id="dc-host" name="dc_host" placeholder="gate.example.com" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="dc-ips" class="block text-xs font-medium text-gray-700 mb-1.5">期望 IP（逗号分隔，可选）</label>
+                    <input type="text" id="dc-ips" name="dc_ips" placeholder="1.2.3.4,5.6.7.8" class="apple-input w-full" />
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400">解析成功且（如填写）期望 IP 命中才算通过；用于域名劫持/切换检测。</p>
+              </div>
+
+              <!-- AI 探索测试专用选项 -->
+              <div id="ai-extra" class="hidden space-y-3 border-t border-gray-200 pt-4">
+                <h3 class="text-xs font-medium text-gray-700">AI 探索测试配置</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div class="md:col-span-2">
+                    <label for="ai-prompt" class="block text-xs font-medium text-gray-700 mb-1.5">测试目标（自然语言）</label>
+                    <textarea id="ai-prompt" name="ai_prompt" rows="2" placeholder="例如：登录游戏，打开设置面板，把音效调到最低" class="apple-input w-full"></textarea>
+                  </div>
+                  <div class="space-y-3">
+                    <div>
+                      <label for="ai-max-steps" class="block text-xs font-medium text-gray-700 mb-1.5">最大步数（可选）</label>
+                      <input type="number" id="ai-max-steps" name="ai_max_steps" value="12" min="1" max="200" class="apple-input w-full" />
+                    </div>
+                    <div>
+                      <label for="ai-serial" class="block text-xs font-medium text-gray-700 mb-1.5">设备序列号（可选）</label>
+                      <input type="text" id="ai-serial" name="ai_serial" placeholder="emulator-5554" class="apple-input w-full" />
+                    </div>
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400">需要 Agent 以 AIAgent 技能运行并配置 OPENAI_API_KEY；每步会截图交给视觉大模型决策。</p>
+              </div>
+
+              <!-- Airtest 脚本专用选项 -->
+              <div id="airtest-extra" class="hidden space-y-3 border-t border-gray-200 pt-4">
+                <h3 class="text-xs font-medium text-gray-700">Airtest 脚本配置</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div class="md:col-span-2">
+                    <label for="at-script" class="block text-xs font-medium text-gray-700 mb-1.5">脚本路径（Agent 本机上的 .air 目录）</label>
+                    <input type="text" id="at-script" name="at_script" placeholder="/opt/scripts/login.air" class="apple-input w-full" />
+                  </div>
+                  <div class="space-y-3">
+                    <div>
+                      <label for="at-serial" class="block text-xs font-medium text-gray-700 mb-1.5">设备序列号（可选）</label>
+                      <input type="text" id="at-serial" name="at_serial" placeholder="emulator-5554" class="apple-input w-full" />
+                    </div>
+                    <div>
+                      <label for="at-window" class="block text-xs font-medium text-gray-700 mb-1.5">Windows 窗口标题（可选）</label>
+                      <input type="text" id="at-window" name="at_window" placeholder="游戏窗口标题" class="apple-input w-full" />
+                    </div>
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400">需要 Agent 以 Airtest 技能运行并安装 airtest（pip install -r requirements-airtest.txt）。</p>
+              </div>
+
+              <!-- GPT 生成并执行专用选项 -->
+              <div id="gpt-extra" class="hidden space-y-3 border-t border-gray-200 pt-4">
+                <h3 class="text-xs font-medium text-gray-700">GPT 生成用例配置</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label for="gpt-prompt" class="block text-xs font-medium text-gray-700 mb-1.5">测试需求（自然语言）</label>
+                    <textarea id="gpt-prompt" name="gpt_prompt" rows="2" placeholder="例如：主界面点击设置应打开设置面板" class="apple-input w-full"></textarea>
+                  </div>
+                  <div>
+                    <label for="gpt-assembly" class="block text-xs font-medium text-gray-700 mb-1.5">程序集/命名空间（可选）</label>
+                    <input type="text" id="gpt-assembly" name="gpt_assembly" placeholder="Assembly-CSharp" class="apple-input w-full" />
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400">编排服务会先调用 GPT 生成 C# 测试代码（需配置 OPENAI_API_KEY），再由具备 GPTTestGen 技能的 Agent 执行。</p>
+              </div>
+
+              <!-- Web 测试专用选项 -->
+              <div id="web-extra" class="hidden space-y-3 border-t border-gray-200 pt-4">
+                <h3 class="text-xs font-medium text-gray-700">Web 测试配置</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label for="web-url" class="block text-xs font-medium text-gray-700 mb-1.5">Web 测试 URL（可选）</label>
+                    <input type="url" id="web-url" name="web_url" placeholder="https://example.com" class="apple-input w-full" />
+                  </div>
+                  <div>
+                    <label for="web-browser" class="block text-xs font-medium text-gray-700 mb-1.5">浏览器（可选）</label>
+                    <select name="web_browser" id="web-browser" class="apple-select w-full">
+                      <option value="">默认</option>
+                      <option value="chromium">Chromium</option>
+                      <option value="firefox">Firefox</option>
+                      <option value="webkit">WebKit</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex justify-end pt-4 border-t border-gray-200">
+                <button type="submit" class="apple-button px-5 py-2 text-xs font-medium">创建任务</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/js/main.js?v=13"></script>
+</body>
+</html>

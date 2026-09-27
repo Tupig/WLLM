@@ -1,0 +1,18 @@
+[package]
+name = "unity-agent"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Unity3D 自动化测试平台 Rust Agent：单二进制、目标机无需 Python 运行时"
+
+[dependencies]
+ureq = { version = "2", features = ["json"] }
+serde_json = "1"
+base64 = "0.22"
+# TLS：与服务端对齐 rustls（自签名证书信任/跳过校验均基于 rustls 0.23 API）
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
+webpki-roots = "0.26"
+
+[profile.release]
+strip = true
+lto = true

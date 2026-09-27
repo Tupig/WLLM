@@ -1,0 +1,3 @@
+# 构建可执行文件用（PyInstaller），在 Linux / Windows / Mac 上分别执行构建
+-r requirements.txt
+pyinstaller>=6.0.0

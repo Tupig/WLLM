@@ -6,9 +6,10 @@ state/
 node_modules/
 dist/
 
-# 系统/备份
+# 系统/备份/本地状态
 .DS_Store
 *.bak
+.reasonix/
 
 # Python
 __pycache__/
