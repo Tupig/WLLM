@@ -12,6 +12,7 @@ import { createClient, streamMessage, type StreamEvent, type ApiClient } from ".
 import { resolveHarness, parseXmlToolCalls, buildXmlToolSection } from "./harness.js";
 import { resolveFallback, streamWithFailover, isInfraError } from "./providers/failover.js";
 import { renderSystemPrompt } from "./prompt.js";
+import { mapWithConcurrency, partitionRuns } from "./tools/parallel.js";
 import { canUseTool, promptUser } from "./services/permissions.js";
 import { hookSystem } from "./hooks/system.js";
 import { ContextCompactor } from "./compact/index.js";
@@ -418,120 +419,26 @@ export class QueryEngine {
       }
       loopState.messages.push({ role: "assistant", content });
 
+      const entries: Array<{ buf: { id: string; name: string; inputJson: string }; input: Record<string, unknown> | null }> = [];
       for (const [, buf] of toolBuffers) {
-        let input: Record<string, unknown> = {};
-        try { input = JSON.parse(buf.inputJson || "{}"); } catch {
-          continue;
-        }
-
-        const tool = getToolByName(this.tools, buf.name);
-        const permission = await canUseToolFn(buf.name, input);
-
-        if (permission.behavior === "deny") {
-          const msg = permission.message || "已拒绝";
-          process.stdout.write(chalk.red(`\n🚫 ${msg}\n`));
-          toolResults.push({ tool_use_id: buf.id, content: msg, is_error: true });
-          events.push({ type: "tool_result", toolUseId: buf.id, content: msg, isError: true });
-          continue;
-        }
-
-        if (permission.behavior === "ask") {
-          const confirmed = await promptUser(buf.name, input);
-          if (!confirmed) {
-            toolResults.push({ tool_use_id: buf.id, content: "用户已拒绝", is_error: true });
-            events.push({ type: "tool_result", toolUseId: buf.id, content: "用户已拒绝", isError: true });
-            continue;
-          }
-        }
-
-        const hookResult = await hookSystem.trigger("PreToolUse", {
-          toolName: buf.name, input,
-          turnNumber: loopState.turnCount,
-          sessionId: appStore.getState().sessionId,
-        });
-
-        if (hookResult.block) {
-          const msg = hookResult.message || "已被 Hook 阻断";
-          process.stdout.write(chalk.red(`\n🚫 ${msg}\n`));
-          toolResults.push({ tool_use_id: buf.id, content: msg, is_error: true });
-          events.push({ type: "tool_result", toolUseId: buf.id, content: msg, isError: true });
-          continue;
-        }
-
-        if (tool) {
-          const parsed = tool.inputSchema.safeParse(input);
-          if (!parsed.success) {
-            const errMsg = `输入校验失败：${parsed.error.errors.map((e: any) => e.message).join(", ")}`;
-            process.stdout.write(chalk.red(`\n❌ ${errMsg}\n`));
-            toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
-            events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
-            continue;
-          }
-
-          // 流式锁：防止并发工具执行
-          if (this.streaming) {
-            toolResults.push({ tool_use_id: buf.id, content: "错误：另一个工具正在执行中", is_error: true });
-            continue;
-          }
-          this.streaming = true;
-
-          const doomSig = JSON.stringify({ name: buf.name, input });
-          if (this.doomDetector.feed(doomSig)) {
-            this.streaming = false;
-            const errMsg = "检测到连续重复动作（doom loop），已中断。请换一种方式完成任务。";
-            process.stdout.write(chalk.red(`\n🛑 ${errMsg}\n`));
-            toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
-            events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
-            this.trajectory?.recordError(errMsg);
-            continue;
-          }
-
-          // 记录工具调用
-          this.trajectory?.recordToolUse(buf.name, input, buf.id);
-          const toolStartTime = Date.now();
-
-          process.stdout.write(chalk.gray("⏳ "));
-          let result;
-          try {
-            result = await withTimeout(
-              tool.call(parsed.data, toolContext, canUseToolFn),
-              TOOL_TIMEOUT_MS, `工具 ${buf.name}`,
-            );
-          } catch (e) {
-            const errMsg = e instanceof Error ? e.message : String(e);
-            process.stdout.write(chalk.red(`\n❌ ${errMsg}\n`));
-            toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
-            events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
-            this.trajectory?.recordError(errMsg);
-            continue;
-          } finally {
-            this.streaming = false;
-          }
-
-          // 记录工具执行状态
-          const filePath = (input as any).file_path || (input as any).path;
-          const operation = buf.name === "Write" ? "write" : buf.name === "Edit" ? "edit" : undefined;
-          recordToolExecution(this.toolState, buf.name, filePath, operation);
-
-          const resultStr = result.resultForAssistant || JSON.stringify(result.data);
-          toolResults.push({ tool_use_id: buf.id, content: resultStr, is_error: false });
-          events.push({ type: "tool_result", toolUseId: buf.id, content: resultStr, isError: false });
-
-          // 记录工具结果
-          const toolDuration = Date.now() - toolStartTime;
-          this.trajectory?.recordToolResult(buf.id, resultStr, false, toolDuration);
-
-          process.stdout.write(chalk.green(`✅（${resultStr.length} 字符）\n`));
-
-          await hookSystem.trigger("PostToolUse", {
-            toolName: buf.name, input, output: resultStr,
-            turnNumber: loopState.turnCount,
-            sessionId: appStore.getState().sessionId,
+        let input: Record<string, unknown> | null = null;
+        try { input = JSON.parse(buf.inputJson || "{}"); } catch { input = null; }
+        if (input) entries.push({ buf, input });
+      }
+      const isSafe = (e: { buf: { name: string }; input: Record<string, unknown> | null }) => {
+        if (!e.input) return false;
+        const t = getToolByName(this.tools, e.buf.name);
+        return !!t && t.isReadOnly(e.input) && t.isConcurrencySafe(e.input);
+      };
+      const batches = partitionRuns(entries, isSafe);
+      for (const batch of batches) {
+        if (batch.length > 1) {
+          await mapWithConcurrency(batch, 4, async (e) => {
+            await this.runToolBuffer(e.buf, e.input!, getToolByName(this.tools, e.buf.name), toolContext, canUseToolFn, loopState, events, toolResults, true);
           });
         } else {
-          const errMsg = `未知工具：${buf.name}`;
-          toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
-          events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
+          const e = batch[0];
+          await this.runToolBuffer(e.buf, e.input ?? {}, getToolByName(this.tools, e.buf.name), toolContext, canUseToolFn, loopState, events, toolResults, false);
         }
       }
 
@@ -551,6 +458,127 @@ export class QueryEngine {
 
     process.stdout.write("\n");
     return { stopReason, toolResults, events };
+  }
+
+  private async runToolBuffer(
+    buf: { id: string; name: string; inputJson: string },
+    input: Record<string, unknown>,
+    tool: Tool | undefined,
+    toolContext: ToolUseContext,
+    canUseToolFn: CanUseToolFn,
+    loopState: LoopState,
+    events: any[],
+    toolResults: Array<{ tool_use_id: string; content: string; is_error?: boolean }>,
+    parallel: boolean,
+  ): Promise<void> {
+      const permission = await canUseToolFn(buf.name, input);
+
+      if (permission.behavior === "deny") {
+        const msg = permission.message || "已拒绝";
+        process.stdout.write(chalk.red(`\n🚫 ${msg}\n`));
+        toolResults.push({ tool_use_id: buf.id, content: msg, is_error: true });
+        events.push({ type: "tool_result", toolUseId: buf.id, content: msg, isError: true });
+        return;
+      }
+
+      if (permission.behavior === "ask") {
+        const confirmed = await promptUser(buf.name, input);
+        if (!confirmed) {
+          toolResults.push({ tool_use_id: buf.id, content: "用户已拒绝", is_error: true });
+          events.push({ type: "tool_result", toolUseId: buf.id, content: "用户已拒绝", isError: true });
+          return;
+        }
+      }
+
+      const hookResult = await hookSystem.trigger("PreToolUse", {
+        toolName: buf.name, input,
+        turnNumber: loopState.turnCount,
+        sessionId: appStore.getState().sessionId,
+      });
+
+      if (hookResult.block) {
+        const msg = hookResult.message || "已被 Hook 阻断";
+        process.stdout.write(chalk.red(`\n🚫 ${msg}\n`));
+        toolResults.push({ tool_use_id: buf.id, content: msg, is_error: true });
+        events.push({ type: "tool_result", toolUseId: buf.id, content: msg, isError: true });
+        return;
+      }
+
+      if (tool) {
+        const parsed = tool.inputSchema.safeParse(input);
+        if (!parsed.success) {
+          const errMsg = `输入校验失败：${parsed.error.errors.map((e: any) => e.message).join(", ")}`;
+          process.stdout.write(chalk.red(`\n❌ ${errMsg}\n`));
+          toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
+          events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
+          return;
+        }
+
+        // 流式锁：防止并发工具执行
+        if (this.streaming) {
+          toolResults.push({ tool_use_id: buf.id, content: "错误：另一个工具正在执行中", is_error: true });
+          return;
+        }
+        this.streaming = true;
+
+        const doomSig = JSON.stringify({ name: buf.name, input });
+        if (this.doomDetector.feed(doomSig)) {
+          this.streaming = false;
+          const errMsg = "检测到连续重复动作（doom loop），已中断。请换一种方式完成任务。";
+          process.stdout.write(chalk.red(`\n🛑 ${errMsg}\n`));
+          toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
+          events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
+          this.trajectory?.recordError(errMsg);
+          return;
+        }
+
+        // 记录工具调用
+        this.trajectory?.recordToolUse(buf.name, input, buf.id);
+        const toolStartTime = Date.now();
+
+        process.stdout.write(chalk.gray("⏳ "));
+        let result;
+        try {
+          result = await withTimeout(
+            tool.call(parsed.data, toolContext, canUseToolFn),
+            TOOL_TIMEOUT_MS, `工具 ${buf.name}`,
+          );
+        } catch (e) {
+          const errMsg = e instanceof Error ? e.message : String(e);
+          process.stdout.write(chalk.red(`\n❌ ${errMsg}\n`));
+          toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
+          events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
+          this.trajectory?.recordError(errMsg);
+          return;
+        } finally {
+          this.streaming = false;
+        }
+
+        // 记录工具执行状态
+        const filePath = (input as any).file_path || (input as any).path;
+        const operation = buf.name === "Write" ? "write" : buf.name === "Edit" ? "edit" : undefined;
+        recordToolExecution(this.toolState, buf.name, filePath, operation);
+
+        const resultStr = result.resultForAssistant || JSON.stringify(result.data);
+        toolResults.push({ tool_use_id: buf.id, content: resultStr, is_error: false });
+        events.push({ type: "tool_result", toolUseId: buf.id, content: resultStr, isError: false });
+
+        // 记录工具结果
+        const toolDuration = Date.now() - toolStartTime;
+        this.trajectory?.recordToolResult(buf.id, resultStr, false, toolDuration);
+
+        process.stdout.write(chalk.green(`✅（${resultStr.length} 字符）\n`));
+
+        await hookSystem.trigger("PostToolUse", {
+          toolName: buf.name, input, output: resultStr,
+          turnNumber: loopState.turnCount,
+          sessionId: appStore.getState().sessionId,
+        });
+      } else {
+        const errMsg = `未知工具：${buf.name}`;
+        toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
+        events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
+      }
   }
 
   private buildToolContext(): ToolUseContext {

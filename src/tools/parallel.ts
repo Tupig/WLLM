@@ -6,6 +6,39 @@
  */
 import type { Tool, ToolUseContext, ToolResult, CanUseToolFn } from "../Tool.js";
 
+export async function mapWithConcurrency<T, R>(
+  items: T[], limit: number, fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+export function partitionRuns<T>(items: T[], isSafe: (item: T) => boolean): T[][] {
+  const batches: T[][] = [];
+  let cur: T[] = [];
+  for (const item of items) {
+    if (isSafe(item)) {
+      cur.push(item);
+    } else {
+      if (cur.length) batches.push(cur);
+      batches.push([item]);
+      cur = [];
+    }
+  }
+  if (cur.length) batches.push(cur);
+  return batches;
+}
+
 export interface ParallelToolCall {
   /** 工具调用 ID */
   id: string;
