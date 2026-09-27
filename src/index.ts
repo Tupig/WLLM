@@ -1,0 +1,161 @@
+#!/usr/bin/env node
+/**
+ * index.ts — CLI 入口 + REPL
+ */
+import { Command } from "commander";
+import chalk from "chalk";
+import { createInterface, Interface } from "readline";
+import { query, type SDKMessage } from "./QueryEngine.js";
+import { appStore } from "./state/AppState.js";
+import { DEFAULT_MODEL } from "./constants.js";
+
+const VERSION = "2.0.0";
+
+function printBanner(): void {
+  console.log(chalk.cyan.bold(`
+╔══════════════════════════════════════════╗
+║     🤖 Pilot Agent v${VERSION}              ║
+║     AI 编程助手（Claude Code 架构）       ║
+╚══════════════════════════════════════════╝
+`));
+  console.log(chalk.gray("输入您的需求。命令：/help /clear /cost /model /quit\n"));
+}
+
+function printHelp(): void {
+  console.log(chalk.cyan(`
+命令：
+  /help     显示帮助
+  /clear    清空对话历史
+  /cost     查看 Token 用量
+  /model    查看当前模型
+  /quit     退出
+
+或直接用自然语言描述您的任务。
+`));
+}
+
+function handleSDKMessage(msg: SDKMessage): void {
+  switch (msg.type) {
+    case "text":
+      process.stdout.write(chalk.cyan(`\n${msg.text}\n`));
+      break;
+    case "tool_use": break;
+    case "tool_result": break;
+    case "result":
+      if (msg.subtype === "error") {
+        process.stdout.write(chalk.red(`\n❌ ${msg.result}\n`));
+      }
+      break;
+    case "system":
+      if (msg.subtype === "init") {
+        process.stdout.write(chalk.gray(`模型：${msg.model} | 工具：${msg.tools.join(", ")}\n\n`));
+      }
+      break;
+  }
+}
+
+async function startREPL(): Promise<void> {
+  printBanner();
+
+  const rl: Interface = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: chalk.green("❯ "),
+  });
+
+  rl.prompt();
+
+  rl.on("line", async (line: string) => {
+    const input = line.trim();
+    if (!input) { rl.prompt(); return; }
+
+    if (input === "/quit" || input === "/exit") {
+      console.log(chalk.gray("\n再见！"));
+      process.exit(0);
+    }
+    if (input === "/help") { printHelp(); rl.prompt(); return; }
+    if (input === "/clear") {
+      appStore.setState((s) => ({
+        ...s,
+        tokenUsage: { input: 0, output: 0 },
+        compactionCount: 0,
+        turnCount: 0,
+      }));
+      console.log(chalk.gray("对话历史已清空。\n"));
+      rl.prompt();
+      return;
+    }
+    if (input === "/cost") {
+      const s = appStore.getState();
+      console.log(chalk.gray(`Token 用量：输入 ${s.tokenUsage.input} | 输出 ${s.tokenUsage.output} | 上下文压缩 ${s.compactionCount} 次\n`));
+      rl.prompt();
+      return;
+    }
+    if (input === "/model") {
+      const s = appStore.getState();
+      console.log(chalk.gray(`模型：${s.mainLoopModel} | 模式：${s.toolPermissionContext.mode}\n`));
+      rl.prompt();
+      return;
+    }
+
+    try {
+      for await (const msg of query({
+        prompt: input,
+        options: { cwd: process.cwd(), model: process.env.PILOT_MODEL || DEFAULT_MODEL },
+      })) {
+        handleSDKMessage(msg);
+      }
+    } catch (err) {
+      console.error(chalk.red(`\n错误：${err instanceof Error ? err.message : err}\n`));
+    }
+    rl.prompt();
+  });
+
+  rl.on("close", () => { console.log(chalk.gray("\n再见！")); process.exit(0); });
+}
+
+async function runSingle(prompt: string): Promise<void> {
+  for await (const msg of query({
+    prompt,
+    options: { cwd: process.cwd(), model: process.env.PILOT_MODEL || DEFAULT_MODEL },
+  })) {
+    handleSDKMessage(msg);
+  }
+}
+
+function main(): void {
+  const program = new Command();
+  program
+    .name("pilot")
+    .description("🤖 Pilot Agent — AI 编程助手（Claude Code 架构）")
+    .version(VERSION);
+
+  program
+    .option("-m, --model <model>", "使用的模型", process.env.PILOT_MODEL || DEFAULT_MODEL)
+    .option("-t, --max-tokens <tokens>", "最大输出 Token 数", (v) => parseInt(v, 10), 8192)
+    .option("--max-turns <turns>", "最大工具调用轮次", (v) => parseInt(v, 10), 20)
+    .option("-w, --work-dir <dir>", "工作目录", process.cwd())
+    .option("-p, --prompt <message>", "单次执行模式");
+
+  program.parse();
+  const opts = program.opts();
+
+  if (!process.env.ANTHROPIC_API_KEY && !process.env.PILOT_MOCK && !process.env.OPENAI_BASE_URL) {
+    console.error(chalk.red("错误：请设置 ANTHROPIC_API_KEY、OPENAI_BASE_URL+OPENAI_API_KEY 或 PILOT_MOCK=1"));
+    process.exit(1);
+  }
+
+  if (opts.prompt) {
+    runSingle(opts.prompt).catch((err) => {
+      console.error(chalk.red(`错误：${err.message}`));
+      process.exit(1);
+    });
+  } else {
+    startREPL().catch((err) => {
+      console.error(chalk.red(`错误：${err.message}`));
+      process.exit(1);
+    });
+  }
+}
+
+main();

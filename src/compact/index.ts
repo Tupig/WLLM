@@ -1,0 +1,136 @@
+/**
+ * compact/index.ts — 上下文压缩 5 阶段流水线
+ */
+import Anthropic from "@anthropic-ai/sdk";
+import type { ApiClient } from "../services/api.js";
+
+export interface CompactionConfig {
+  threshold: number;
+  maxMessages: number;
+}
+
+const DEFAULT_CONFIG: CompactionConfig = {
+  threshold: 0.85,
+  maxMessages: 100,
+};
+
+export class ContextCompactor {
+  private config: CompactionConfig;
+
+  constructor(config?: Partial<CompactionConfig>) {
+    this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  shouldCompact(messages: Anthropic.MessageParam[], estimatedTokens: number, maxTokens: number): boolean {
+    const usage = estimatedTokens / maxTokens;
+    return usage > this.config.threshold || messages.length > this.config.maxMessages;
+  }
+
+  budgetReduction(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+    if (messages.length <= 4) return messages;
+    return messages.slice(-4);
+  }
+
+  snip(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+    if (messages.length <= 6) return messages;
+    return messages.map((msg, idx) => {
+      if (idx < 2 || idx >= messages.length - 2) return msg;
+      if (msg.role === "user" && Array.isArray(msg.content)) {
+        const hasToolResults = msg.content.some((b: any) => b.type === "tool_result");
+        if (hasToolResults) {
+          return { ...msg, content: [{ type: "text" as const, text: "[工具结果已截断以节省上下文空间]" }] };
+        }
+      }
+      return msg;
+    });
+  }
+
+  microcompact(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+    if (messages.length <= 8) return messages;
+    const head = messages.slice(0, 2);
+    const tail = messages.slice(-4);
+    const middle = messages.slice(2, -4);
+    if (middle.length > 3) {
+      const compacted = [...middle.slice(0, 2), middle[middle.length - 1]];
+      return [...head, ...compacted, ...tail];
+    }
+    return messages;
+  }
+
+  contextCollapse(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+    if (messages.length <= 10) return messages;
+    const head = messages.slice(0, 2);
+    const tail = messages.slice(-6);
+    const middle = messages.slice(2, -6);
+    if (middle.length === 0) return messages;
+
+    const headEndsWithAssistant = head.length > 0 && head[head.length - 1].role === "assistant";
+
+    const collapsed: Anthropic.MessageParam[] = [];
+    if (headEndsWithAssistant) {
+      collapsed.push({ role: "user", content: `[上下文已折叠：省略了 ${middle.length} 条消息]` });
+    } else {
+      collapsed.push({ role: "user", content: `[上下文已折叠：省略了 ${middle.length} 条消息]` });
+      collapsed.push({ role: "assistant", content: "已收到折叠上下文中的信息。" });
+    }
+
+    return [...head, ...collapsed, ...tail];
+  }
+
+  async autoCompact(
+    client: ApiClient, model: string, messages: Anthropic.MessageParam[],
+  ): Promise<Anthropic.MessageParam[]> {
+    if (messages.length <= 6) return messages;
+    if (client.type !== "anthropic" || !client.anthropic) {
+      return this.contextCollapse(messages);
+    }
+
+    const recent = messages.slice(-6);
+    const toSummarize = messages.slice(0, -6);
+    if (toSummarize.length === 0) return messages;
+
+    try {
+      const resp = await client.anthropic.messages.create({
+        model: "claude-haiku-4-20250414",
+        max_tokens: 1024,
+        system: "请简洁地总结对话历史，保留关键决策、代码变更和上下文信息。",
+        messages: [{
+          role: "user",
+          content: `请总结以下对话：\n${JSON.stringify(toSummarize, null, 2)}`,
+        }],
+      });
+
+      const summary = resp.content[0]?.type === "text" ? resp.content[0].text : "之前的上下文。";
+
+      return [
+        { role: "user", content: `[之前的对话摘要]\n${summary}` },
+        { role: "assistant", content: "已收到之前对话的上下文。" },
+        ...recent,
+      ];
+    } catch {
+      return this.budgetReduction(messages);
+    }
+  }
+
+  async compact(
+    client: ApiClient, model: string, messages: Anthropic.MessageParam[],
+  ): Promise<{ messages: Anthropic.MessageParam[]; strategy: string }> {
+    const afterSnip = this.snip(messages);
+    if (JSON.stringify(afterSnip) !== JSON.stringify(messages)) {
+      return { messages: afterSnip, strategy: "snip" };
+    }
+
+    const afterMicro = this.microcompact(messages);
+    if (afterMicro.length < messages.length) {
+      return { messages: afterMicro, strategy: "microcompact" };
+    }
+
+    const afterCollapse = this.contextCollapse(messages);
+    if (afterCollapse.length < messages.length) {
+      return { messages: afterCollapse, strategy: "context-collapse" };
+    }
+
+    const afterAuto = await this.autoCompact(client, model, messages);
+    return { messages: afterAuto, strategy: "auto-compact" };
+  }
+}
