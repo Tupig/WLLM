@@ -9,6 +9,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import type { Tool, ToolUseContext, CanUseToolFn } from "./Tool.js";
 import { getDefaultTools, getToolByName } from "./tools.js";
 import { createClient, streamMessage, type StreamEvent, type ApiClient } from "./services/api.js";
+import { resolveHarness, parseXmlToolCalls, buildXmlToolSection } from "./harness.js";
 import { canUseTool, promptUser } from "./services/permissions.js";
 import { hookSystem } from "./hooks/system.js";
 import { ContextCompactor } from "./compact/index.js";
@@ -321,7 +322,7 @@ export class QueryEngine {
       try {
         for await (const event of streamMessage(
           this.client, this.config.model, loopState.maxOutputTokensOverride,
-          this.buildSystemPrompt(), loopState.messages, toolDefs,
+          this.buildSystemPrompt(toolDefs), loopState.messages, toolDefs,
         )) {
           switch (event.type) {
             case "text_delta":
@@ -362,12 +363,23 @@ export class QueryEngine {
       }
     }
 
+    if (resolveHarness() === "xml" && toolBuffers.size === 0 && stopReason !== "error") {
+      const calls = parseXmlToolCalls(fullText);
+      for (const c of calls) {
+        const id = `xmtool_${Date.now()}_${toolBuffers.size}`;
+        toolBuffers.set(id, { id, name: c.name, inputJson: c.parseError ? "___bad_json___" : JSON.stringify(c.input) });
+        process.stdout.write(chalk.yellow(`\n🔧 ${c.name} `));
+      }
+      if (calls.length > 0) stopReason = "tool_use";
+    }
+
     if (toolBuffers.size > 0) {
       const content: Anthropic.ContentBlockParam[] = [];
       if (fullText) content.push({ type: "text", text: fullText });
       for (const [, buf] of toolBuffers) {
         let input: Record<string, unknown> = {};
         try { input = JSON.parse(buf.inputJson || "{}"); } catch {
+          content.push({ type: "tool_use", id: buf.id, name: buf.name, input: {} });
           toolResults.push({
             tool_use_id: buf.id,
             content: `错误：工具输入 JSON 解析失败，请检查参数格式`,
@@ -544,7 +556,7 @@ export class QueryEngine {
     };
   }
 
-  private buildSystemPrompt(): string {
+  private buildSystemPrompt(toolDefs: Anthropic.Tool[] = []): string {
     const base = `你是一个运行在用户终端中的 AI 编程助手。你可以读写文件、执行命令、搜索代码来帮助完成编程任务。
 
 ## 工具
@@ -575,6 +587,11 @@ export class QueryEngine {
     const stateText = formatToolStateForPrompt(this.toolState);
     if (stateText) {
       prompt += `\n\n## 当前状态\n${stateText}`;
+    }
+
+    if (resolveHarness() === "xml" && toolDefs.length > 0) {
+      const section = buildXmlToolSection(toolDefs);
+      if (section) prompt += `\n\n## 工具调用（XML 格式）\n${section}`;
     }
 
     if (this.config.appendSystemPrompt) {
