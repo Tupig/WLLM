@@ -20,15 +20,47 @@ export type ApiClient = {
   anthropic?: Anthropic;
 };
 
+export type ProviderKind = "anthropic" | "openai" | "mock";
+
+/**
+ * 解析 provider 优先级：PILOT_MOCK > PILOT_PROVIDER(显式) > OpenAI env > Anthropic env
+ * 配置缺失时抛中文错误（由调用方决定 exit 或传递）
+ */
+export function resolveProvider(env: NodeJS.ProcessEnv = process.env): ProviderKind {
+  if (env.PILOT_MOCK === "1") return "mock";
+  const explicit = env.PILOT_PROVIDER;
+  if (explicit) {
+    if (explicit !== "openai" && explicit !== "anthropic" && explicit !== "mock")
+      throw new Error(`PILOT_PROVIDER 非法：${explicit}（可选 openai / anthropic / mock）`);
+    if (explicit === "openai" && (!env.OPENAI_BASE_URL || !env.OPENAI_API_KEY))
+      throw new Error("PILOT_PROVIDER=openai 需要同时设置 OPENAI_BASE_URL 和 OPENAI_API_KEY");
+    if (explicit === "anthropic" && !env.ANTHROPIC_API_KEY)
+      throw new Error("PILOT_PROVIDER=anthropic 需要设置 ANTHROPIC_API_KEY");
+    return explicit;
+  }
+  if (env.OPENAI_BASE_URL && env.OPENAI_API_KEY) return "openai";
+  if (env.ANTHROPIC_API_KEY) return "anthropic";
+  throw new Error("请设置 ANTHROPIC_API_KEY、OPENAI_BASE_URL+OPENAI_API_KEY、PILOT_PROVIDER 或 PILOT_MOCK=1");
+}
+
+/** baseURL 归一 → 统一 chat/completions 地址（避免 /v1/v1 重复） */
+export function chatUrl(base: string): string {
+  let b = base.replace(/\/+$/, "");
+  if (!/\/v\d+$/.test(b) && !/\/v\d+\//.test(b)) b += "/v1";
+  return `${b}/chat/completions`;
+}
+
 export function createClient(): ApiClient {
-  if (process.env.PILOT_MOCK === "1") return { type: "mock" };
-  if (process.env.OPENAI_BASE_URL && process.env.OPENAI_API_KEY) return { type: "openai" };
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    console.error("错误：请设置 ANTHROPIC_API_KEY、OPENAI_BASE_URL+OPENAI_API_KEY 或 PILOT_MOCK=1");
+  let kind: ProviderKind;
+  try {
+    kind = resolveProvider();
+  } catch (e) {
+    console.error(`错误：${e instanceof Error ? e.message : String(e)}`);
     process.exit(1);
   }
-  return { type: "anthropic", anthropic: new Anthropic({ apiKey }) };
+  if (kind === "mock") return { type: "mock" };
+  if (kind === "openai") return { type: "openai" };
+  return { type: "anthropic", anthropic: new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! }) };
 }
 
 function mockUsage(): Anthropic.Usage {
@@ -208,7 +240,7 @@ async function* streamOpenAI(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), API_FETCH_TIMEOUT_MS);
 
-  const resp = await fetch(`${base}/v1/chat/completions`, {
+  const resp = await fetch(chatUrl(base), {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({
@@ -221,8 +253,18 @@ async function* streamOpenAI(
 
   if (!resp.ok) throw new Error(`OpenAI API 返回错误 ${resp.status}：${await resp.text()}`);
 
-  const reader = resp.body?.getReader();
-  if (!reader) throw new Error("响应体为空");
+  yield* parseOpenAISSE(resp.body, model);
+}
+
+/**
+ * OpenAI SSE → StreamEvent 解析（纯函数段，便于测试）
+ * tool_calls 按 index 分片累积；首包缺 id 时自生成并全程保持一致。
+ */
+export async function* parseOpenAISSE(
+  body: ReadableStream<Uint8Array> | null, model: string,
+): AsyncGenerator<StreamEvent> {
+  if (!body) throw new Error("响应体为空");
+  const reader = body.getReader();
   const dec = new TextDecoder();
   let buf = "";
   const tcs = new Map<number, { id: string; name: string; args: string }>();
