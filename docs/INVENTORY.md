@@ -58,7 +58,7 @@ CLI 工具 → :4100 unified_proxy.py → :8080 mlx_lm.server（仅 127.0.0.1）
 | `config.env` | 25 | 端口 4100/8080、`MLX_REQUEST_TIMEOUT=1800`、`MLX_AUTH_TOKEN`（空=不启用）、`MLX_DEFAULT_MODEL=14b`（用户确认不改） |
 | `models.json` | 31 | 4 模型：14b/8b/30b(requires_high_gpu)/qwen-vl-8b(multimodal) |
 | `README.md` | 95 | 中文使用文档 |
-| `test_unified_proxy.py` | 592 | pytest：33 用例，纯转换函数测试（见 §5） |
+| `test_unified_proxy.py` | 592 | pytest：31 用例，纯转换函数测试（见 §5） |
 
 ### unified_proxy.py 结构
 
@@ -82,9 +82,9 @@ CLI 工具 → :4100 unified_proxy.py → :8080 mlx_lm.server（仅 127.0.0.1）
 
 ## 5. 测试现状（A5 同步完成）
 
-- `mlx/test_unified_proxy.py`：**33 用例全绿基线**（pytest）
-  - TestAnthropicToOpenAI ×13（text/system/多轮/tool_calls/tool_results/tools 定义/tool_choice×4/temperature/stop）
-  - TestOpenAIToAnthropic ×4、TestResponsesToChat ×7、TestChatToResponses ×3、TestTextOf ×6
+- `mlx/test_unified_proxy.py`：**31 用例全绿基线**（pytest；A5 初记 33 有误，E8 与 baseline diff 核实）
+  - TestAnthropicToOpenAI ×12（text/system/多轮/tool_calls/tool_results/tools 定义/tool_choice×4/temperature/stop）
+  - TestOpenAIToAnthropic ×4、TestResponsesToChat ×7、TestChatToResponses ×3、TestTextOf ×5
 - pilot-agent 侧：PILOT_MOCK 回归通过（见 A2，tsc 通过、build 通过），无正式测试框架 → T0 加 vitest
 - 无 shellcheck/bash -n 基线 → D5 补
 
@@ -92,12 +92,12 @@ CLI 工具 → :4100 unified_proxy.py → :8080 mlx_lm.server（仅 127.0.0.1）
 
 | 项 | 状态 |
 |----|------|
-| `reasonix.toml` filesystem 插件硬编码 `/Users/tupig/Workspace/LLM` | **迁移后路径失效**，D2/D3 时改 WLLM 或删除 |
-| `.reasonix/tasks/`（29 个任务状态）+ `.DS_Store` | 遗留运行状态，建议 gitignore/删除（D2） |
-| 旧 `~/Workspace/LLM` | 仅留 AGENTS.md/CLAUDE.md 环境垫片，H1 阶段一并清理 |
-| `bin/llm chat` 非流式、`--max-time 300` < config 1800s | 一致性问题，归 E7/E8 处理 |
-| BUG-1：pilot 带工具调用端到端卡死 | 归 E3（已知未修） |
-| 并发 OOM、thinking 慢、SSE→JSON 500 | **已修**（mlx-local.sh 参数 + unified_proxy.py want_stream），G2/G3 回归确认 |
+| `reasonix.toml` filesystem 插件硬编码旧路径 | **已修**（D2 → WLLM） |
+| `.reasonix/tasks/` + `.DS_Store` | **已处理**（D2 gitignore + 全清） |
+| 旧 `~/Workspace/LLM` | 仅留环境垫片，H1 阶段一并清理 |
+| `bin/llm chat` 非流式、`--max-time 300` < config 1800s | **已修**（E8 → 1800） |
+| BUG-1：pilot 带工具调用端到端卡死 | **已修**（E3：doom loop+工具超时+非TTY快拒） |
+| 并发 OOM、thinking 慢、SSE→JSON 500 | **已修**（mlx-local.sh 参数 + want_stream），G2/G3 回归确认 |
 
 ## 7. 运行时（gitignore，迁移后随目录走）
 

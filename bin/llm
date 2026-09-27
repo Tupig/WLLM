@@ -65,7 +65,7 @@ print(json.dumps(payload))
 " -- "$prompt" 2>/dev/null) || err "构造请求失败"
 
   local response http_code
-  response=$(curl -s -w '\n%{http_code}' --max-time 300 \
+  response=$(curl -s -w '\n%{http_code}' --max-time 1800 \
     -H "Content-Type: application/json" \
     -d "$json_payload" \
     "http://127.0.0.1:$PORT/v1/chat/completions" 2>/dev/null)
