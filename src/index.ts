@@ -7,7 +7,6 @@ import chalk from "chalk";
 import { createInterface, Interface } from "readline";
 import { query, type SDKMessage } from "./QueryEngine.js";
 import { appStore } from "./state/AppState.js";
-import { resolveModel } from "./services/api.js";
 
 const VERSION = "2.0.0";
 
@@ -101,7 +100,7 @@ async function startREPL(): Promise<void> {
     try {
       for await (const msg of query({
         prompt: input,
-        options: { cwd: process.cwd(), model: resolveModel() },
+        options: { cwd: process.cwd(), model: process.env.PILOT_MODEL },
       })) {
         handleSDKMessage(msg);
       }
@@ -117,7 +116,7 @@ async function startREPL(): Promise<void> {
 async function runSingle(prompt: string): Promise<void> {
   for await (const msg of query({
     prompt,
-    options: { cwd: process.cwd(), model: resolveModel() },
+    options: { cwd: process.cwd(), model: process.env.PILOT_MODEL },
   })) {
     handleSDKMessage(msg);
   }
@@ -131,7 +130,7 @@ function main(): void {
     .version(VERSION);
 
   program
-    .option("-m, --model <model>", "使用的模型", resolveModel())
+    .option("-m, --model <model>", "指定模型（留空自动路由）")
     .option("-t, --max-tokens <tokens>", "最大输出 Token 数", (v) => parseInt(v, 10), 8192)
     .option("--max-turns <turns>", "最大工具调用轮次", (v) => parseInt(v, 10), 20)
     .option("-w, --work-dir <dir>", "工作目录", process.cwd())
@@ -139,6 +138,7 @@ function main(): void {
 
   program.parse();
   const opts = program.opts();
+  if (opts.model) process.env.PILOT_MODEL = opts.model;
 
   if (!process.env.ANTHROPIC_API_KEY && !process.env.PILOT_MOCK && !process.env.OPENAI_BASE_URL) {
     console.error(chalk.red("错误：请设置 ANTHROPIC_API_KEY、OPENAI_BASE_URL+OPENAI_API_KEY 或 PILOT_MOCK=1"));

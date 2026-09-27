@@ -21,3 +21,6 @@ gpt-visual-platform/server/unity-orchestrator-go
 gpt-visual-platform/data/
 gpt-visual-platform/.venv/
 gpt-visual-platform/dist/
+
+# agent 运行状态
+.wllm/

@@ -12,6 +12,9 @@ import { createClient, streamMessage, type StreamEvent, type ApiClient } from ".
 import { resolveHarness, parseXmlToolCalls, buildXmlToolSection } from "./harness.js";
 import { resolveFallback, streamWithFailover, isInfraError } from "./providers/failover.js";
 import { renderSystemPrompt } from "./prompt.js";
+import { routeTask, formatRouteLog } from "./router.js";
+import { appendFileSync, mkdirSync } from "fs";
+import { join } from "path";
 import { mapWithConcurrency, partitionRuns } from "./tools/parallel.js";
 import { canUseTool, promptUser } from "./services/permissions.js";
 import { hookSystem } from "./hooks/system.js";
@@ -57,6 +60,8 @@ export type QueryEngineConfig = {
   enableTrajectory?: boolean;
   /** 轨迹保存路径 */
   trajectoryPath?: string;
+  /** E9 路由决策的 provider 切换（local/cloud/mock） */
+  routeProvider?: "local" | "cloud" | "mock";
   /** 是否启用缓存 */
   enableCache?: boolean;
   /** 是否启用会话持久化 */
@@ -107,6 +112,14 @@ export async function withTimeout<T>(p: Promise<T>, ms: number, label: string): 
   }
 }
 
+function appendRouteLog(prompt: string, route: ReturnType<typeof routeTask>, cwd: string): void {
+  try {
+    const dir = join(cwd, ".wllm");
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(join(dir, "route.log"), formatRouteLog({ ...route, prompt }) + "\n");
+  } catch { /* routelog 失败不影响主流程 */ }
+}
+
 export class QueryEngine {
   private config: QueryEngineConfig;
   private tools: Tool[];
@@ -130,7 +143,13 @@ export class QueryEngine {
   constructor(config: QueryEngineConfig) {
     this.config = config;
     this.tools = [...getDefaultTools(), ...resolveExtraTools()];
-    this.client = createClient();
+    if (config.routeProvider === "mock") {
+      this.client = { type: "mock" };
+    } else if (config.routeProvider === "cloud" && process.env.ANTHROPIC_API_KEY) {
+      this.client = { type: "anthropic", anthropic: new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) };
+    } else {
+      this.client = createClient();
+    }
     const fbKind = resolveFallback();
     if (fbKind && fbKind !== (this.client.type as string)) {
       this.fallbackLabel = fbKind;
@@ -636,12 +655,20 @@ export async function* query(params: {
   prompt: string;
   options?: Partial<QueryEngineConfig>;
 }): AsyncGenerator<SDKMessage, void, unknown> {
+  const route = routeTask({
+    prompt: params.prompt,
+    model: params.options?.model,
+    env: process.env,
+  });
+  appendRouteLog(params.prompt, route, process.cwd());
+
   const engine = new QueryEngine({
     cwd: process.cwd(),
-    model: DEFAULT_MODEL,
     maxTokens: 8192,
     maxTurns: 20,
     ...params.options,
+    model: route.model,
+    routeProvider: route.provider,
   });
 
   yield* engine.submitMessage(params.prompt);
