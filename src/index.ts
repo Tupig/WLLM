@@ -4,6 +4,8 @@
  */
 import { Command } from "commander";
 import chalk from "chalk";
+import { parseOptimizeCommand, optimizePrompt, needsClarification, appendPromptStyle } from "./promptOptimize.js";
+import { join } from "path";
 import { createInterface, Interface } from "readline";
 import { query, type SDKMessage } from "./QueryEngine.js";
 import { appStore } from "./state/AppState.js";
@@ -97,9 +99,44 @@ async function startREPL(): Promise<void> {
       return;
     }
 
+    const styleDir = join(process.cwd(), ".wllm", "memory");
+    let finalInput: string | undefined;
+    const optCmd = parseOptimizeCommand(input);
+    if (optCmd !== null) {
+      if (!optCmd) {
+        console.log(chalk.gray("用法：/optimize <你的指令>  —— 补全结构后回填输入框，可编辑再发送\n"));
+        rl.prompt();
+        return;
+      }
+      if (needsClarification(optCmd)) {
+        console.log(chalk.gray("提示：信息较模糊，建议补充目标/约束/验收；已自动补最小结构。"));
+      }
+      const optimized = optimizePrompt(optCmd);
+      if (optimized === optCmd) {
+        console.log(chalk.gray("已足够结构化，直接发送。\n"));
+      } else {
+        console.log(chalk.cyan("\n--- 优化预览（已回填，可编辑后回车；清空=放弃） ---"));
+        console.log(optimized);
+        console.log(chalk.cyan("------------------------------------------------\n"));
+        appendPromptStyle(styleDir, { action: "accept", prompt: optCmd, reason: "用户触发 /optimize" });
+        rl.pause();
+        rl.write(null, { ctrl: true, name: "u" } as any);
+        rl.write(optimized);
+        rl.resume();
+        return;
+      }
+    } else if (process.env.PILOT_PROMPT_OPT === "1" && needsClarification(input)) {
+      const auto = optimizePrompt(input);
+      if (auto !== input) {
+        console.log(chalk.gray("[auto-optimize] 已自动补结构（PILOT_PROMPT_OPT=1）"));
+        appendPromptStyle(styleDir, { action: "accept", prompt: input, reason: "auto 模式" });
+        finalInput = auto;
+      }
+    }
+
     try {
       for await (const msg of query({
-        prompt: input,
+        prompt: finalInput ?? input,
         options: { cwd: process.cwd(), model: process.env.PILOT_MODEL },
       })) {
         handleSDKMessage(msg);
