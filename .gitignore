@@ -1,20 +1,23 @@
-# 运行时（体积大/可再生）
+# 运行时/产物
+node_modules/
+dist/
 venv/
 models/
 logs/
 state/
-node_modules/
-dist/
-
-# 系统/备份/本地状态
-.DS_Store
-*.bak
-.reasonix/
-
-# Python
 __pycache__/
 *.pyc
 
-# 本地密钥与临时
+# 系统/备份/本地状态/密钥
+.DS_Store
+*.bak
+.reasonix/
 .env
 *.local
+
+# gpt-visual-platform 构建产物
+gpt-visual-platform/target/
+gpt-visual-platform/server/unity-orchestrator-go
+gpt-visual-platform/data/
+gpt-visual-platform/.venv/
+gpt-visual-platform/dist/

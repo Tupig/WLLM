@@ -1,0 +1,567 @@
+/**
+ * QueryEngine.ts — 核心 Agent 循环
+ * 对齐 Claude Code 的 AsyncGenerator 流式架构
+ */
+import Anthropic from "@anthropic-ai/sdk";
+import chalk from "chalk";
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import type { Tool, ToolUseContext, CanUseToolFn } from "./Tool.js";
+import { getDefaultTools, getToolByName } from "./tools.js";
+import { createClient, streamMessage, type StreamEvent, type ApiClient } from "./services/api.js";
+import { canUseTool, promptUser } from "./services/permissions.js";
+import { hookSystem } from "./hooks/system.js";
+import { ContextCompactor } from "./compact/index.js";
+import { appStore } from "./state/AppState.js";
+import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL } from "./constants.js";
+import { loadProjectRules, formatRulesForPrompt, type ProjectRules } from "./rules/index.js";
+import { createToolState, recordToolExecution, formatToolStateForPrompt, type ToolExecutionState } from "./tools/state.js";
+import { ModeManager, type AgentMode } from "./modes/index.js";
+import { createTrajectoryRecorder, type TrajectoryRecorder } from "./trajectory/index.js";
+import { getConfig, type PilotConfig } from "./config/index.js";
+import { ToolCache, isCacheable, createDefaultCache } from "./cache/index.js";
+import {
+  saveSession, loadSession, createSessionState,
+  generateSessionId, type SessionState,
+} from "./session/index.js";
+import { categorizeError, getRecoverySuggestions, withRetry, isRetryable } from "./errors/index.js";
+import { TokenBudgetManager, createDefaultBudgetManager } from "./budget/index.js";
+
+export type SDKMessage =
+  | { type: "assistant"; message: { content: Array<{ type: string; [key: string]: unknown }> } }
+  | { type: "tool_use"; toolName: string; input: Record<string, unknown>; toolUseId: string }
+  | { type: "tool_result"; toolUseId: string; content: string; isError: boolean }
+  | { type: "result"; subtype: "success" | "error"; result: string; cost_usd?: number; duration_ms?: number; num_turns?: number }
+  | { type: "system"; subtype: "init"; model: string; tools: string[] }
+  | { type: "text"; text: string };
+
+export type QueryEngineConfig = {
+  cwd: string;
+  model: string;
+  maxTokens: number;
+  maxTurns: number;
+  permissionMode?: "plan" | "default" | "acceptEdits" | "bypassPermissions";
+  allowedTools?: string[];
+  disallowedTools?: string[];
+  customSystemPrompt?: string;
+  appendSystemPrompt?: string;
+  fallbackModel?: string;
+  verbose?: boolean;
+  /** 初始模式：plan 或 act */
+  initialMode?: AgentMode;
+  /** 是否启用轨迹记录 */
+  enableTrajectory?: boolean;
+  /** 轨迹保存路径 */
+  trajectoryPath?: string;
+  /** 是否启用缓存 */
+  enableCache?: boolean;
+  /** 是否启用会话持久化 */
+  enableSession?: boolean;
+  /** 会话 ID（用于恢复） */
+  sessionId?: string;
+  /** 预算限制 */
+  budget?: {
+    maxCostPerSession?: number;
+    maxTokensPerRequest?: number;
+  };
+};
+
+type LoopState = {
+  messages: Anthropic.MessageParam[];
+  turnCount: number;
+  compacted: boolean;
+  maxOutputTokensOverride: number;
+  hasAttemptedReactiveCompact: boolean;
+};
+
+const MAX_OUTPUT_TOKEN_ESCALATION = [8192, 16384, 32768, 65536];
+
+export class QueryEngine {
+  private config: QueryEngineConfig;
+  private tools: Tool[];
+  private client: ApiClient;
+  private compactor: ContextCompactor;
+  private abortController: AbortController;
+  private readFileState: Map<string, { mtime: number }> = new Map();
+  private currentMessages: Anthropic.MessageParam[] = [];
+  private toolState: ToolExecutionState;
+  private projectRules: ProjectRules | null = null;
+  private streaming = false;
+  private modeManager: ModeManager;
+  private trajectory: TrajectoryRecorder | null = null;
+  private cache: ToolCache;
+  private sessionState: SessionState | null = null;
+  private budgetManager: TokenBudgetManager;
+
+  constructor(config: QueryEngineConfig) {
+    this.config = config;
+    this.tools = getDefaultTools();
+    this.client = createClient();
+    this.compactor = new ContextCompactor();
+    this.abortController = new AbortController();
+    this.toolState = createToolState(config.cwd);
+    this.modeManager = new ModeManager(config.initialMode ?? "act");
+    this.cache = createDefaultCache();
+    this.budgetManager = createDefaultBudgetManager(config.model);
+
+    // 加载或创建会话
+    if (config.sessionId) {
+      this.sessionState = loadSession(config.cwd, config.sessionId);
+      if (this.sessionState && config.verbose) {
+        console.log(`\n已恢复会话：${config.sessionId}`);
+      }
+    }
+
+    if (!this.sessionState) {
+      this.sessionState = createSessionState(
+        config.sessionId ?? generateSessionId(),
+        config.model,
+        config.cwd,
+      );
+    }
+
+    // 初始化轨迹记录器
+    if (config.enableTrajectory) {
+      this.trajectory = createTrajectoryRecorder(
+        this.sessionState.sessionId,
+        config.model,
+        config.cwd,
+        { enabled: true, savePath: config.trajectoryPath },
+      );
+    }
+
+    // 加载项目规则文件
+    this.projectRules = loadProjectRules(config.cwd);
+    if (this.projectRules && config.verbose) {
+      console.log(`\n已加载项目规则：${this.projectRules.source}`);
+    }
+
+    if (this.client.type === "mock") {
+      appStore.setState((s) => ({
+        ...s,
+        toolPermissionContext: { ...s.toolPermissionContext, mode: "bypassPermissions" },
+      }));
+    }
+  }
+
+  async *submitMessage(prompt: string): AsyncGenerator<SDKMessage, void, unknown> {
+    // 记录用户消息
+    this.trajectory?.recordUserMessage(prompt);
+
+    // 检查模式切换命令
+    if (prompt === "/plan") {
+      this.modeManager.enterPlan("用户切换到 Plan 模式");
+      yield {
+        type: "text",
+        text: "已切换到 Plan 模式（只读）",
+      };
+      return;
+    }
+    if (prompt === "/act") {
+      this.modeManager.enterAct("用户切换到 Act 模式");
+      yield {
+        type: "text",
+        text: "已切换到 Act 模式（完整执行）",
+      };
+      return;
+    }
+
+    // 根据模式过滤工具
+    const activeTools = this.modeManager.filterTools(this.tools);
+
+    yield {
+      type: "system",
+      subtype: "init",
+      model: this.config.model,
+      tools: activeTools.map((t) => t.name),
+    };
+
+    const toolContext = this.buildToolContext();
+    const canUseToolFn = this.buildCanUseToolFn();
+
+    const loopState: LoopState = {
+      messages: [{ role: "user", content: prompt }],
+      turnCount: 0,
+      compacted: false,
+      maxOutputTokensOverride: this.config.maxTokens,
+      hasAttemptedReactiveCompact: false,
+    };
+    this.currentMessages = loopState.messages;
+
+    let hitMaxTurns = false;
+    for (let turn = 0; turn < this.config.maxTurns; turn++) {
+      if (this.abortController.signal.aborted) break;
+      loopState.turnCount = turn + 1;
+
+      const estimatedTokens = this.estimateTokens(loopState.messages);
+      if (this.compactor.shouldCompact(loopState.messages, estimatedTokens, MAX_CONTEXT_TOKENS)) {
+        if (!loopState.hasAttemptedReactiveCompact) {
+          const result = await this.compactor.compact(this.client, this.config.model, loopState.messages);
+          loopState.messages = result.messages;
+          loopState.compacted = true;
+          loopState.hasAttemptedReactiveCompact = true;
+          appStore.setState((s) => ({ ...s, compactionCount: s.compactionCount + 1 }));
+        }
+      }
+
+      const turnResult = await this.executeTurn(loopState, toolContext, canUseToolFn);
+
+      for (const event of turnResult.events) {
+        yield event;
+      }
+
+      if (turnResult.stopReason === "end_turn" || turnResult.stopReason === "stop" || !turnResult.stopReason) {
+        break;
+      }
+
+      if (turnResult.stopReason === "tool_use" && turnResult.toolResults.length > 0) {
+        loopState.messages.push({
+          role: "user",
+          content: turnResult.toolResults.map((r) => ({
+            type: "tool_result" as const,
+            tool_use_id: r.tool_use_id,
+            content: r.content,
+            is_error: r.is_error,
+          })),
+        });
+      } else {
+        break;
+      }
+
+      if (turn + 1 >= this.config.maxTurns) hitMaxTurns = true;
+    }
+
+    if (hitMaxTurns) {
+      const errorMsg = `已达到最大轮次限制（${this.config.maxTurns} 轮），任务可能未完成`;
+      this.trajectory?.recordError(errorMsg);
+      yield {
+        type: "result",
+        subtype: "error",
+        result: errorMsg,
+        num_turns: loopState.turnCount,
+      };
+    } else {
+      yield {
+        type: "result",
+        subtype: "success",
+        result: "任务已完成",
+        num_turns: loopState.turnCount,
+      };
+    }
+
+    // 保存轨迹
+    this.trajectory?.finish();
+    const trajectoryPath = this.trajectory?.save();
+    if (trajectoryPath && this.config.verbose) {
+      console.log(chalk.gray(`\n轨迹已保存：${trajectoryPath}`));
+    }
+  }
+
+  private async executeTurn(
+    loopState: LoopState,
+    toolContext: ToolUseContext,
+    canUseToolFn: CanUseToolFn,
+  ): Promise<{
+    stopReason: string | null;
+    toolResults: Array<{ tool_use_id: string; content: string; is_error?: boolean }>;
+    events: SDKMessage[];
+  }> {
+    const events: SDKMessage[] = [];
+    const toolDefs: Anthropic.Tool[] = this.tools.map((t) => {
+      const raw = zodToJsonSchema(t.inputSchema);
+      // 清理 zod-to-json-schema 添加的多余字段
+      const { $schema, additionalProperties, ...schema } = raw as any;
+      return {
+        name: t.name,
+        description: t.description(t as any),
+        input_schema: schema as Anthropic.Tool["input_schema"],
+      };
+    });
+
+    const toolBuffers = new Map<string, { id: string; name: string; inputJson: string }>();
+    const toolResults: Array<{ tool_use_id: string; content: string; is_error?: boolean }> = [];
+    let fullText = "";
+    let stopReason: string | null = null;
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    for (let attempt = 0; attempt < MAX_OUTPUT_TOKEN_ESCALATION.length; attempt++) {
+      toolBuffers.clear();
+      fullText = "";
+      stopReason = null;
+
+      try {
+        for await (const event of streamMessage(
+          this.client, this.config.model, loopState.maxOutputTokensOverride,
+          this.buildSystemPrompt(), loopState.messages, toolDefs,
+        )) {
+          switch (event.type) {
+            case "text_delta":
+              process.stdout.write(event.text);
+              fullText += event.text;
+              break;
+            case "tool_use_start":
+              toolBuffers.set(event.id, { id: event.id, name: event.name, inputJson: "" });
+              process.stdout.write(chalk.yellow(`\n🔧 ${event.name} `));
+              break;
+            case "tool_use_delta": {
+              const buf = toolBuffers.get(event.id);
+              if (buf) buf.inputJson += event.inputJsonDelta;
+              break;
+            }
+            case "tool_use_stop": break;
+            case "message_delta":
+              stopReason = event.stopReason;
+              inputTokens += (event.usage as any)?.input_tokens || 0;
+              outputTokens += event.usage?.output_tokens || 0;
+              break;
+            case "message_stop": break;
+          }
+        }
+        break;
+      } catch (err: any) {
+        if (err?.message?.includes("max_tokens") && attempt < MAX_OUTPUT_TOKEN_ESCALATION.length - 1) {
+          loopState.maxOutputTokensOverride = MAX_OUTPUT_TOKEN_ESCALATION[attempt + 1];
+          process.stdout.write(chalk.yellow(`\n⚠️  输出 Token 超限，正在以 ${loopState.maxOutputTokensOverride} 重试...\n`));
+          continue;
+        }
+
+        process.stdout.write(chalk.red(`\n❌ API 错误：${err?.message || err}\n`));
+        return {
+          stopReason: "error", toolResults: [],
+          events: [...events, { type: "result", subtype: "error", result: String(err) }],
+        };
+      }
+    }
+
+    if (toolBuffers.size > 0) {
+      const content: Anthropic.ContentBlockParam[] = [];
+      if (fullText) content.push({ type: "text", text: fullText });
+      for (const [, buf] of toolBuffers) {
+        let input: Record<string, unknown> = {};
+        try { input = JSON.parse(buf.inputJson || "{}"); } catch {
+          toolResults.push({
+            tool_use_id: buf.id,
+            content: `错误：工具输入 JSON 解析失败，请检查参数格式`,
+            is_error: true,
+          });
+          events.push({
+            type: "tool_result", toolUseId: buf.id,
+            content: `错误：工具输入 JSON 解析失败，请检查参数格式`, isError: true,
+          });
+          continue;
+        }
+        content.push({ type: "tool_use", id: buf.id, name: buf.name, input });
+        events.push({ type: "tool_use", toolName: buf.name, input, toolUseId: buf.id });
+      }
+      loopState.messages.push({ role: "assistant", content });
+
+      for (const [, buf] of toolBuffers) {
+        let input: Record<string, unknown> = {};
+        try { input = JSON.parse(buf.inputJson || "{}"); } catch {
+          continue;
+        }
+
+        const tool = getToolByName(this.tools, buf.name);
+        const permission = await canUseToolFn(buf.name, input);
+
+        if (permission.behavior === "deny") {
+          const msg = permission.message || "已拒绝";
+          process.stdout.write(chalk.red(`\n🚫 ${msg}\n`));
+          toolResults.push({ tool_use_id: buf.id, content: msg, is_error: true });
+          events.push({ type: "tool_result", toolUseId: buf.id, content: msg, isError: true });
+          continue;
+        }
+
+        if (permission.behavior === "ask") {
+          const confirmed = await promptUser(buf.name, input);
+          if (!confirmed) {
+            toolResults.push({ tool_use_id: buf.id, content: "用户已拒绝", is_error: true });
+            events.push({ type: "tool_result", toolUseId: buf.id, content: "用户已拒绝", isError: true });
+            continue;
+          }
+        }
+
+        const hookResult = await hookSystem.trigger("PreToolUse", {
+          toolName: buf.name, input,
+          turnNumber: loopState.turnCount,
+          sessionId: appStore.getState().sessionId,
+        });
+
+        if (hookResult.block) {
+          const msg = hookResult.message || "已被 Hook 阻断";
+          process.stdout.write(chalk.red(`\n🚫 ${msg}\n`));
+          toolResults.push({ tool_use_id: buf.id, content: msg, is_error: true });
+          events.push({ type: "tool_result", toolUseId: buf.id, content: msg, isError: true });
+          continue;
+        }
+
+        if (tool) {
+          const parsed = tool.inputSchema.safeParse(input);
+          if (!parsed.success) {
+            const errMsg = `输入校验失败：${parsed.error.errors.map((e: any) => e.message).join(", ")}`;
+            process.stdout.write(chalk.red(`\n❌ ${errMsg}\n`));
+            toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
+            events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
+            continue;
+          }
+
+          // 流式锁：防止并发工具执行
+          if (this.streaming) {
+            toolResults.push({ tool_use_id: buf.id, content: "错误：另一个工具正在执行中", is_error: true });
+            continue;
+          }
+          this.streaming = true;
+
+          // 记录工具调用
+          this.trajectory?.recordToolUse(buf.name, input, buf.id);
+          const toolStartTime = Date.now();
+
+          process.stdout.write(chalk.gray("⏳ "));
+          let result;
+          try {
+            result = await tool.call(parsed.data, toolContext, canUseToolFn);
+          } finally {
+            this.streaming = false;
+          }
+
+          // 记录工具执行状态
+          const filePath = (input as any).file_path || (input as any).path;
+          const operation = buf.name === "Write" ? "write" : buf.name === "Edit" ? "edit" : undefined;
+          recordToolExecution(this.toolState, buf.name, filePath, operation);
+
+          const resultStr = result.resultForAssistant || JSON.stringify(result.data);
+          toolResults.push({ tool_use_id: buf.id, content: resultStr, is_error: false });
+          events.push({ type: "tool_result", toolUseId: buf.id, content: resultStr, isError: false });
+
+          // 记录工具结果
+          const toolDuration = Date.now() - toolStartTime;
+          this.trajectory?.recordToolResult(buf.id, resultStr, false, toolDuration);
+
+          process.stdout.write(chalk.green(`✅（${resultStr.length} 字符）\n`));
+
+          await hookSystem.trigger("PostToolUse", {
+            toolName: buf.name, input, output: resultStr,
+            turnNumber: loopState.turnCount,
+            sessionId: appStore.getState().sessionId,
+          });
+        } else {
+          const errMsg = `未知工具：${buf.name}`;
+          toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
+          events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
+        }
+      }
+
+      stopReason = "tool_use";
+    } else {
+      loopState.messages.push({ role: "assistant", content: fullText });
+    }
+
+    this.currentMessages = loopState.messages;
+    appStore.setState((s) => ({
+      ...s,
+      tokenUsage: {
+        input: s.tokenUsage.input + inputTokens,
+        output: s.tokenUsage.output + outputTokens,
+      },
+    }));
+
+    process.stdout.write("\n");
+    return { stopReason, toolResults, events };
+  }
+
+  private buildToolContext(): ToolUseContext {
+    return {
+      options: {
+        debug: this.config.verbose || false,
+        mainLoopModel: this.config.model,
+        tools: this.tools,
+        verbose: this.config.verbose || false,
+        isNonInteractiveSession: false,
+      },
+      abortController: this.abortController,
+      readFileState: this.readFileState,
+      getMessages: () => this.currentMessages as any,
+      workDir: this.config.cwd,
+      sessionId: appStore.getState().sessionId,
+    };
+  }
+
+  private buildCanUseToolFn(): CanUseToolFn {
+    return async (toolName, input) => {
+      const tool = getToolByName(this.tools, toolName);
+      const state = appStore.getState();
+      return canUseTool(toolName, input, tool, state.toolPermissionContext);
+    };
+  }
+
+  private buildSystemPrompt(): string {
+    const base = `你是一个运行在用户终端中的 AI 编程助手。你可以读写文件、执行命令、搜索代码来帮助完成编程任务。
+
+## 工具
+- Read：读取文件内容（支持 offset/limit 读取大文件）
+- Write：创建/覆盖文件（自动创建父目录）
+- Edit：精确文本替换（old_string 必须精确匹配）
+- Glob：按模式查找文件
+- Grep：使用正则表达式搜索文件内容
+- Bash：执行 Shell 命令
+
+## 原则
+1. 先理解意图再行动；不确定时先询问
+2. 修改文件前先读取
+3. 使用项目现有的库和代码风格
+4. 不添加不必要的注释
+5. 遵循安全最佳实践
+6. 破坏性命令前先确认
+7. 用用户的语言回复`;
+
+    let prompt = base;
+
+    // 注入项目规则
+    if (this.projectRules) {
+      prompt += formatRulesForPrompt(this.projectRules);
+    }
+
+    // 注入工具状态
+    const stateText = formatToolStateForPrompt(this.toolState);
+    if (stateText) {
+      prompt += `\n\n## 当前状态\n${stateText}`;
+    }
+
+    if (this.config.appendSystemPrompt) {
+      prompt += "\n\n" + this.config.appendSystemPrompt;
+    }
+    return prompt;
+  }
+
+  private estimateTokens(messages: Anthropic.MessageParam[]): number {
+    try {
+      return Math.ceil(JSON.stringify(messages).length / 4);
+    } catch {
+      return 0;
+    }
+  }
+
+  interrupt(): void {
+    this.abortController.abort();
+  }
+
+  getTools(): Tool[] {
+    return this.tools;
+  }
+}
+
+export async function* query(params: {
+  prompt: string;
+  options?: Partial<QueryEngineConfig>;
+}): AsyncGenerator<SDKMessage, void, unknown> {
+  const engine = new QueryEngine({
+    cwd: process.cwd(),
+    model: DEFAULT_MODEL,
+    maxTokens: 8192,
+    maxTurns: 20,
+    ...params.options,
+  });
+
+  yield* engine.submitMessage(params.prompt);
+}
