@@ -19,10 +19,10 @@ MODELS="${MLX_MODELS:-$MLX_HOME/models}"
 STATE="${MLX_STATE:-$MLX_HOME/state}"
 mkdir -p "$LOGS" "$STATE"
 
-# 端口配置
-UNIFIED_PORT="${MLX_UNIFIED_PORT:-4100}"
-SERVER_PORT="${MLX_SERVER_PORT:-8080}"
-DEFAULT_KEY="${MLX_DEFAULT_MODEL:-14b}"
+# 端口配置（跨脚本使用，需 export）
+export UNIFIED_PORT="${MLX_UNIFIED_PORT:-4100}"
+export SERVER_PORT="${MLX_SERVER_PORT:-8080}"
+export DEFAULT_KEY="${MLX_DEFAULT_MODEL:-14b}"
 
 # ------------------------------------------------------------------ 日志函数
 
@@ -62,6 +62,7 @@ wait_port() {
     sleep 1
     i=$((i + 1))
   done
+  printf '[mlx] 等待 %s(port %s) 超时(%ss)\n' "$label" "$port" "$timeout_sec" >&2
   return 1
 }
 

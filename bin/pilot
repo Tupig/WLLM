@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# ==============================================================================
+#  pilot —— 本地 Qwen（MLX）驱动的 coding agent 入口
+#
+#  未配置云端凭据时默认走本地统一代理 (:4100)；已配置 OPENAI_BASE_URL/
+#  ANTHROPIC_API_KEY 则尊重调用方环境。服务未运行时自动拉起。
+# ==============================================================================
+set -uo pipefail
+
+NAME="pilot"
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done     # 解析软链接
+ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
+MLX_HOME="$ROOT/mlx"
+PORT=4100
+
+info() { printf '[%s] %s\n' "$NAME" "$*" >&2; }
+die()  { printf '[%s] 错误: %s\n' "$NAME" "$*" >&2; exit 1; }
+
+[ -f "$MLX_HOME/mlx-local.sh" ] || die "未找到 $MLX_HOME/mlx-local.sh"
+
+# 无任何显式凭据时，指向本地代理
+if [ -z "${OPENAI_BASE_URL:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+  if ! lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    info "本地服务未运行，正在启动（首次约 30 秒）…"
+    "$MLX_HOME/mlx-local.sh" start >&2 || die "服务启动失败"
+    for _ in $(seq 1 60); do
+      lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1 && break
+      sleep 1
+    done
+    lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1 \
+      || die "等待 :$PORT 就绪超时，可用 mlx-local doctor 排查"
+  fi
+  export OPENAI_BASE_URL="http://127.0.0.1:$PORT/v1"
+  export OPENAI_API_KEY="${OPENAI_API_KEY:-mlx-local}"
+fi
+
+ENTRY="$ROOT/dist/index.js"
+if [ ! -f "$ENTRY" ]; then
+  info "dist/ 不存在，先构建…"
+  (cd "$ROOT" && npm run --silent build) || die "构建失败"
+fi
+
+exec node "$ENTRY" "$@"

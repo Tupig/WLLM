@@ -39,7 +39,7 @@ cmd_metrics() {
     fi
 
     # 获取系统内存使用
-    local mem_used mem_total mem_pct
+    local mem_used mem_total
     if command -v vm_stat >/dev/null 2>&1; then
       # macOS
       mem_total=$(sysctl -n hw.memsize 2>/dev/null | awk '{printf "%.1f", $1/1024/1024/1024}')
