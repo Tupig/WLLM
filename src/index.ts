@@ -7,7 +7,7 @@ import chalk from "chalk";
 import { createInterface, Interface } from "readline";
 import { query, type SDKMessage } from "./QueryEngine.js";
 import { appStore } from "./state/AppState.js";
-import { DEFAULT_MODEL } from "./constants.js";
+import { resolveModel } from "./services/api.js";
 
 const VERSION = "2.0.0";
 
@@ -101,7 +101,7 @@ async function startREPL(): Promise<void> {
     try {
       for await (const msg of query({
         prompt: input,
-        options: { cwd: process.cwd(), model: process.env.PILOT_MODEL || DEFAULT_MODEL },
+        options: { cwd: process.cwd(), model: resolveModel() },
       })) {
         handleSDKMessage(msg);
       }
@@ -117,7 +117,7 @@ async function startREPL(): Promise<void> {
 async function runSingle(prompt: string): Promise<void> {
   for await (const msg of query({
     prompt,
-    options: { cwd: process.cwd(), model: process.env.PILOT_MODEL || DEFAULT_MODEL },
+    options: { cwd: process.cwd(), model: resolveModel() },
   })) {
     handleSDKMessage(msg);
   }
@@ -131,7 +131,7 @@ function main(): void {
     .version(VERSION);
 
   program
-    .option("-m, --model <model>", "使用的模型", process.env.PILOT_MODEL || DEFAULT_MODEL)
+    .option("-m, --model <model>", "使用的模型", resolveModel())
     .option("-t, --max-tokens <tokens>", "最大输出 Token 数", (v) => parseInt(v, 10), 8192)
     .option("--max-turns <turns>", "最大工具调用轮次", (v) => parseInt(v, 10), 20)
     .option("-w, --work-dir <dir>", "工作目录", process.cwd())

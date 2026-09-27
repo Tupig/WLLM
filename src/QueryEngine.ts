@@ -13,7 +13,7 @@ import { canUseTool, promptUser } from "./services/permissions.js";
 import { hookSystem } from "./hooks/system.js";
 import { ContextCompactor } from "./compact/index.js";
 import { appStore } from "./state/AppState.js";
-import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL } from "./constants.js";
+import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS } from "./constants.js";
 import { loadProjectRules, formatRulesForPrompt, type ProjectRules } from "./rules/index.js";
 import { createToolState, recordToolExecution, formatToolStateForPrompt, type ToolExecutionState } from "./tools/state.js";
 import { ModeManager, type AgentMode } from "./modes/index.js";
@@ -76,6 +76,33 @@ type LoopState = {
 
 const MAX_OUTPUT_TOKEN_ESCALATION = [8192, 16384, 32768, 65536];
 
+export function createDoomDetector(threshold = 3) {
+  let lastSig = "";
+  let count = 0;
+  return {
+    feed(sig: string): boolean {
+      if (sig === lastSig) count++;
+      else { lastSig = sig; count = 1; }
+      return count >= threshold;
+    },
+    reset() { lastSig = ""; count = 0; },
+  };
+}
+
+export async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      p,
+      new Promise<never>((_, rej) => {
+        timer = setTimeout(() => rej(new Error(`${label} 执行超时（${ms}ms）`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export class QueryEngine {
   private config: QueryEngineConfig;
   private tools: Tool[];
@@ -92,6 +119,7 @@ export class QueryEngine {
   private cache: ToolCache;
   private sessionState: SessionState | null = null;
   private budgetManager: TokenBudgetManager;
+  private doomDetector = createDoomDetector(3);
 
   constructor(config: QueryEngineConfig) {
     this.config = config;
@@ -413,6 +441,17 @@ export class QueryEngine {
           }
           this.streaming = true;
 
+          const doomSig = JSON.stringify({ name: buf.name, input });
+          if (this.doomDetector.feed(doomSig)) {
+            this.streaming = false;
+            const errMsg = "检测到连续重复动作（doom loop），已中断。请换一种方式完成任务。";
+            process.stdout.write(chalk.red(`\n🛑 ${errMsg}\n`));
+            toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
+            events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
+            this.trajectory?.recordError(errMsg);
+            continue;
+          }
+
           // 记录工具调用
           this.trajectory?.recordToolUse(buf.name, input, buf.id);
           const toolStartTime = Date.now();
@@ -420,7 +459,17 @@ export class QueryEngine {
           process.stdout.write(chalk.gray("⏳ "));
           let result;
           try {
-            result = await tool.call(parsed.data, toolContext, canUseToolFn);
+            result = await withTimeout(
+              tool.call(parsed.data, toolContext, canUseToolFn),
+              TOOL_TIMEOUT_MS, `工具 ${buf.name}`,
+            );
+          } catch (e) {
+            const errMsg = e instanceof Error ? e.message : String(e);
+            process.stdout.write(chalk.red(`\n❌ ${errMsg}\n`));
+            toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
+            events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
+            this.trajectory?.recordError(errMsg);
+            continue;
           } finally {
             this.streaming = false;
           }

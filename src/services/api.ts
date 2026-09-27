@@ -3,7 +3,7 @@
  * 支持三种模式：Anthropic / OpenAI 兼容 / Mock
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { MAX_RETRIES, API_FETCH_TIMEOUT_MS } from "../constants.js";
+import { MAX_RETRIES, API_FETCH_TIMEOUT_MS, DEFAULT_MODEL } from "../constants.js";
 
 export type StreamEvent =
   | { type: "text_delta"; text: string }
@@ -48,6 +48,10 @@ export function chatUrl(base: string): string {
   let b = base.replace(/\/+$/, "");
   if (!/\/v\d+$/.test(b) && !/\/v\d+\//.test(b)) b += "/v1";
   return `${b}/chat/completions`;
+}
+
+export function resolveModel(env: NodeJS.ProcessEnv = process.env): string {
+  return env.PILOT_MODEL || DEFAULT_MODEL;
 }
 
 export function createClient(): ApiClient {

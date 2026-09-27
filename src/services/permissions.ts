@@ -102,6 +102,7 @@ export async function canUseTool(
 }
 
 export async function promptUser(toolName: string, input: Record<string, unknown>): Promise<boolean> {
+  if (!process.stdin.isTTY) return false;
   const inputStr = JSON.stringify(input, null, 2);
   const truncated = inputStr.length > 500 ? inputStr.slice(0, 500) + "\n..." : inputStr;
 
