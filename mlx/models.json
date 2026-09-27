@@ -1,0 +1,31 @@
+{
+  "models": {
+    "14b": {
+      "name": "Qwen3-14B-4bit",
+      "huggingface": "mlx-community/Qwen3-14B-4bit",
+      "size": "7.8G",
+      "description": "默认模型，性能均衡"
+    },
+    "8b": {
+      "name": "Qwen3-8B-4bit",
+      "huggingface": "mlx-community/Qwen3-8B-4bit",
+      "size": "4.3G",
+      "description": "轻量快速"
+    },
+    "30b": {
+      "name": "Qwen3-Coder-30B-A3B-Instruct-4bit",
+      "huggingface": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
+      "size": "16G",
+      "description": "代码专精，MoE只激活3B",
+      "requires_high_gpu": true
+    },
+    "qwen-vl-8b": {
+      "name": "Qwen3-VL-8B-Instruct-4bit",
+      "huggingface": "mlx-community/Qwen3-VL-8B-Instruct-4bit",
+      "size": "5.5G",
+      "description": "视觉语言模型，支持图片理解",
+      "multimodal": true,
+      "capabilities": ["vision"]
+    }
+  }
+}

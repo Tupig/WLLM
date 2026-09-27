@@ -1,0 +1,19 @@
+# 运行时（体积大/可再生）
+venv/
+models/
+logs/
+state/
+node_modules/
+dist/
+
+# 系统/备份
+.DS_Store
+*.bak
+
+# Python
+__pycache__/
+*.pyc
+
+# 本地密钥与临时
+.env
+*.local

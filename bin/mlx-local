@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# ==============================================================================
+#  mlx-local —— 入口，转交给 mlx/mlx-local.sh
+#
+#  先解析软链接，这样通过 ~/.local/bin/mlx-local 调用时也能正确定位
+#  （否则 BASH_SOURCE 会是软链接路径，../mlx 会算错）。
+# ==============================================================================
+set -uo pipefail
+
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
+MLX_HOME="$(cd "$(dirname "$SELF")/.." && pwd)/mlx"
+
+[ -f "$MLX_HOME/mlx-local.sh" ] || {
+  printf '[mlx] 错误: 未找到 %s\n' "$MLX_HOME/mlx-local.sh" >&2
+  exit 1
+}
+
+exec "$MLX_HOME/mlx-local.sh" "$@"

@@ -1,0 +1,201 @@
+#!/usr/bin/env bash
+# ==============================================================================
+#  llm —— 统一本地大模型 CLI
+#
+#  用法：
+#    llm                     # 启动交互式对话
+#    llm "你的问题"           # 单次提问
+#    llm start/stop/status   # 服务管理
+#    llm model list          # 模型管理
+#    llm doctor              # 健康检查
+# ==============================================================================
+set -uo pipefail
+
+NAME="llm"
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
+MLX_HOME="$(cd "$(dirname "$SELF")/../mlx" && pwd)"
+PORT="${MLX_UNIFIED_PORT:-4100}"
+
+# 颜色
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+info()  { printf "${BLUE}[%s]${NC} %s\n" "$NAME" "$*"; }
+ok()    { printf "${GREEN}[%s]${NC} %s\n" "$NAME" "$*"; }
+warn()  { printf "${YELLOW}[%s]${NC} %s\n" "$NAME" "$*" >&2; }
+err()   { printf "${RED}[%s]${NC} %s\n" "$NAME" "$*" >&2; exit 1; }
+
+# 确保服务运行
+ensure_running() {
+  if ! lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    info "服务未运行，正在启动..."
+    "$MLX_HOME/mlx-local.sh" start >/dev/null 2>&1 || err "服务启动失败"
+    # 细粒度端口检测：前10次200ms间隔，之后1s间隔
+    for _ in $(seq 1 10); do
+      lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1 && return 0
+      sleep 0.2
+    done
+    for _ in $(seq 1 50); do
+      lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1 && return 0
+      sleep 1
+    done
+    err "等待服务就绪超时"
+  fi
+}
+
+# 对话
+chat() {
+  local prompt="$1"
+  ensure_running
+
+  # 用Python安全构造JSON（消除注入风险）
+  local json_payload
+  json_payload=$(python3 -c "
+import json, sys
+payload = {
+    'model': 'default_model',
+    'messages': [{'role': 'user', 'content': sys.argv[2]}],
+    'max_tokens': 4096
+}
+print(json.dumps(payload))
+" -- "$prompt" 2>/dev/null) || err "构造请求失败"
+
+  local response http_code
+  response=$(curl -s -w '\n%{http_code}' --max-time 300 \
+    -H "Content-Type: application/json" \
+    -d "$json_payload" \
+    "http://127.0.0.1:$PORT/v1/chat/completions" 2>/dev/null)
+
+  http_code=$(echo "$response" | tail -1)
+  response=$(echo "$response" | sed '$d')
+
+  [ -z "$response" ] && err "无响应（服务可能未启动）"
+  [ -z "$http_code" ] && err "无法获取HTTP状态码"
+  [[ ! "$http_code" =~ ^[0-9]+$ ]] && err "HTTP状态码异常: $http_code"
+  [ "$http_code" -ge 400 ] && err "HTTP错误: $http_code"
+
+  # 提取内容
+  echo "$response" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    if 'error' in data:
+        print('错误:', data['error'].get('message', '未知错误'), file=sys.stderr)
+        sys.exit(1)
+    content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+    print(content)
+except Exception as e:
+    print('解析响应失败:', str(e), file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null
+}
+
+# 交互式对话
+interactive() {
+  echo "本地大模型对话（输入 exit 退出）"
+  echo
+
+  while true; do
+    printf "${GREEN}你: ${NC}"
+    read -r input || break
+    [ "$input" = "exit" ] || [ "$input" = "quit" ] && break
+    [ -z "$input" ] && continue
+
+    printf "${BLUE}AI: ${NC}"
+    chat "$input"
+    echo
+  done
+
+  echo "再见！"
+}
+
+# 模型切换
+use_model() {
+  local key="${1:-}"
+  [ -z "$key" ] && err "用法: llm use <模型别名>"
+
+  "$MLX_HOME/mlx-local.sh" use "$key"
+}
+
+# 帮助
+help() {
+  cat <<'EOF'
+用法: llm [命令|问题]
+
+命令:
+  (无参数)              启动交互式对话
+  "你的问题"            单次提问
+  start [模型]          启动服务
+  stop                  停止服务
+  restart [模型]        重启服务
+  status                查看状态
+  doctor                健康检查
+  use [模型]            切换模型
+  model list            列出模型
+  model info 别名       查看模型详情
+  logs [类型]           查看日志 (server/proxy)
+  help                  显示帮助
+
+可用模型:
+  14b          Qwen3-14B-4bit         7.8G   默认
+  8b           Qwen3-8B-4bit          4.3G   轻量快速
+  30b          Qwen3-Coder-30B-A3B    16G    代码专精 (需高GPU上限)
+  qwen-vl-8b   Qwen3-VL-8B            5.5G   视觉语言模型
+
+示例:
+  llm "什么是闭包？"
+  llm use 8b              # 切换到 8B
+  llm use qwen-vl-8b      # 切换到视觉模型
+  llm start 30b           # 启动 30B
+  llm status
+EOF
+}
+
+# 状态
+cmd_status() {
+  "$MLX_HOME/mlx-local.sh" status
+}
+
+# 列出模型
+cmd_model_list() {
+  "$MLX_HOME/mlx-local.sh" model list
+}
+
+# 查看模型详情
+cmd_model_info() {
+  local key="${1:-}"
+  [ -z "$key" ] && err "用法: llm model info <模型别名>"
+  "$MLX_HOME/mlx-local.sh" model info "$key"
+}
+
+# 查看日志
+cmd_logs() {
+  local type="${1:-server}"
+  "$MLX_HOME/mlx-local.sh" logs "$type"
+}
+
+# ------------------------------------------------------------------ 分发
+
+case "${1:-}" in
+  "")           interactive ;;
+  start)        shift; "$MLX_HOME/mlx-local.sh" start "$@" ;;
+  stop)         "$MLX_HOME/mlx-local.sh" stop ;;
+  restart)      "$MLX_HOME/mlx-local.sh" restart ;;
+  status)       cmd_status ;;
+  doctor)       "$MLX_HOME/mlx-local.sh" doctor ;;
+  use)          shift; use_model "$@" ;;
+  model)        shift
+                case "${1:-}" in
+                  list) shift; cmd_model_list ;;
+                  info) shift; cmd_model_info "$@" ;;
+                  *)    "$MLX_HOME/mlx-local.sh" model "$@" ;;
+                esac ;;
+  logs)         shift; cmd_logs "$@" ;;
+  help|-h|--help) help ;;
+  -*)           err "未知选项: $1" ;;
+  *)            chat "$*" ;;
+esac
