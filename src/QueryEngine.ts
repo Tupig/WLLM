@@ -10,6 +10,7 @@ import type { Tool, ToolUseContext, CanUseToolFn } from "./Tool.js";
 import { getDefaultTools, getToolByName } from "./tools.js";
 import { createClient, streamMessage, type StreamEvent, type ApiClient } from "./services/api.js";
 import { resolveHarness, parseXmlToolCalls, buildXmlToolSection } from "./harness.js";
+import { resolveFallback, streamWithFailover, isInfraError } from "./providers/failover.js";
 import { canUseTool, promptUser } from "./services/permissions.js";
 import { hookSystem } from "./hooks/system.js";
 import { ContextCompactor } from "./compact/index.js";
@@ -121,11 +122,21 @@ export class QueryEngine {
   private sessionState: SessionState | null = null;
   private budgetManager: TokenBudgetManager;
   private doomDetector = createDoomDetector(3);
+  private fallbackClient: ApiClient | null = null;
+  private fallbackLabel: string | null = null;
 
   constructor(config: QueryEngineConfig) {
     this.config = config;
     this.tools = getDefaultTools();
     this.client = createClient();
+    const fbKind = resolveFallback();
+    if (fbKind && fbKind !== (this.client.type as string)) {
+      this.fallbackLabel = fbKind;
+      this.fallbackClient =
+        fbKind === "anthropic"
+          ? { type: "anthropic", anthropic: new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! }) }
+          : { type: "openai" };
+    }
     this.compactor = new ContextCompactor();
     this.abortController = new AbortController();
     this.toolState = createToolState(config.cwd);
@@ -320,10 +331,20 @@ export class QueryEngine {
       stopReason = null;
 
       try {
-        for await (const event of streamMessage(
+        const stream = () => streamMessage(
           this.client, this.config.model, loopState.maxOutputTokensOverride,
           this.buildSystemPrompt(toolDefs), loopState.messages, toolDefs,
-        )) {
+        );
+        const fbStream = this.fallbackClient
+          ? () => streamMessage(
+              this.fallbackClient!, this.config.model, loopState.maxOutputTokensOverride,
+              this.buildSystemPrompt(toolDefs), loopState.messages, toolDefs,
+            )
+          : null;
+        for await (const event of streamWithFailover(stream, fbStream, this.fallbackLabel, (l) => {
+          process.stdout.write(chalk.yellow(`\n⚡ 本地推理故障，已回退到 ${l}\n`));
+          this.trajectory?.recordError(`基础设施故障，回退 ${l}`);
+        })) {
           switch (event.type) {
             case "text_delta":
               process.stdout.write(event.text);
