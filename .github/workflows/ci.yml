@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  four-gate:
+    name: 四连门槛 + pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 安装依赖
+        run: npm install
+
+      - name: 类型检查 (tsc --noEmit)
+        run: npx tsc --noEmit
+
+      - name: 单元测试 (vitest)
+        run: npm test
+
+      - name: shellcheck
+        run: shellcheck -x -P mlx -S warning mlx/*.sh bin/llm bin/mlx-local bin/pilot
+
+      - name: bash -n
+        run: |
+          for f in mlx/*.sh bin/llm bin/mlx-local bin/pilot; do
+            bash -n "$f"
+          done
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: mlx 协议测试 (unittest)
+        run: python3 mlx/test_unified_proxy.py
