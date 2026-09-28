@@ -8,6 +8,7 @@ import { buildXmlToolSection, resolveHarness } from "./harness.js";
 export type PromptOptions = {
   rulesText?: string;
   memoryText?: string;
+  skillCatalog?: string;
   stateText?: string;
   append?: string;
 };
@@ -35,6 +36,7 @@ ${toolCatalog(tools)}
 
   if (opts.rulesText) prompt += opts.rulesText;
   if (opts.memoryText) prompt += opts.memoryText;
+  if (opts.skillCatalog) prompt += opts.skillCatalog;
   if (opts.stateText) prompt += `\n\n## 当前状态\n${opts.stateText}`;
 
   if (resolveHarness() === "xml" && tools.length > 0) {

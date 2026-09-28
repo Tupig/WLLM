@@ -10,6 +10,7 @@ import { createInterface, Interface } from "readline";
 import { snapshot, listCheckpoints, rollbackCheckpoint } from "./checkpoint.js";
 import { saveSessionMessages, loadSessionMessages, listSessions, forkMessages } from "./session.js";
 import { stageMemory, commitMemory, loadMemories, formatMemoriesForPrompt } from "./memory.js";
+import { loadSkills, resolveSkill } from "./skills/index.js";
 import { promptUser } from "./services/permissions.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { query, type SDKMessage } from "./QueryEngine.js";
@@ -37,6 +38,8 @@ function printHelp(): void {
   /cost     查看 Token 用量
   /model    查看当前模型
   /checkpoint [new|list|rollback <id>]  会话检查点/回滚
+  /skills  技能目录
+  /skill <name>  加载技能全文
   /remember [内容]  查看/存入记忆（存入需确认）
   /sessions  历史会话列表
   /resume <id>        恢复会话
@@ -109,6 +112,25 @@ async function startREPL(): Promise<void> {
     if (input === "/model") {
       const s = appStore.getState();
       console.log(chalk.gray(`模型：${s.mainLoopModel} | 模式：${s.toolPermissionContext.mode}\n`));
+      rl.prompt();
+      return;
+    }
+    if (input === "/skills") {
+      const skills = loadSkills(appStore.getState().workDir);
+      if (skills.length === 0) console.log(chalk.gray("暂无技能（.wllm/skills/<name>/SKILL.md）。\n"));
+      else {
+        for (const sk of skills) console.log(chalk.gray(`  ${sk.name}  —  ${sk.description}`));
+        console.log(chalk.gray("\n加载：/skill <name>\n"));
+      }
+      rl.prompt();
+      return;
+    }
+    if (input === "/skill" || input.startsWith("/skill ")) {
+      const name = input.split(/\s+/)[1];
+      if (!name) { console.log(chalk.gray("用法：/skill <name>\n")); rl.prompt(); return; }
+      const pkg = resolveSkill(appStore.getState().workDir, name);
+      if (!pkg) { console.log(chalk.red(`技能不存在或被门禁拒绝：${name}\n`)); rl.prompt(); return; }
+      console.log(chalk.cyan(`\n# ${pkg.name} — ${pkg.description}\n`) + pkg.body + "\n");
       rl.prompt();
       return;
     }

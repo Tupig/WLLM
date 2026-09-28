@@ -23,6 +23,7 @@ import { appStore } from "./state/AppState.js";
 import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS } from "./constants.js";
 import { resolveRuleLayers, formatLayersForPrompt, type RuleLayer } from "./rules/index.js";
 import { loadMemoriesSync, formatMemoriesForPrompt, type MemoryEntry } from "./memory.js";
+import { loadSkills, formatSkillCatalog, type SkillMeta } from "./skills/index.js";
 import { createToolState, recordToolExecution, formatToolStateForPrompt, type ToolExecutionState } from "./tools/state.js";
 import { ModeManager, type AgentMode } from "./modes/index.js";
 import { createTrajectoryRecorder, type TrajectoryRecorder } from "./trajectory/index.js";
@@ -135,6 +136,7 @@ export class QueryEngine {
   private toolState: ToolExecutionState;
   private ruleLayers: RuleLayer[] = [];
   private memoryEntries: MemoryEntry[] = [];
+  private skillCatalog: string = "";
   private streaming = false;
   private modeManager: ModeManager;
   private trajectory: TrajectoryRecorder | null = null;
@@ -206,6 +208,7 @@ export class QueryEngine {
     }
     this.ruleLayers = resolveRuleLayers(config.cwd);
     this.memoryEntries = loadMemoriesSync(config.cwd);
+    this.skillCatalog = formatSkillCatalog(loadSkills(config.cwd));
     if (this.ruleLayers.length > 0 && config.verbose) {
       console.log(`\n已加载规则层：${this.ruleLayers.map((l) => l.tier).join(" → ")}`);
     }
@@ -650,6 +653,7 @@ export class QueryEngine {
     return renderSystemPrompt(this.tools, {
       rulesText: this.ruleLayers.length ? formatLayersForPrompt(this.ruleLayers) : undefined,
       memoryText: this.memoryEntries.length ? formatMemoriesForPrompt(this.memoryEntries) : undefined,
+      skillCatalog: this.skillCatalog || undefined,
       stateText: formatToolStateForPrompt(this.toolState) || undefined,
       append: this.config.appendSystemPrompt,
     });
