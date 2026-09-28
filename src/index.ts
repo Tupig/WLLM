@@ -10,7 +10,9 @@ import { createInterface, Interface } from "readline";
 import { query, type SDKMessage } from "./QueryEngine.js";
 import { appStore } from "./state/AppState.js";
 
-const VERSION = "2.0.0";
+import { createRequire } from "module";
+const requirePkg = createRequire(import.meta.url);
+const VERSION: string = (requirePkg("../package.json") as { version: string }).version;
 
 function printBanner(): void {
   console.log(chalk.cyan.bold(`
