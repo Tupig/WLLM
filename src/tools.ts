@@ -25,6 +25,7 @@ import {
 } from "./tools/PackageManager.js";
 import { QuestionTool } from "./tools/Question.js";
 import { TodoWriteTool } from "./tools/todo.js";
+import { AgentTool } from "./tools/Agent.js";
 
 export function getDefaultTools(): Tool[] {
   return [
@@ -33,6 +34,7 @@ export function getDefaultTools(): Tool[] {
     GitStatusTool, GitDiffTool,
     WebSearchTool, QuestionTool,
     TodoWriteTool,
+    AgentTool,
   ];
 }
 

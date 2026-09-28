@@ -30,7 +30,7 @@ export interface ModeConfig {
 export const PLAN_MODE: ModeConfig = {
   name: "plan",
   allowedTools: [],
-  disabledTools: ["Write", "Edit", "Bash", "GitCommit", "GitUndo"],
+  disabledTools: ["Write", "Edit", "Bash", "GitCommit", "GitUndo", "Agent", "Task"],
   permissionMode: "plan",
   description: "只读模式：只能读取文件和搜索代码，不能修改",
 };

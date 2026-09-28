@@ -24,6 +24,8 @@ import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS } from "./constants.
 import { resolveRuleLayers, formatLayersForPrompt, type RuleLayer } from "./rules/index.js";
 import { loadMemoriesSync, formatMemoriesForPrompt, type MemoryEntry } from "./memory.js";
 import { loadSkills, formatSkillCatalog, type SkillMeta } from "./skills/index.js";
+import { loadAgents } from "./subagent/agents.js";
+import { setAgentRegistry } from "./tools/Agent.js";
 import { renderTodoState } from "./tools/todo.js";
 import { createToolState, recordToolExecution, formatToolStateForPrompt, type ToolExecutionState } from "./tools/state.js";
 import { ModeManager, type AgentMode } from "./modes/index.js";
@@ -210,6 +212,7 @@ export class QueryEngine {
     this.ruleLayers = resolveRuleLayers(config.cwd);
     this.memoryEntries = loadMemoriesSync(config.cwd);
     this.skillCatalog = formatSkillCatalog(loadSkills(config.cwd));
+    setAgentRegistry(loadAgents(config.cwd), config.cwd);
     if (this.ruleLayers.length > 0 && config.verbose) {
       console.log(`\n已加载规则层：${this.ruleLayers.map((l) => l.tier).join(" → ")}`);
     }
