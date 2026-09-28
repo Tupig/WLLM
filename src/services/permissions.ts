@@ -4,6 +4,7 @@
 import type { Tool, PermissionResult } from "../Tool.js";
 import type { ToolPermissionContext } from "../state/AppState.js";
 import { classifyBash } from "./bashSafety.js";
+import { resolve } from "path";
 import chalk from "chalk";
 
 function escapeRegExp(s: string): string {
@@ -67,6 +68,11 @@ export async function canUseTool(
   if (mode === "plan") {
     if (tool?.isReadOnly(input)) {
       return { behavior: "allow", decisionReason: "plan 模式：只读工具" };
+    }
+    // 唯一可写面：spec/plan 产物（阶段②落盘），路径逃逸在 resolve 后失效
+    const artifact = String((input as any).file_path ?? (input as any).path ?? "");
+    if (artifact && (toolName === "Write" || toolName === "Edit") && resolve(artifact).includes("/.wllm/specs/")) {
+      return { behavior: "allow", decisionReason: "plan 模式：计划产物可写" };
     }
     return { behavior: "deny", message: "plan 模式下不允许写操作", decisionReason: "plan 模式" };
   }

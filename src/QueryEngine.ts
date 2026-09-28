@@ -25,6 +25,7 @@ import { resolveRuleLayers, formatLayersForPrompt, type RuleLayer } from "./rule
 import { loadMemoriesSync, formatMemoriesForPrompt, type MemoryEntry } from "./memory.js";
 import { loadSkills, formatSkillCatalog, type SkillMeta } from "./skills/index.js";
 import { loadAgents } from "./subagent/agents.js";
+import { listSpecs } from "./spec/index.js";
 import { setAgentRegistry } from "./tools/Agent.js";
 import { renderTodoState } from "./tools/todo.js";
 import { createToolState, recordToolExecution, formatToolStateForPrompt, type ToolExecutionState } from "./tools/state.js";
@@ -654,7 +655,13 @@ export class QueryEngine {
 
   private buildSystemPrompt(toolDefs: Anthropic.Tool[] = []): string {
     void toolDefs;
+    let planSpec: string | undefined;
+    if (this.modeManager.mode === "plan") {
+      const specs = listSpecs(this.config.cwd);
+      planSpec = (specs.find((s) => s.status === "approved") ?? specs[0])?.name;
+    }
     return renderSystemPrompt(this.tools, {
+      planSpec,
       rulesText: this.ruleLayers.length ? formatLayersForPrompt(this.ruleLayers) : undefined,
       memoryText: this.memoryEntries.length ? formatMemoriesForPrompt(this.memoryEntries) : undefined,
       skillCatalog: this.skillCatalog || undefined,

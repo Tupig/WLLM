@@ -11,6 +11,7 @@ import { snapshot, listCheckpoints, rollbackCheckpoint } from "./checkpoint.js";
 import { saveSessionMessages, loadSessionMessages, listSessions, forkMessages } from "./session.js";
 import { stageMemory, commitMemory, loadMemories, formatMemoriesForPrompt } from "./memory.js";
 import { loadSkills, resolveSkill } from "./skills/index.js";
+import { createSpec, listSpecs, loadSpec, buildWaves, parseTasks, approveSpec } from "./spec/index.js";
 import { promptUser } from "./services/permissions.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { query, type SDKMessage } from "./QueryEngine.js";
@@ -41,6 +42,7 @@ function printHelp(): void {
   /skills  技能目录
   /skill <name>  加载技能全文
   /remember [内容]  查看/存入记忆（存入需确认）
+  /spec new|list|show|waves|approve  spec 三件套与计划批准
   /sessions  历史会话列表
   /resume <id>        恢复会话
   /fork <id> <条数>   从历史分叉
@@ -131,6 +133,54 @@ async function startREPL(): Promise<void> {
       const pkg = resolveSkill(appStore.getState().workDir, name);
       if (!pkg) { console.log(chalk.red(`技能不存在或被门禁拒绝：${name}\n`)); rl.prompt(); return; }
       console.log(chalk.cyan(`\n# ${pkg.name} — ${pkg.description}\n`) + pkg.body + "\n");
+      rl.prompt();
+      return;
+    }
+    if (input === "/spec" || input.startsWith("/spec ")) {
+      const workDir = appStore.getState().workDir;
+      const [, sub, ...rest] = input.split(/\s+/);
+      try {
+        if (sub === "new") {
+          const name = rest[0];
+          if (!name) { console.log(chalk.gray("用法：/spec new <name> [目标]\n")); rl.prompt(); return; }
+          const goal = rest.slice(1).join(" ") || "（待补充目标）";
+          const spec = createSpec(workDir, name, goal);
+          console.log(chalk.gray(`已创建 spec：${spec.name}（写需求→设计→任务→plan.md，再 /spec approve 批准）\n`));
+        } else if (sub === "list" || !sub) {
+          const specs = listSpecs(workDir);
+          if (specs.length === 0) console.log(chalk.gray("暂无 spec。用法：/spec new <name> [目标]\n"));
+          else {
+            for (const s of specs) console.log(chalk.gray(`  ${s.name}  [${s.status}] 任务 ${s.tasksDone}/${s.tasksTotal}`));
+            console.log("");
+          }
+        } else if (sub === "show") {
+          const spec = loadSpec(workDir, rest[0] || "");
+          console.log(chalk.cyan(`\n=== requirements ===\n`) + spec.requirements);
+          console.log(chalk.cyan(`=== design ===\n`) + spec.design);
+          console.log(chalk.cyan(`=== tasks ===\n`) + spec.tasks);
+          console.log(chalk.cyan(`=== plan [${spec.status}] ===\n`) + (spec.plan || "（空）") + "\n");
+        } else if (sub === "waves") {
+          const spec = loadSpec(workDir, rest[0] || "");
+          const waves = buildWaves(parseTasks(spec.tasks));
+          waves.forEach((w, i) => {
+            console.log(chalk.gray(`  wave ${i + 1}（可并行）：` + w.map((t) => `${t.id} ${t.content}`).join(" | ")));
+          });
+          console.log("");
+        } else if (sub === "approve") {
+          const r = approveSpec(workDir, rest[0] || "");
+          if (r.ok) {
+            console.log(chalk.green(`已批准。切 /plan 探索已可省略，/act 进入执行。\n`));
+          } else {
+            console.log(chalk.red("批准失败（阶段③自校验未过）："));
+            for (const e of r.errors) console.log(chalk.gray(`  - ${e}`));
+            console.log("");
+          }
+        } else {
+          console.log(chalk.gray("用法：/spec new|list|show|waves|approve\n"));
+        }
+      } catch (e) {
+        console.log(chalk.red(`${e instanceof Error ? e.message : String(e)}\n`));
+      }
       rl.prompt();
       return;
     }

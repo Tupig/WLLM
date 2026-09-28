@@ -11,7 +11,18 @@ export type PromptOptions = {
   skillCatalog?: string;
   stateText?: string;
   append?: string;
+  /** plan 模式阶段指引（spec 名，可空） */
+  planSpec?: string;
 };
+
+const PLAN_GUIDE = (spec?: string) => `
+## Plan 模式（只读 + 计划产物可写）
+按 5 阶段推进，先探索再落盘，不要改源码：
+1. 探索：只读工具摸清现状
+2. 落盘：把计划写入 \`.wllm/specs/${spec || "<name>"}/plan.md\`（首次执行：\`/spec new <name> <目标>\`），必须含「目标 / 涉及文件 / 步骤（编号列表）/ 风险」四节
+3. 自校验：确认四节齐全、步骤有编号、涉及文件是列表
+4. 呈现：向用户概述计划要点
+5. 等待用户 \`/spec approve <name>\` 批准后，切 \`/act\` 执行`;
 
 function toolCatalog(tools: Tool[]): string {
   return tools
@@ -34,6 +45,7 @@ ${toolCatalog(tools)}
 6. 破坏性命令前先确认
 7. 用用户的语言回复`;
 
+  if (opts.planSpec !== undefined) prompt += PLAN_GUIDE(opts.planSpec);
   if (opts.rulesText) prompt += opts.rulesText;
   if (opts.memoryText) prompt += opts.memoryText;
   if (opts.skillCatalog) prompt += opts.skillCatalog;
