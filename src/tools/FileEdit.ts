@@ -6,6 +6,8 @@ import { readFile, writeFile, stat } from "fs/promises";
 import { buildTool, type ToolUseContext, type ToolResult } from "../Tool.js";
 import { safePath } from "../utils/path.js";
 import { runPostEditLint, formatLintResult } from "./lint.js";
+import { formatNoMatchFeedback } from "./similar.js";
+import { writeWithRollback } from "./rollback.js";
 
 export const FileEditInput = z.object({
   file_path: z.string().describe("文件路径"),
@@ -59,7 +61,8 @@ export const FileEditTool = buildTool<string>({
 
     const idx = findActualString(content, input.old_string);
     if (idx === -1) {
-      return { data: `错误：在 ${resolved} 中未找到 old_string` };
+      const fb = formatNoMatchFeedback(content, input.old_string, resolved);
+      return { data: fb, resultForAssistant: fb };
     }
 
     if (!input.replace_all) {
@@ -69,33 +72,33 @@ export const FileEditTool = buildTool<string>({
       }
     }
 
+    const lintFn = () => runPostEditLint(context.workDir, resolved);
+
     if (input.replace_all) {
       const count = content.split(input.old_string).length - 1;
-      content = content.split(input.old_string).join(input.new_string);
-      await writeFile(resolved, content, "utf-8");
-
-      // 更新文件状态
+      const next = content.split(input.old_string).join(input.new_string);
+      const r = await writeWithRollback(resolved, next, lintFn);
+      if (!r.ok) {
+        const msg = `${r.error}\n${formatLintResult(r.lint!)}\n请修正后重试，本次替换未生效（${count} 处待替换）`;
+        return { data: msg, resultForAssistant: msg };
+      }
       const s = await stat(resolved);
       context.readFileState.set(resolved, { mtime: s.mtimeMs });
-
-      // 编辑后 lint 检查
-      const lintResult = await runPostEditLint(context.workDir, resolved);
-      const lintMsg = lintResult ? "\n" + formatLintResult(lintResult) : "";
-
+      const lintMsg = r.lint ? "\n" + formatLintResult(r.lint) : "";
       const result = `已在 ${resolved} 中替换 ${count} 处${lintMsg}`;
       return { data: result, resultForAssistant: result };
     }
 
-    content = content.slice(0, idx) + input.new_string + content.slice(idx + input.old_string.length);
-    await writeFile(resolved, content, "utf-8");
+    const next = content.slice(0, idx) + input.new_string + content.slice(idx + input.old_string.length);
+    const r = await writeWithRollback(resolved, next, lintFn);
+    if (!r.ok) {
+      const msg = `${r.error}\n${formatLintResult(r.lint!)}\n请修正后重试，本次编辑未生效。`;
+      return { data: msg, resultForAssistant: msg };
+    }
 
     const s = await stat(resolved);
     context.readFileState.set(resolved, { mtime: s.mtimeMs });
-
-    // 编辑后 lint 检查
-    const lintResult = await runPostEditLint(context.workDir, resolved);
-    const lintMsg = lintResult ? "\n" + formatLintResult(lintResult) : "";
-
+    const lintMsg = r.lint ? "\n" + formatLintResult(r.lint) : "";
     const result = `已成功编辑 ${resolved}${lintMsg}`;
     return { data: result, resultForAssistant: result };
   },

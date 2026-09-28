@@ -2,11 +2,12 @@
  * tools/FileWrite.ts — 文件写入工具
  */
 import { z } from "zod";
-import { writeFile, mkdir, stat } from "fs/promises";
+import { mkdir, stat } from "fs/promises";
 import { dirname } from "path";
 import { buildTool, type ToolUseContext, type ToolResult } from "../Tool.js";
 import { safePath } from "../utils/path.js";
 import { runPostEditLint, formatLintResult } from "./lint.js";
+import { writeWithRollback } from "./rollback.js";
 
 export const FileWriteInput = z.object({
   file_path: z.string().describe("文件路径"),
@@ -33,17 +34,19 @@ export const FileWriteTool = buildTool<string>({
     const resolved = safePath(context.workDir, input.file_path);
 
     await mkdir(dirname(resolved), { recursive: true });
-    await writeFile(resolved, input.content, "utf-8");
+    const r = await writeWithRollback(resolved, input.content, () =>
+      runPostEditLint(context.workDir, resolved),
+    );
+    if (!r.ok) {
+      const msg = `${r.error}\n${formatLintResult(r.lint!)}\n请修正后重试，本次写入未生效。`;
+      return { data: msg, resultForAssistant: msg };
+    }
 
     const s = await stat(resolved);
     context.readFileState.set(resolved, { mtime: s.mtimeMs });
 
     const lines = input.content.split("\n").length;
-
-    // 写入后 lint 检查
-    const lintResult = await runPostEditLint(context.workDir, resolved);
-    const lintMsg = lintResult ? "\n" + formatLintResult(lintResult) : "";
-
+    const lintMsg = r.lint ? "\n" + formatLintResult(r.lint) : "";
     const result = `已写入 ${lines} 行至 ${resolved}${lintMsg}`;
     return { data: result, resultForAssistant: result };
   },
