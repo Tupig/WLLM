@@ -7,6 +7,7 @@ import chalk from "chalk";
 import { parseOptimizeCommand, optimizePrompt, needsClarification, appendPromptStyle } from "./promptOptimize.js";
 import { join } from "path";
 import { createInterface, Interface } from "readline";
+import { snapshot, listCheckpoints, rollbackCheckpoint } from "./checkpoint.js";
 import { query, type SDKMessage } from "./QueryEngine.js";
 import { appStore } from "./state/AppState.js";
 
@@ -31,6 +32,7 @@ function printHelp(): void {
   /clear    清空对话历史
   /cost     查看 Token 用量
   /model    查看当前模型
+  /checkpoint [new|list|rollback <id>]  会话检查点/回滚
   /quit     退出
 
 或直接用自然语言描述您的任务。
@@ -97,6 +99,37 @@ async function startREPL(): Promise<void> {
     if (input === "/model") {
       const s = appStore.getState();
       console.log(chalk.gray(`模型：${s.mainLoopModel} | 模式：${s.toolPermissionContext.mode}\n`));
+      rl.prompt();
+      return;
+    }
+    if (input === "/checkpoint" || input.startsWith("/checkpoint ")) {
+      const workDir = appStore.getState().workDir;
+      const parts = input.split(/\s+/).slice(1);
+      const sub = parts[0] ?? "list";
+      try {
+        if (sub === "new" || sub === "save") {
+          const label = parts.slice(1).join(" ") || "手动检查点";
+          const rec = await snapshot(workDir, label);
+          if (rec) console.log(chalk.gray(`已创建检查点 ${rec.id}（${rec.label}）\n`));
+          else console.log(chalk.gray("无改动或非 git 仓库，未创建检查点。\n"));
+        } else if (sub === "rollback") {
+          const id = parts[1];
+          if (!id) { console.log(chalk.gray("用法：/checkpoint rollback <id>\n")); rl.prompt(); return; }
+          const r = await rollbackCheckpoint(workDir, id);
+          console.log(chalk.gray(r.message + "\n"));
+        } else {
+          const list = await listCheckpoints(workDir);
+          if (list.length === 0) console.log(chalk.gray("暂无检查点。\n"));
+          else {
+            for (const c of list.slice(0, 20)) {
+              console.log(chalk.gray(`  ${c.id}  ${c.createdAt.slice(0, 19)}  ${c.label}`));
+            }
+            console.log(chalk.gray("回滚：/checkpoint rollback <id>\n"));
+          }
+        }
+      } catch (e: any) {
+        console.log(chalk.red(`checkpoint 错误：${e.message}\n`));
+      }
       rl.prompt();
       return;
     }
