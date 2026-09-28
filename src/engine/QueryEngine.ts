@@ -7,38 +7,38 @@ import chalk from "chalk";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { Tool, ToolUseContext, CanUseToolFn } from "./Tool.js";
-import { getDefaultTools, getToolByName, resolveExtraTools } from "./tools.js";
-import { createClient, streamMessage, type StreamEvent, type ApiClient } from "./services/api.js";
+import { getDefaultTools, getToolByName, resolveExtraTools } from "./toolRegistry.js";
+import { createClient, streamMessage, type StreamEvent, type ApiClient } from "../services/api.js";
 import { resolveHarness, parseXmlToolCalls, buildXmlToolSection } from "./harness.js";
-import { resolveFallback, streamWithFailover, isInfraError } from "./providers/failover.js";
+import { resolveFallback, streamWithFailover, isInfraError } from "../services/failover.js";
 import { renderSystemPrompt } from "./prompt.js";
 import { routeTask, formatRouteLog, profileTask, appendRouteFeedback } from "./router.js";
 import { appendFileSync, mkdirSync } from "fs";
 import { join } from "path";
-import { mapWithConcurrency, partitionRuns } from "./tools/parallel.js";
-import { canUseTool, promptUser } from "./services/permissions.js";
-import { hookSystem, loadShellHooks } from "./hooks/system.js";
-import { ContextCompactor, LADDER_MICRO } from "./compact/index.js";
-import { appStore } from "./state/AppState.js";
+import { mapWithConcurrency, partitionRuns } from "../tools/parallel.js";
+import { canUseTool, promptUser } from "../services/permissions.js";
+import { hookSystem, loadShellHooks } from "./hooks.js";
+import { ContextCompactor, LADDER_MICRO } from "../context/compact/index.js";
+import { appStore } from "../state/AppState.js";
 import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS } from "./constants.js";
-import { resolveRuleLayers, formatLayersForPrompt, type RuleLayer } from "./rules/index.js";
-import { loadMemoriesSync, formatMemoriesForPrompt, type MemoryEntry } from "./memory.js";
-import { loadSkills, formatSkillCatalog, type SkillMeta } from "./skills/index.js";
-import { loadAgents } from "./subagent/agents.js";
-import { listSpecs } from "./spec/index.js";
-import { setAgentRegistry } from "./tools/Agent.js";
-import { renderTodoState } from "./tools/todo.js";
-import { createToolState, recordToolExecution, formatToolStateForPrompt, type ToolExecutionState } from "./tools/state.js";
-import { ModeManager, type AgentMode } from "./modes/index.js";
-import { createTrajectoryRecorder, type TrajectoryRecorder } from "./trajectory/index.js";
-import { getConfig, type PilotConfig } from "./config/index.js";
-import { ToolCache, isCacheable, createDefaultCache } from "./cache/index.js";
+import { resolveRuleLayers, formatLayersForPrompt, type RuleLayer } from "../context/rules.js";
+import { loadMemoriesSync, formatMemoriesForPrompt, type MemoryEntry } from "../knowledge/memory.js";
+import { loadSkills, formatSkillCatalog, type SkillMeta } from "../knowledge/skills.js";
+import { loadAgents } from "../agents/agents.js";
+import { listSpecs } from "../modes/spec.js";
+import { setAgentRegistry } from "../tools/Agent.js";
+import { renderTodoState } from "../tools/todo.js";
+import { createToolState, recordToolExecution, formatToolStateForPrompt, type ToolExecutionState } from "../tools/state.js";
+import { ModeManager, type AgentMode } from "../modes/modes.js";
+import { createTrajectoryRecorder, type TrajectoryRecorder } from "../session/trajectory.js";
+import { getConfig, type PilotConfig } from "../config.js";
+import { ToolCache, isCacheable, createDefaultCache } from "../context/cache.js";
 import {
   saveSession, loadSession, createSessionState,
   generateSessionId, type SessionState,
-} from "./session/index.js";
-import { categorizeError, getRecoverySuggestions, withRetry, isRetryable } from "./errors/index.js";
-import { TokenBudgetManager, createDefaultBudgetManager } from "./budget/index.js";
+} from "../session/sessionState.js";
+import { categorizeError, getRecoverySuggestions, withRetry, isRetryable } from "./errors.js";
+import { TokenBudgetManager, createDefaultBudgetManager } from "../context/budget.js";
 
 export type SDKMessage =
   | { type: "assistant"; message: { content: Array<{ type: string; [key: string]: unknown }> } }

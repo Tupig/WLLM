@@ -5,8 +5,8 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { resolveRuleLayers, expandRuleRefs, validateRuleRefs, formatLayersForPrompt } from "../src/rules/index";
-import { stageMemory, commitMemory, loadMemories, formatMemoriesForPrompt } from "../src/memory";
+import { resolveRuleLayers, expandRuleRefs, validateRuleRefs, formatLayersForPrompt } from "../src/context/rules";
+import { stageMemory, commitMemory, loadMemories, formatMemoriesForPrompt } from "../src/knowledge/memory";
 
 let dir: string;
 let home: string;

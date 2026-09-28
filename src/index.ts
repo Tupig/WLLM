@@ -4,19 +4,19 @@
  */
 import { Command } from "commander";
 import chalk from "chalk";
-import { parseOptimizeCommand, optimizePrompt, needsClarification, appendPromptStyle } from "./promptOptimize.js";
+import { parseOptimizeCommand, optimizePrompt, needsClarification, appendPromptStyle } from "./engine/promptOptimize.js";
 import { join } from "path";
 import { createInterface, Interface } from "readline";
-import { snapshot, listCheckpoints, rollbackCheckpoint } from "./checkpoint.js";
-import { saveSessionMessages, loadSessionMessages, listSessions, forkMessages } from "./session.js";
-import { stageMemory, commitMemory, loadMemories, formatMemoriesForPrompt } from "./memory.js";
-import { loadSkills, resolveSkill } from "./skills/index.js";
-import { createSpec, listSpecs, loadSpec, buildWaves, parseTasks, approveSpec } from "./spec/index.js";
-import { runDoctor, renderDoctor, initAgentMd, buildReviewPrompt, isValidRef } from "./diag/index.js";
-import { buildRetroPrompt, parseReviewDecision, applyReviewDecision, extractFailures } from "./reflexion/index.js";
+import { snapshot, listCheckpoints, rollbackCheckpoint } from "./session/checkpoint.js";
+import { saveSessionMessages, loadSessionMessages, listSessions, forkMessages } from "./session/session.js";
+import { stageMemory, commitMemory, loadMemories, formatMemoriesForPrompt } from "./knowledge/memory.js";
+import { loadSkills, resolveSkill } from "./knowledge/skills.js";
+import { createSpec, listSpecs, loadSpec, buildWaves, parseTasks, approveSpec } from "./modes/spec.js";
+import { runDoctor, renderDoctor, initAgentMd, buildReviewPrompt, isValidRef } from "./commands/diag.js";
+import { buildRetroPrompt, parseReviewDecision, applyReviewDecision, extractFailures } from "./knowledge/reflexion.js";
 import { promptUser } from "./services/permissions.js";
 import type Anthropic from "@anthropic-ai/sdk";
-import { query, type SDKMessage } from "./QueryEngine.js";
+import { query, type SDKMessage } from "./engine/QueryEngine.js";
 import { appStore } from "./state/AppState.js";
 
 import { createRequire } from "module";

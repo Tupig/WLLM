@@ -5,7 +5,7 @@
  * 灵感来自 Continue 的 @Web 上下文和 Cline 的 WebSearch。
  */
 import { z } from "zod";
-import { defineTool } from "../Tool.js";
+import { defineTool } from "../engine/Tool.js";
 
 /**
  * Web 搜索工具

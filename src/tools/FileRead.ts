@@ -4,9 +4,9 @@
 import { z } from "zod";
 import { readFile, stat } from "fs/promises";
 import { resolveSandboxPolicy, checkPath, checkBashPaths } from "../services/sandbox.js";
-import { buildTool, type ToolUseContext, type ToolResult } from "../Tool.js";
+import { buildTool, type ToolUseContext, type ToolResult } from "../engine/Tool.js";
 import { safePath } from "../utils/path.js";
-import { MAX_FILE_SIZE_BYTES } from "../constants.js";
+import { MAX_FILE_SIZE_BYTES } from "../engine/constants.js";
 
 const FILE_UNCHANGED_STUB = "FILE_UNCHANGED";
 

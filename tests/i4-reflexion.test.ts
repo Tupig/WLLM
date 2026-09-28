@@ -12,7 +12,7 @@ const {
   applyReviewDecision,
   extractFailures,
   listRuns,
-} = await import("../src/reflexion");
+} = await import("../src/knowledge/reflexion");
 
 let dir: string;
 beforeEach(() => {

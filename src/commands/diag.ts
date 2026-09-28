@@ -4,10 +4,10 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { resolveProvider, resolveModel } from "../services/api.js";
-import { getDefaultTools } from "../tools.js";
-import { loadSkills } from "../skills/index.js";
-import { parseAgentFile } from "../subagent/agents.js";
-import { MAX_CONTEXT_TOKENS } from "../constants.js";
+import { getDefaultTools } from "../engine/toolRegistry.js";
+import { loadSkills } from "../knowledge/skills.js";
+import { parseAgentFile } from "../agents/agents.js";
+import { MAX_CONTEXT_TOKENS } from "../engine/constants.js";
 
 export type CheckLevel = "ok" | "warn" | "error";
 export type CheckResult = { id: string; level: CheckLevel; label: string; detail?: string };

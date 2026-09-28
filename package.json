@@ -5,14 +5,21 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "pilot": "dist/index.js"
+    "pilot": "dist/cli/pilot.js",
+    "llm": "dist/cli/llm.js",
+    "claude-local": "dist/cli/claude-local.js",
+    "codex-local": "dist/cli/codex-local.js",
+    "opencode-local": "dist/cli/opencode-local.js",
+    "mlx-local": "dist/cli/mlx-local.js"
   },
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dev:pilot": "tsx src/cli/pilot.ts",
+    "dev:llm": "tsx src/cli/llm.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",

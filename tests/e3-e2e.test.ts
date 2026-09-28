@@ -9,7 +9,7 @@ beforeAll(() => {
 
 describe("mock 端到端不卡死", () => {
   it("带工具调用两轮内完成（20s 限时）", async () => {
-    const { query } = await import("../src/QueryEngine");
+    const { query } = await import("../src/engine/QueryEngine");
     let result: any = null;
     let rounds = 0;
     const iter = query({ prompt: "读 src/index.ts", options: { cwd: process.cwd(), model: "mock" } });

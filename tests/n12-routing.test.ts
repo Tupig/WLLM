@@ -14,7 +14,7 @@ const {
   appendRouteFeedback,
   readRouteProfile,
   suggestModel,
-} = await import("../src/router");
+} = await import("../src/engine/router");
 
 const mockEnv = { PILOT_MOCK: "1" } as NodeJS.ProcessEnv;
 

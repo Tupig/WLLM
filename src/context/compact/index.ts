@@ -2,8 +2,8 @@
  * compact/index.ts — 上下文压缩 5 阶段流水线
  */
 import Anthropic from "@anthropic-ai/sdk";
-import type { ApiClient } from "../services/api.js";
-import { ADAPTIVE_ITERATIONS_CAP, DEFAULT_MAX_CONTEXT_TOKENS } from "../constants.js";
+import type { ApiClient } from "../../services/api.js";
+import { ADAPTIVE_ITERATIONS_CAP, DEFAULT_MAX_CONTEXT_TOKENS } from "../../engine/constants.js";
 
 export interface CompactionConfig {
   threshold: number;

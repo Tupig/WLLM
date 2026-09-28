@@ -7,7 +7,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { StreamEvent } from "../src/services/api";
-import { buildTool, type Tool, type ToolUseContext, type CanUseToolFn } from "../src/Tool";
+import { buildTool, type Tool, type ToolUseContext, type CanUseToolFn } from "../src/engine/Tool";
 import { z } from "zod";
 
 const {
@@ -19,8 +19,8 @@ const {
   resolveSubAgentModel,
   SUBAGENT_FIXED_DENY,
   MAX_AGENT_BYTES,
-} = await import("../src/subagent/agents");
-const { SubAgentExecutor } = await import("../src/subagent/index");
+} = await import("../src/agents/agents");
+const { SubAgentExecutor } = await import("../src/agents/index");
 
 const VALID_AGENT = `---
 name: explorer
@@ -349,7 +349,7 @@ describe("Agent 工具", () => {
 
   it("描述注入 agent 目录", async () => {
     const { AgentTool, setAgentRegistry, getAgentRegistry } = await import("../src/tools/Agent");
-    const { loadAgents } = await import("../src/subagent/agents");
+    const { loadAgents } = await import("../src/agents/agents");
     setAgentRegistry(loadAgents(process.cwd(), join(tmpdir(), "no-home")));
     const desc = AgentTool.description({} as any);
     expect(desc).toContain("- explore");
@@ -365,7 +365,7 @@ describe("Agent 工具", () => {
   });
 
   it("plan 模式过滤掉 Agent", async () => {
-    const { ModeManager } = await import("../src/modes");
+    const { ModeManager } = await import("../src/modes/modes");
     const { AgentTool } = await import("../src/tools/Agent");
     const mm = new ModeManager("plan");
     const names = mm.filterTools([AgentTool, { name: "Read" } as any]).map((t) => t.name);

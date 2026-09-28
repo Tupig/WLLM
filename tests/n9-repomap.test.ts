@@ -7,7 +7,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 const { extractSymbols, buildRepoMap, REPO_SKIP_DIRS, REPO_MAP_BUDGET } =
-  await import("../src/search");
+  await import("../src/context/repomap");
 
 let dir: string;
 beforeEach(() => {

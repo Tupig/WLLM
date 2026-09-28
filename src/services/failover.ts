@@ -1,7 +1,7 @@
 /**
  * providers/failover.ts — 基础设施故障回退（本地 OOM/断连 → 云端兜底）
  */
-import type { StreamEvent } from "../services/api.js";
+import type { StreamEvent } from "./api.js";
 
 const INFRA_PATTERNS = [
   /ECONNREFUSED/i, /fetch failed/i, /ETIMEDOUT/i, /EPIPE/i, /ENOTFOUND/i,

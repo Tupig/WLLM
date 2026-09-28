@@ -3,9 +3,9 @@
  */
 import { z } from "zod";
 import { spawn } from "child_process";
-import { buildTool, type ToolUseContext, type ToolResult } from "../Tool.js";
+import { buildTool, type ToolUseContext, type ToolResult } from "../engine/Tool.js";
 import { safePath } from "../utils/path.js";
-import { MAX_GREP_RESULTS, TOOL_TIMEOUT_MS, GREP_FALLBACK_TIMEOUT_MS } from "../constants.js";
+import { MAX_GREP_RESULTS, TOOL_TIMEOUT_MS, GREP_FALLBACK_TIMEOUT_MS } from "../engine/constants.js";
 
 export const GrepInput = z.object({
   pattern: z.string().describe("用于搜索的正则表达式"),

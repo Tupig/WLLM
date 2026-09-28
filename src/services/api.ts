@@ -3,7 +3,7 @@
  * 支持三种模式：Anthropic / OpenAI 兼容 / Mock
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { MAX_RETRIES, API_FETCH_TIMEOUT_MS, DEFAULT_MODEL } from "../constants.js";
+import { MAX_RETRIES, API_FETCH_TIMEOUT_MS, DEFAULT_MODEL } from "../engine/constants.js";
 
 export type StreamEvent =
   | { type: "text_delta"; text: string }

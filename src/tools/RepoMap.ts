@@ -2,9 +2,9 @@
  * tools/RepoMap.ts — 仓库符号地图（N9 / A18）
  */
 import { z } from "zod";
-import { buildTool, type ToolResult } from "../Tool.js";
+import { buildTool, type ToolResult } from "../engine/Tool.js";
 import { safePath } from "../utils/path.js";
-import { buildRepoMap, REPO_MAP_BUDGET } from "../search/index.js";
+import { buildRepoMap, REPO_MAP_BUDGET } from "../context/repomap.js";
 
 export const RepoMapInput = z.object({
   path: z.string().optional().describe("只索引该子目录（相对工作区）"),

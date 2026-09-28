@@ -10,7 +10,7 @@ import { existsSync } from "fs";
 import { join, dirname, relative } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { defineTool } from "../Tool.js";
+import { defineTool } from "../engine/Tool.js";
 import { safePath } from "../utils/path.js";
 
 const execFileAsync = promisify(execFile);

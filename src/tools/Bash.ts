@@ -5,8 +5,8 @@ import { z } from "zod";
 import { spawn } from "child_process";
 import { classifyBash } from "../services/bashSafety.js";
 import { resolveSandboxPolicy, checkPath, checkBashPaths } from "../services/sandbox.js";
-import { buildTool, type ToolUseContext, type ToolResult } from "../Tool.js";
-import { MAX_BASH_OUTPUT_CHARS, TOOL_TIMEOUT_MS } from "../constants.js";
+import { buildTool, type ToolUseContext, type ToolResult } from "../engine/Tool.js";
+import { MAX_BASH_OUTPUT_CHARS, TOOL_TIMEOUT_MS } from "../engine/constants.js";
 import { safePath } from "../utils/path.js";
 
 export const BashInput = z.object({

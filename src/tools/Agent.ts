@@ -4,15 +4,15 @@
  * 固定黑名单保证子代理拿不到本工具（嵌套默认关闭）。
  */
 import { z } from "zod";
-import { buildTool, type Tool } from "../Tool.js";
+import { buildTool, type Tool } from "../engine/Tool.js";
 import {
   builtinAgents,
   formatAgentCatalog,
   loadAgents,
   maskTools,
   type AgentDef,
-} from "../subagent/agents.js";
-import { SubAgentExecutor } from "../subagent/index.js";
+} from "../agents/agents.js";
+import { SubAgentExecutor } from "../agents/index.js";
 
 export const AgentInput = z.object({
   agent: z.string().optional().describe("子代理名，缺省 general；名字来自 agent 目录"),

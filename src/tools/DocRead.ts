@@ -8,7 +8,7 @@ import { z } from "zod";
 import { readFile, stat } from "fs/promises";
 import { existsSync } from "fs";
 import { extname } from "path";
-import { defineTool } from "../Tool.js";
+import { defineTool } from "../engine/Tool.js";
 import { safePath } from "../utils/path.js";
 
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([

@@ -2,31 +2,31 @@
  * tools.ts — 工具注册表
  */
 import type { Tool } from "./Tool.js";
-import { FileReadTool } from "./tools/FileRead.js";
-import { FileWriteTool } from "./tools/FileWrite.js";
-import { FileEditTool } from "./tools/FileEdit.js";
-import { GlobTool } from "./tools/Glob.js";
-import { GrepTool } from "./tools/Grep.js";
-import { BashTool } from "./tools/Bash.js";
-import { GitStatusTool, GitDiffTool, GitCommitTool, GitUndoTool } from "./git/tools.js";
-import { WebSearchTool, WebFetchTool } from "./tools/Web.js";
-import { ImageReadTool, DocReadTool } from "./tools/DocRead.js";
+import { FileReadTool } from "../tools/FileRead.js";
+import { FileWriteTool } from "../tools/FileWrite.js";
+import { FileEditTool } from "../tools/FileEdit.js";
+import { GlobTool } from "../tools/Glob.js";
+import { GrepTool } from "../tools/Grep.js";
+import { BashTool } from "../tools/Bash.js";
+import { GitStatusTool, GitDiffTool, GitCommitTool, GitUndoTool } from "../git/tools.js";
+import { WebSearchTool, WebFetchTool } from "../tools/Web.js";
+import { ImageReadTool, DocReadTool } from "../tools/DocRead.js";
 import {
   RenameSymbolTool, ExtractFunctionTool, MoveFileTool,
   InlineVariableTool, ExtractConstantTool,
-} from "./tools/Refactor.js";
+} from "../tools/Refactor.js";
 import {
   CodeStatsTool, ListFunctionsTool, DependencyAnalysisTool,
   ComplexityAnalysisTool,
-} from "./tools/Analysis.js";
+} from "../tools/Analysis.js";
 import {
   PackageInstallTool, PackageUninstallTool, PackageListTool,
   RunScriptTool,
-} from "./tools/PackageManager.js";
-import { QuestionTool } from "./tools/Question.js";
-import { TodoWriteTool } from "./tools/todo.js";
-import { AgentTool } from "./tools/Agent.js";
-import { RepoMapTool } from "./tools/RepoMap.js";
+} from "../tools/PackageManager.js";
+import { QuestionTool } from "../tools/Question.js";
+import { TodoWriteTool } from "../tools/todo.js";
+import { AgentTool } from "../tools/Agent.js";
+import { RepoMapTool } from "../tools/RepoMap.js";
 
 export function getDefaultTools(): Tool[] {
   return [

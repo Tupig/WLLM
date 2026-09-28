@@ -5,7 +5,7 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { interpretShellExit, HookSystem, loadShellHooks } from "../src/hooks/system";
+import { interpretShellExit, HookSystem, loadShellHooks } from "../src/engine/hooks";
 
 const ctx = { turnNumber: 1, sessionId: "s1" };
 

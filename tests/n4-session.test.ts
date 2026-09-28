@@ -10,7 +10,7 @@ import {
   loadSessionMessages,
   listSessions,
   forkMessages,
-} from "../src/session";
+} from "../src/session/session";
 
 type Msg = { role: "user" | "assistant"; content: string };
 

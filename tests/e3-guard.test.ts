@@ -2,7 +2,7 @@
  * E3 防卡死：doom loop 检测 + 工具执行超时 + 非 TTY 快速拒绝
  */
 import { describe, expect, it } from "vitest";
-import { createDoomDetector, withTimeout } from "../src/QueryEngine";
+import { createDoomDetector, withTimeout } from "../src/engine/QueryEngine";
 
 describe("doom loop 检测（A21）", () => {
   it("连续 3 次相同动作 → 触发", () => {

@@ -5,7 +5,7 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { loadSkills, formatSkillCatalog, resolveSkill, SKILL_CATALOG_BUDGET } from "../src/skills/index";
+import { loadSkills, formatSkillCatalog, resolveSkill, SKILL_CATALOG_BUDGET } from "../src/knowledge/skills";
 
 let dir: string;
 beforeEach(() => {

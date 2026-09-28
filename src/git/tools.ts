@@ -8,7 +8,7 @@
  * - GitUndo：撤销提交
  */
 import { z } from "zod";
-import { defineTool } from "../Tool.js";
+import { defineTool } from "../engine/Tool.js";
 import {
   getGitStatus,
   getDiff,

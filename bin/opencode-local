@@ -1,34 +1,7 @@
 #!/usr/bin/env bash
-# ==============================================================================
-#  opencode-local —— 用本地 MLX 模型运行 opencode
-#
-#  走 OpenAI Chat Completions 协议，通过统一代理 (:4100) 访问。
-#  模型名 local-mlx/default_model 对应 opencode.json 里的 provider 配置。
-#
-#  依赖本地服务： mlx-local start   （未运行时由本脚本自动拉起）
-# ==============================================================================
-set -uo pipefail
-
-NAME="opencode-local"
+# 薄壳：实现见 src/cli/opencode-local.ts（dist 存在走 node，否则 tsx 直跑源码）
 SELF="${BASH_SOURCE[0]}"
-while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done     # 解析软链接
-MLX_HOME="$(cd "$(dirname "$SELF")/../mlx" && pwd)"
-PORT=4100
-
-info() { printf '[%s] %s\n' "$NAME" "$*" >&2; }
-die()  { printf '[%s] 错误: %s\n' "$NAME" "$*" >&2; exit 1; }
-
-[ -f "$MLX_HOME/mlx-local.sh" ] || die "未找到 $MLX_HOME/mlx-local.sh"
-
-if ! lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-  info "本地服务未运行，正在启动（首次约 30 秒）…"
-  "$MLX_HOME/mlx-local.sh" start 14b >&2 || die "服务启动失败"
-  for _ in $(seq 1 60); do
-    lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1 && break
-    sleep 1
-  done
-  lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1 \
-    || die "等待 :$PORT 就绪超时，请查看 mlx-local logs server"
-fi
-
-exec opencode -m local-mlx/default_model "$@"
+while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
+ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
+if [ -f "$ROOT/dist/cli/opencode-local.js" ]; then exec node "$ROOT/dist/cli/opencode-local.js" "$@"; fi
+exec npx --yes tsx "$ROOT/src/cli/opencode-local.ts" "$@"

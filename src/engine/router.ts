@@ -5,7 +5,7 @@
  */
 import { appendFileSync, mkdirSync, readFileSync } from "fs";
 import { join } from "path";
-import { resolveProvider } from "./services/api.js";
+import { resolveProvider } from "../services/api.js";
 
 export type RouteDecision = {
   model: string;

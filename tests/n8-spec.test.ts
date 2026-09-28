@@ -15,7 +15,7 @@ const {
   validatePlan,
   approveSpec,
   SPEC_FILES,
-} = await import("../src/spec");
+} = await import("../src/modes/spec");
 
 let dir: string;
 beforeEach(() => {
@@ -212,7 +212,7 @@ describe("plan 模式下唯一可写面：.wllm/ 计划产物", () => {
 
 describe("plan 阶段指引注入系统提示", () => {
   it("planSpec 提供时注入 5 阶段与路径", async () => {
-    const { renderSystemPrompt } = await import("../src/prompt");
+    const { renderSystemPrompt } = await import("../src/engine/prompt");
     const p = renderSystemPrompt([], { planSpec: "auth" });
     expect(p).toContain("Plan 模式");
     expect(p).toContain(".wllm/specs/auth/plan.md");
@@ -220,7 +220,7 @@ describe("plan 阶段指引注入系统提示", () => {
     expect(p).toContain("/spec approve");
   });
   it("非 plan 模式不注入", async () => {
-    const { renderSystemPrompt } = await import("../src/prompt");
+    const { renderSystemPrompt } = await import("../src/engine/prompt");
     expect(renderSystemPrompt([], {})).not.toContain("Plan 模式");
   });
 });

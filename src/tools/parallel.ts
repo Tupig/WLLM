@@ -4,7 +4,7 @@
  * 支持独立工具的并行执行，提升性能。
  * 灵感来自 Cline 的并行工具调用和 SWE-agent 的 ACI 设计。
  */
-import type { Tool, ToolUseContext, ToolResult, CanUseToolFn } from "../Tool.js";
+import type { Tool, ToolUseContext, ToolResult, CanUseToolFn } from "../engine/Tool.js";
 
 export async function mapWithConcurrency<T, R>(
   items: T[], limit: number, fn: (item: T, index: number) => Promise<R>,

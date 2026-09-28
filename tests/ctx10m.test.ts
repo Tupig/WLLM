@@ -2,8 +2,8 @@
  * 上下文压缩支持 10M：env 可配 + 梯子/预算自适应
  */
 import { describe, expect, it, afterEach } from "vitest";
-import { resolveMaxContextTokens, MAX_CONTEXT_TOKENS, ADAPTIVE_ITERATIONS_CAP } from "../src/constants";
-import { adaptiveIterations, pickStrategy, ContextCompactor } from "../src/compact/index";
+import { resolveMaxContextTokens, MAX_CONTEXT_TOKENS, ADAPTIVE_ITERATIONS_CAP } from "../src/engine/constants";
+import { adaptiveIterations, pickStrategy, ContextCompactor } from "../src/context/compact/index";
 
 afterEach(() => {
   delete process.env.PILOT_MAX_CONTEXT_TOKENS;

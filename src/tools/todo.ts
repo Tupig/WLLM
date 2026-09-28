@@ -2,7 +2,7 @@
  * tools/todo.ts — TodoWrite 任务清单（A16）
  */
 import { z } from "zod";
-import { buildTool, type ToolResult } from "../Tool.js";
+import { buildTool, type ToolResult } from "../engine/Tool.js";
 import { appStore } from "../state/AppState.js";
 
 export const TodoItemSchema = z.object({

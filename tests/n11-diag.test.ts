@@ -7,7 +7,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 const { runDoctor, renderDoctor, initAgentMd, buildReviewPrompt, REVIEW_DIFF_BUDGET } =
-  await import("../src/diag");
+  await import("../src/commands/diag");
 
 let dir: string;
 beforeEach(() => {
@@ -152,7 +152,7 @@ describe("buildReviewPrompt", () => {
 });
 
 describe("isValidRef（/review ref 白名单）", async () => {
-  const { isValidRef } = await import("../src/diag");
+  const { isValidRef } = await import("../src/commands/diag");
   it("放行正常 ref", () => {
     for (const ok of ["HEAD", "HEAD~1", "main", "a1b2c3d", "feature/x", "v1.0.0"]) {
       expect(isValidRef(ok)).toBe(true);

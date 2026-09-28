@@ -3,7 +3,7 @@
  */
 import { z } from "zod";
 import { readFile, writeFile, stat } from "fs/promises";
-import { buildTool, type ToolUseContext, type ToolResult } from "../Tool.js";
+import { buildTool, type ToolUseContext, type ToolResult } from "../engine/Tool.js";
 import { safePath } from "../utils/path.js";
 import { runPostEditLint, formatLintResult } from "./lint.js";
 import { formatNoMatchFeedback } from "./similar.js";

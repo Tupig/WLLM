@@ -2,7 +2,7 @@
  * E9 路由器：纯难度分流 + 8b 策略 + 云端回落 + routelog
  */
 import { describe, expect, it } from "vitest";
-import { estimateDifficulty, routeTask, formatRouteLog } from "../src/router";
+import { estimateDifficulty, routeTask, formatRouteLog } from "../src/engine/router";
 
 describe("estimateDifficulty 纯启发式", () => {
   it("只读类短指令 → easy", () => {

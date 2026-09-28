@@ -1,49 +1,7 @@
 #!/usr/bin/env bash
-# ==============================================================================
-#  codex-local —— 用本地 MLX 模型运行 Codex CLI
-#
-#  走 OpenAI Responses 协议，通过统一代理 (:4100) 访问。
-#
-#  ⚠ 已知限制：codex 单个请求会注入约 5.3 万 token 的 prompt（其自身系统提示 +
-#    全部工具定义 + skills）。这个长度的 KV cache 约 8GB，且 MLX 在 prefill
-#    收尾时还要再持有一份，24GB 机器（macOS 默认只给 GPU 约 16GB）会触发：
-#        RuntimeError: [METAL] ... Insufficient Memory
-#    实测 14B 与 8B 都会失败。解决办法（需 sudo，重启后失效）：
-#        sudo sysctl iogpu.wired_limit_mb=21504
-#    否则建议 codex 继续用云端模型，本地模型改用 opencode-local / claude-local。
-# ==============================================================================
-set -uo pipefail
-
-NAME="codex-local"
+# 薄壳：实现见 src/cli/codex-local.ts（dist 存在走 node，否则 tsx 直跑源码）
 SELF="${BASH_SOURCE[0]}"
-while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done     # 解析软链接
-MLX_HOME="$(cd "$(dirname "$SELF")/../mlx" && pwd)"
-PORT=4100
-
-info() { printf '[%s] %s\n' "$NAME" "$*" >&2; }
-die()  { printf '[%s] 错误: %s\n' "$NAME" "$*" >&2; exit 1; }
-
-[ -f "$MLX_HOME/mlx-local.sh" ] || die "未找到 $MLX_HOME/mlx-local.sh"
-
-# GPU 上限检查：尚未显式提高时，给出可操作的提示
-if [ "$(sysctl -n iogpu.wired_limit_mb 2>/dev/null || echo 0)" = "0" ]; then
-  cat >&2 <<'EOF'
-[codex-local] 提示: codex 单个请求约 5.3 万 token，在 24GB 机器上很可能触发
-[codex-local]       [METAL] Insufficient Memory。如遇失败：
-[codex-local]         1) 提高 GPU 上限后重试: sudo sysctl iogpu.wired_limit_mb=21504
-[codex-local]         2) 改用 opencode-local / claude-local（prompt 小得多）
-EOF
-fi
-
-if ! lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-  info "本地服务未运行，正在启动（首次约 30 秒）…"
-  "$MLX_HOME/mlx-local.sh" start 14b >&2 || die "服务启动失败"
-  for _ in $(seq 1 90); do
-    lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1 && break
-    sleep 1
-  done
-  lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1 \
-    || die "等待 :$PORT 就绪超时，请查看 mlx-local logs proxy"
-fi
-
-exec codex --profile local "$@"
+while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
+ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
+if [ -f "$ROOT/dist/cli/codex-local.js" ]; then exec node "$ROOT/dist/cli/codex-local.js" "$@"; fi
+exec npx --yes tsx "$ROOT/src/cli/codex-local.ts" "$@"

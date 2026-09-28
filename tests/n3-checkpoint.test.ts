@@ -6,7 +6,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { execFileSync } from "child_process";
-import { snapshot, listCheckpoints, rollbackCheckpoint } from "../src/checkpoint";
+import { snapshot, listCheckpoints, rollbackCheckpoint } from "../src/session/checkpoint";
 
 let dir: string;
 const git = (...args: string[]) =>

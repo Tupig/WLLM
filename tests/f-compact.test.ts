@@ -2,7 +2,7 @@
  * F1/F2 压缩强化：阈值梯子+熔断+keep_first+结果预算（A13/A14）
  */
 import { describe, expect, it } from "vitest";
-import { ContextCompactor, pickStrategy, type Strategy } from "../src/compact/index";
+import { ContextCompactor, pickStrategy, type Strategy } from "../src/context/compact/index";
 
 describe("pickStrategy 阈值梯子（A13）", () => {
   it("<60% → 不压", () => {

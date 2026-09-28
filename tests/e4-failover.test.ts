@@ -2,7 +2,7 @@
  * E4 基础设施故障回退：本地 OOM/断连 → 云端兜底
  */
 import { describe, expect, it } from "vitest";
-import { isInfraError, resolveFallback, streamWithFailover } from "../src/providers/failover";
+import { isInfraError, resolveFallback, streamWithFailover } from "../src/services/failover";
 import type { StreamEvent } from "../src/services/api";
 
 describe("isInfraError 故障分类", () => {

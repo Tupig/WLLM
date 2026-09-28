@@ -1,7 +1,7 @@
 /**
  * services/permissions.ts — 权限系统
  */
-import type { Tool, PermissionResult } from "../Tool.js";
+import type { Tool, PermissionResult } from "../engine/Tool.js";
 import type { ToolPermissionContext } from "../state/AppState.js";
 import { classifyBash } from "./bashSafety.js";
 import { resolve } from "path";

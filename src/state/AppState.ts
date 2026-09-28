@@ -2,8 +2,8 @@
  * state/AppState.ts — 应用状态
  */
 import { createStore } from "./store.js";
-import type { PermissionMode } from "../Tool.js";
-import { DEFAULT_MODEL } from "../constants.js";
+import type { PermissionMode } from "../engine/Tool.js";
+import { DEFAULT_MODEL } from "../engine/constants.js";
 
 export type ToolPermissionContext = {
   mode: PermissionMode;

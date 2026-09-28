@@ -8,9 +8,9 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import type { CanUseToolFn, Tool, ToolUseContext } from "../Tool.js";
+import type { CanUseToolFn, Tool, ToolUseContext } from "../engine/Tool.js";
 import { createClient, streamMessage, type ApiClient, type StreamEvent } from "../services/api.js";
-import { parseXmlToolCalls, buildXmlToolSection, resolveHarness } from "../harness.js";
+import { parseXmlToolCalls, buildXmlToolSection, resolveHarness } from "../engine/harness.js";
 import {
   maskTools,
   resolveSubAgentModel,

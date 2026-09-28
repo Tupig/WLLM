@@ -7,7 +7,7 @@
  *
  * 以及 Aider 的 Architect/Editor 双模型架构。
  */
-import type { Tool, PermissionMode } from "../Tool.js";
+import type { Tool, PermissionMode } from "../engine/Tool.js";
 
 export type AgentMode = "plan" | "act";
 

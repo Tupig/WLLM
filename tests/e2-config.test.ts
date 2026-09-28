@@ -2,7 +2,7 @@
  * E2 本地模型参数测试：30k 上下文 / 1800s 超时 / 默认模型 + PILOT_MODEL 覆盖
  */
 import { describe, expect, it } from "vitest";
-import { MAX_CONTEXT_TOKENS, API_FETCH_TIMEOUT_MS, DEFAULT_MODEL } from "../src/constants";
+import { MAX_CONTEXT_TOKENS, API_FETCH_TIMEOUT_MS, DEFAULT_MODEL } from "../src/engine/constants";
 import { resolveModel } from "../src/services/api";
 
 describe("E2 模型参数", () => {

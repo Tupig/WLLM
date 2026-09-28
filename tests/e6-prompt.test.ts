@@ -2,8 +2,8 @@
  * E6 系统提示本地化：动态工具列表、原则、可选附加段
  */
 import { describe, expect, it } from "vitest";
-import { renderSystemPrompt } from "../src/prompt";
-import { getDefaultTools } from "../src/tools";
+import { renderSystemPrompt } from "../src/engine/prompt";
+import { getDefaultTools } from "../src/engine/toolRegistry";
 
 describe("renderSystemPrompt", () => {
   const tools = getDefaultTools();

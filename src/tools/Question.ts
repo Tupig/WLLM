@@ -2,7 +2,7 @@
  * tools/Question.ts — 向用户提问工具（A19）
  */
 import { z } from "zod";
-import { buildTool } from "../Tool.js";
+import { buildTool } from "../engine/Tool.js";
 
 export const QuestionInput = z.object({
   question: z.string().describe("要向用户提出的问题，一句话说清"),

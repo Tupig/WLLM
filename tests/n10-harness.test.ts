@@ -2,7 +2,7 @@
  * N10 本地 harness：XML 工具注入（无原生 tool call 兜底）
  */
 import { describe, expect, it } from "vitest";
-import { parseXmlToolCalls, buildXmlToolSection, resolveHarness } from "../src/harness";
+import { parseXmlToolCalls, buildXmlToolSection, resolveHarness } from "../src/engine/harness";
 
 const tools = [
   { name: "Read", description: "读取文件", input_schema: { type: "object", properties: { file_path: { type: "string" } }, required: ["file_path"] } },
