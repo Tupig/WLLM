@@ -8,6 +8,7 @@ import { buildTool, type ToolUseContext, type ToolResult } from "../Tool.js";
 import { safePath } from "../utils/path.js";
 import { runPostEditLint, formatLintResult } from "./lint.js";
 import { writeWithRollback } from "./rollback.js";
+import { resolveSandboxPolicy, checkPath, checkBashPaths } from "../services/sandbox.js";
 
 export const FileWriteInput = z.object({
   file_path: z.string().describe("文件路径"),
@@ -26,7 +27,11 @@ export const FileWriteTool = buildTool<string>({
   isConcurrencySafe: () => false,
   isEnabled: () => true,
 
-  async checkPermissions(input, _ctx) {
+  async checkPermissions(input, ctx) {
+    const policy = resolveSandboxPolicy(ctx.workDir);
+    if (checkPath(policy, safePath(ctx.workDir, (input as any).file_path), "write") === "deny") {
+      return { behavior: "deny", message: "沙箱策略：目标路径不可写（仅允许工作目录与 PILOT_SANDBOX_WRITE 白名单）" } as any;
+    }
     return { behavior: "allow", updatedInput: input };
   },
 

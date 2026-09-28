@@ -3,6 +3,7 @@
  */
 import { z } from "zod";
 import { readFile, stat } from "fs/promises";
+import { resolveSandboxPolicy, checkPath, checkBashPaths } from "../services/sandbox.js";
 import { buildTool, type ToolUseContext, type ToolResult } from "../Tool.js";
 import { safePath } from "../utils/path.js";
 import { MAX_FILE_SIZE_BYTES } from "../constants.js";
@@ -26,7 +27,11 @@ export const FileReadTool = buildTool<string>({
   isConcurrencySafe: () => true,
   isEnabled: () => true,
 
-  async checkPermissions(input, _ctx) {
+  async checkPermissions(input, ctx) {
+    const policy = resolveSandboxPolicy(ctx.workDir);
+    if (checkPath(policy, safePath(ctx.workDir, (input as any).file_path), "read") === "deny") {
+      return { behavior: "deny", message: "沙箱策略：敏感路径禁止读取" } as any;
+    }
     return { behavior: "allow", updatedInput: input };
   },
 

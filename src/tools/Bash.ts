@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { spawn } from "child_process";
 import { classifyBash } from "../services/bashSafety.js";
+import { resolveSandboxPolicy, checkPath, checkBashPaths } from "../services/sandbox.js";
 import { buildTool, type ToolUseContext, type ToolResult } from "../Tool.js";
 import { MAX_BASH_OUTPUT_CHARS, TOOL_TIMEOUT_MS } from "../constants.js";
 import { safePath } from "../utils/path.js";
@@ -43,7 +44,11 @@ export const BashTool = buildTool<string>({
   isEnabled: () => true,
   isOpenWorld: () => true,
 
-  async checkPermissions(input, _ctx) {
+  async checkPermissions(input, ctx) {
+    const policy = resolveSandboxPolicy(ctx.workDir);
+    if (checkBashPaths(policy, String((input as any).command ?? "")) === "deny") {
+      return { behavior: "deny", message: "沙箱策略：命令触及拦截路径" } as any;
+    }
     return { behavior: "allow", updatedInput: input };
   },
 
