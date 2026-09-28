@@ -3,6 +3,7 @@
  */
 import type { Tool, PermissionResult } from "../Tool.js";
 import type { ToolPermissionContext } from "../state/AppState.js";
+import { classifyBash } from "./bashSafety.js";
 import chalk from "chalk";
 
 function escapeRegExp(s: string): string {
@@ -94,8 +95,12 @@ export async function canUseTool(
     return { behavior: "deny", message: "dontAsk 模式：工具未被预先批准", decisionReason: "dontAsk 模式" };
   }
 
+  if (toolName === "Bash" && classifyBash(String(input.command ?? "")) === "destructive") {
+    return { behavior: "ask", message: `危险命令（destructive）：${String(input.command).slice(0, 200)}` };
+  }
+
   if (tool?.isReadOnly(input)) {
-    return { behavior: "allow", decisionReason: "默认：只读" };
+    return { behavior: "allow", decisionReason: "默认：只读/安全命令" };
   }
 
   return { behavior: "ask", message: `工具「${toolName}」需要用户确认` };

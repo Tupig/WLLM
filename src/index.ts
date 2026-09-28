@@ -171,11 +171,27 @@ function main(): void {
     .option("-t, --max-tokens <tokens>", "最大输出 Token 数", (v) => parseInt(v, 10), 8192)
     .option("--max-turns <turns>", "最大工具调用轮次", (v) => parseInt(v, 10), 20)
     .option("-w, --work-dir <dir>", "工作目录", process.cwd())
-    .option("-p, --prompt <message>", "单次执行模式");
+    .option("-p, --prompt <message>", "单次执行模式")
+    .option("--yolo", "跳过所有权限确认（bypassPermissions）")
+    .option("--plan", "计划模式（只允许只读操作）")
+    .option("--permission-mode <mode>", "权限模式：default|acceptEdits|bypassPermissions|plan|dontAsk");
 
   program.parse();
   const opts = program.opts();
   if (opts.model) process.env.PILOT_MODEL = opts.model;
+
+  const permMode = opts.yolo ? "bypassPermissions" : opts.plan ? "plan" : opts.permissionMode;
+  if (permMode) {
+    const valid = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk"];
+    if (!valid.includes(permMode)) {
+      console.error(chalk.red(`错误：无效权限模式 ${permMode}（可选：${valid.join("|")}）`));
+      process.exit(1);
+    }
+    appStore.setState((s) => ({
+      ...s,
+      toolPermissionContext: { ...s.toolPermissionContext, mode: permMode as any },
+    }));
+  }
 
   if (!process.env.ANTHROPIC_API_KEY && !process.env.PILOT_MOCK && !process.env.OPENAI_BASE_URL) {
     console.error(chalk.red("错误：请设置 ANTHROPIC_API_KEY、OPENAI_BASE_URL+OPENAI_API_KEY 或 PILOT_MOCK=1"));

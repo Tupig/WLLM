@@ -3,6 +3,7 @@
  */
 import { z } from "zod";
 import { spawn } from "child_process";
+import { classifyBash } from "../services/bashSafety.js";
 import { buildTool, type ToolUseContext, type ToolResult } from "../Tool.js";
 import { MAX_BASH_OUTPUT_CHARS, TOOL_TIMEOUT_MS } from "../constants.js";
 import { safePath } from "../utils/path.js";
@@ -36,7 +37,7 @@ export const BashTool = buildTool<string>({
   description: () => "执行 Bash 命令并返回其输出。",
   prompt: () => "执行 Shell 命令。请谨慎执行破坏性命令。",
   userFacingName: () => "Bash",
-  isReadOnly: () => false,
+  isReadOnly: (input: unknown) => classifyBash(String((input as any)?.command ?? "")) === "safe",
   isDestructive: () => true,
   isConcurrencySafe: () => false,
   isEnabled: () => true,
