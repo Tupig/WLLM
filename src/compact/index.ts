@@ -3,6 +3,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import type { ApiClient } from "../services/api.js";
+import { ADAPTIVE_ITERATIONS_CAP, DEFAULT_MAX_CONTEXT_TOKENS } from "../constants.js";
 
 export interface CompactionConfig {
   threshold: number;
@@ -27,13 +28,18 @@ const LADDER_SNIP = 0.7;
 const LADDER_COLLAPSE = 0.85;
 const LADDER_FORCE = 0.95;
 
-export function pickStrategy(usage: number, messageCount: number): Strategy {
-  if (messageCount > 100) return "force";
+export function pickStrategy(usage: number, messageCount: number, maxTokens = DEFAULT_MAX_CONTEXT_TOKENS): Strategy {
+  const maxMessages = Math.max(100, Math.floor(maxTokens / 1000));
+  if (messageCount > maxMessages) return "force";
   if (usage > LADDER_FORCE) return "force";
   if (usage > LADDER_COLLAPSE) return "collapse";
   if (usage > LADDER_SNIP) return "snip";
   if (usage > LADDER_MICRO) return "micro";
   return "none";
+}
+
+export function adaptiveIterations(_estimatedTokens: number, maxTokens: number): number {
+  return Math.min(ADAPTIVE_ITERATIONS_CAP, Math.max(5, Math.ceil(maxTokens / 2_000_000) * 5));
 }
 
 export function estimateTokens(messages: Anthropic.MessageParam[]): number {
@@ -75,7 +81,7 @@ export class ContextCompactor {
     maxTokens: number,
   ): { messages: Anthropic.MessageParam[]; strategy: Strategy } {
     if (this.circuitOpen) return { messages, strategy: "circuit-open" };
-    const strategy = pickStrategy(estimatedTokens / maxTokens, messages.length);
+    const strategy = pickStrategy(estimatedTokens / maxTokens, messages.length, maxTokens);
     this.lastOriginal = messages;
     switch (strategy) {
       case "none":
@@ -96,14 +102,15 @@ export class ContextCompactor {
     messages: Anthropic.MessageParam[],
     estimatedTokens: number,
     maxTokens: number,
-    maxIterations: number,
+    maxIterations?: number,
   ): { messages: Anthropic.MessageParam[]; iterations: number } {
+    const limit = maxIterations ?? adaptiveIterations(estimatedTokens, maxTokens);
     if (estimatedTokens <= maxTokens) return { messages, iterations: 0 };
     this.lastOriginal = messages;
     let current = messages;
     let currentTokens = estimatedTokens;
     let iterations = 0;
-    while (currentTokens > maxTokens && iterations < maxIterations && current.length > 4) {
+    while (currentTokens > maxTokens && iterations < limit && current.length > 4) {
       const r = this.compactByLadder(current, currentTokens, maxTokens);
       if (r.strategy === "none" || r.strategy === "circuit-open") break;
       if (r.messages.length >= current.length && r.strategy !== "snip") break;
