@@ -40,7 +40,8 @@ export type SDKMessage =
   | { type: "tool_result"; toolUseId: string; content: string; isError: boolean }
   | { type: "result"; subtype: "success" | "error"; result: string; cost_usd?: number; duration_ms?: number; num_turns?: number }
   | { type: "system"; subtype: "init"; model: string; tools: string[] }
-  | { type: "text"; text: string };
+  | { type: "text"; text: string }
+  | { type: "session"; messages: Anthropic.MessageParam[] };
 
 export type QueryEngineConfig = {
   cwd: string;
@@ -68,6 +69,8 @@ export type QueryEngineConfig = {
   enableSession?: boolean;
   /** 会话 ID（用于恢复） */
   sessionId?: string;
+  /** 会话续接：初始历史消息 */
+  initialMessages?: Anthropic.MessageParam[];
   /** 预算限制 */
   budget?: {
     maxCostPerSession?: number;
@@ -240,8 +243,11 @@ export class QueryEngine {
     const toolContext = this.buildToolContext();
     const canUseToolFn = this.buildCanUseToolFn();
 
+    const baseMessages = this.config.initialMessages?.length
+      ? [...this.config.initialMessages, { role: "user" as const, content: prompt }]
+      : [{ role: "user" as const, content: prompt }];
     const loopState: LoopState = {
-      messages: [{ role: "user", content: prompt }],
+      messages: baseMessages,
       turnCount: 0,
       compacted: false,
       maxOutputTokensOverride: this.config.maxTokens,
@@ -653,10 +659,15 @@ export class QueryEngine {
   getTools(): Tool[] {
     return this.tools;
   }
+
+  getSessionMessages(): Anthropic.MessageParam[] {
+    return this.currentMessages;
+  }
 }
 
 export async function* query(params: {
   prompt: string;
+  initialMessages?: Anthropic.MessageParam[];
   options?: Partial<QueryEngineConfig>;
 }): AsyncGenerator<SDKMessage, void, unknown> {
   const route = routeTask({
@@ -673,7 +684,9 @@ export async function* query(params: {
     ...params.options,
     model: route.model,
     routeProvider: route.provider,
+    initialMessages: params.initialMessages,
   });
 
   yield* engine.submitMessage(params.prompt);
+  yield { type: "session", messages: engine.getSessionMessages() };
 }

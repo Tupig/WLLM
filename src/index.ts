@@ -8,6 +8,8 @@ import { parseOptimizeCommand, optimizePrompt, needsClarification, appendPromptS
 import { join } from "path";
 import { createInterface, Interface } from "readline";
 import { snapshot, listCheckpoints, rollbackCheckpoint } from "./checkpoint.js";
+import { saveSessionMessages, loadSessionMessages, listSessions, forkMessages } from "./session.js";
+import type Anthropic from "@anthropic-ai/sdk";
 import { query, type SDKMessage } from "./QueryEngine.js";
 import { appStore } from "./state/AppState.js";
 
@@ -33,6 +35,9 @@ function printHelp(): void {
   /cost     查看 Token 用量
   /model    查看当前模型
   /checkpoint [new|list|rollback <id>]  会话检查点/回滚
+  /sessions  历史会话列表
+  /resume <id>        恢复会话
+  /fork <id> <条数>   从历史分叉
   /quit     退出
 
 或直接用自然语言描述您的任务。
@@ -61,6 +66,8 @@ function handleSDKMessage(msg: SDKMessage): void {
 
 async function startREPL(): Promise<void> {
   printBanner();
+  let sessionHistory: Anthropic.MessageParam[] = [];
+  let sessionId = `s-${Date.now().toString(36)}`;
 
   const rl: Interface = createInterface({
     input: process.stdin,
@@ -99,6 +106,43 @@ async function startREPL(): Promise<void> {
     if (input === "/model") {
       const s = appStore.getState();
       console.log(chalk.gray(`模型：${s.mainLoopModel} | 模式：${s.toolPermissionContext.mode}\n`));
+      rl.prompt();
+      return;
+    }
+    if (input === "/sessions") {
+      const list = await listSessions(appStore.getState().workDir);
+      if (list.length === 0) console.log(chalk.gray("暂无历史会话。\n"));
+      else {
+        for (const s of list.slice(0, 20)) {
+          console.log(chalk.gray(`  ${s.id}  ${s.updatedAt.slice(0, 19)}  ${s.messageCount} 条  ${s.preview}`));
+        }
+        console.log(chalk.gray("恢复：/resume <id> | 分叉：/fork <id> <条数>\n"));
+      }
+      rl.prompt();
+      return;
+    }
+    if (input === "/resume" || input.startsWith("/resume ")) {
+      const id = input.split(/\s+/)[1];
+      if (!id) { console.log(chalk.gray("用法：/resume <id>\n")); rl.prompt(); return; }
+      const msgs = await loadSessionMessages(appStore.getState().workDir, id);
+      if (!msgs) { console.log(chalk.red(`会话不存在：${id}\n`)); rl.prompt(); return; }
+      sessionHistory = msgs as Anthropic.MessageParam[];
+      sessionId = id;
+      console.log(chalk.gray(`已恢复会话 ${id}（${msgs.length} 条历史）\n`));
+      rl.prompt();
+      return;
+    }
+    if (input.startsWith("/fork ")) {
+      const [, fid, nRaw] = input.split(/\s+/);
+      const n = parseInt(nRaw ?? "", 10);
+      if (!fid || !Number.isFinite(n)) { console.log(chalk.gray("用法：/fork <id> <条数>\n")); rl.prompt(); return; }
+      const msgs = await loadSessionMessages(appStore.getState().workDir, fid);
+      if (!msgs) { console.log(chalk.red(`会话不存在：${fid}\n`)); rl.prompt(); return; }
+      const forked = forkMessages(msgs as Anthropic.MessageParam[], n);
+      sessionId = `fork-${Date.now().toString(36)}`;
+      sessionHistory = forked;
+      await saveSessionMessages(appStore.getState().workDir, sessionId, sessionHistory);
+      console.log(chalk.gray(`已分叉 ${fid} 前 ${n} 条 → 新会话 ${sessionId}（${forked.length} 条）\n`));
       rl.prompt();
       return;
     }
@@ -170,10 +214,17 @@ async function startREPL(): Promise<void> {
     }
 
     try {
+      const opts = { cwd: process.cwd(), model: process.env.PILOT_MODEL };
       for await (const msg of query({
         prompt: finalInput ?? input,
-        options: { cwd: process.cwd(), model: process.env.PILOT_MODEL },
+        initialMessages: sessionHistory,
+        options: opts,
       })) {
+        if (msg.type === "session") {
+          sessionHistory = msg.messages;
+          await saveSessionMessages(appStore.getState().workDir, sessionId, sessionHistory).catch(() => {});
+          continue;
+        }
         handleSDKMessage(msg);
       }
     } catch (err) {
