@@ -2,6 +2,8 @@
  * hooks/system.ts — Hook 系统
  */
 import { spawn } from "child_process";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 export type HookEvent =
   | "PreToolUse"
@@ -33,6 +35,61 @@ export type HookResult = {
 export type HookHandler = (
   ctx: HookContext,
 ) => Promise<HookResult | void> | HookResult | void;
+
+export function interpretShellExit(
+  code: number | null,
+  stdout: string,
+  stderr: string,
+  failOpen = false,
+): HookResult {
+  const enforce = !failOpen && process.env.PILOT_HOOKS_FAIL_OPEN !== "1";
+
+  if (code === 0) {
+    try {
+      const parsed = JSON.parse(stdout);
+      return {
+        block: parsed.block === true,
+        replacement: parsed.replacement,
+        message: parsed.message,
+      };
+    } catch {
+      return {};
+    }
+  }
+  if (code === 2) {
+    return { block: true, message: (stderr || stdout || "hook exit 2").trim() };
+  }
+  if (code === null) {
+    return { block: enforce, message: "hook 超时（fail-closed）" };
+  }
+  return { block: enforce, message: `hook 退出码 ${code}（fail-closed）${stderr ? "：" + stderr.trim() : ""}` };
+}
+
+export type ShellHookConfig = {
+  event: HookEvent;
+  matcher?: { tool_name?: string };
+  command: string;
+  timeout?: number;
+};
+
+export function loadShellHooks(workDir: string): ShellHookConfig[] {
+  const file = process.env.PILOT_HOOKS_FILE || join(workDir, ".wllm", "hooks.json");
+  try {
+    const raw = readFileSync(file, "utf-8");
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data)) return [];
+    return data
+      .filter((h: any) => typeof h?.command === "string" && typeof h?.event === "string")
+      .map((h: any) => ({
+        event: h.event as HookEvent,
+        matcher: h.matcher && typeof h.matcher === "object" ? h.matcher : undefined,
+        command: h.command,
+        timeout: typeof h.timeout === "number" ? h.timeout : undefined,
+      }));
+  } catch {
+    return [];
+  }
+}
 
 export type HookMatcher = {
   event: HookEvent;
@@ -102,19 +159,14 @@ export class HookSystem {
 
       const timer = setTimeout(() => {
         try { child.kill("SIGTERM"); } catch {}
-        finish({});
+        finish(interpretShellExit(null, stdout, stderr));
       }, timeoutMs);
 
-      child.on("close", () => {
-        try {
-          const parsed = JSON.parse(stdout);
-          finish({ block: parsed.block === true, replacement: parsed.replacement, message: parsed.message });
-        } catch {
-          finish({});
-        }
+      child.on("close", (code) => {
+        finish(interpretShellExit(code, stdout, stderr));
       });
 
-      child.on("error", () => finish({}));
+      child.on("error", () => finish(interpretShellExit(127, stdout, stderr)));
     });
   }
 }

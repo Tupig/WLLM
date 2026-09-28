@@ -17,7 +17,7 @@ import { appendFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { mapWithConcurrency, partitionRuns } from "./tools/parallel.js";
 import { canUseTool, promptUser } from "./services/permissions.js";
-import { hookSystem } from "./hooks/system.js";
+import { hookSystem, loadShellHooks } from "./hooks/system.js";
 import { ContextCompactor, LADDER_MICRO } from "./compact/index.js";
 import { appStore } from "./state/AppState.js";
 import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS } from "./constants.js";
@@ -197,6 +197,13 @@ export class QueryEngine {
     }
 
     // 加载项目规则文件
+    for (const h of loadShellHooks(config.cwd)) {
+      hookSystem.register({
+        event: h.event,
+        matcher: h.matcher,
+        handler: (c) => hookSystem.triggerShellHook(h.command, c, h.timeout),
+      });
+    }
     this.ruleLayers = resolveRuleLayers(config.cwd);
     this.memoryEntries = loadMemoriesSync(config.cwd);
     if (this.ruleLayers.length > 0 && config.verbose) {
