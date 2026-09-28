@@ -14,11 +14,109 @@ const DEFAULT_CONFIG: CompactionConfig = {
   maxMessages: 100,
 };
 
+export type Strategy =
+  | "none"
+  | "micro"
+  | "snip"
+  | "collapse"
+  | "force"
+  | "circuit-open";
+
+export const LADDER_MICRO = 0.6;
+const LADDER_SNIP = 0.7;
+const LADDER_COLLAPSE = 0.85;
+const LADDER_FORCE = 0.95;
+
+export function pickStrategy(usage: number, messageCount: number): Strategy {
+  if (messageCount > 100) return "force";
+  if (usage > LADDER_FORCE) return "force";
+  if (usage > LADDER_COLLAPSE) return "collapse";
+  if (usage > LADDER_SNIP) return "snip";
+  if (usage > LADDER_MICRO) return "micro";
+  return "none";
+}
+
+export function estimateTokens(messages: Anthropic.MessageParam[]): number {
+  return Math.ceil(JSON.stringify(messages).length / 4);
+}
+
 export class ContextCompactor {
   private config: CompactionConfig;
+  private circuitOpen = false;
+  private lastOriginal: Anthropic.MessageParam[] | null = null;
 
   constructor(config?: Partial<CompactionConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  isCircuitOpen(): boolean {
+    return this.circuitOpen;
+  }
+
+  getLastOriginal(): Anthropic.MessageParam[] | null {
+    return this.lastOriginal;
+  }
+
+  recordResult(
+    before: Anthropic.MessageParam[],
+    after: Anthropic.MessageParam[],
+    _beforeTokens: number,
+    _maxTokens: number,
+  ): void {
+    this.lastOriginal = before;
+    if (estimateTokens(after) >= estimateTokens(before)) {
+      this.circuitOpen = true;
+    }
+  }
+
+  compactByLadder(
+    messages: Anthropic.MessageParam[],
+    estimatedTokens: number,
+    maxTokens: number,
+  ): { messages: Anthropic.MessageParam[]; strategy: Strategy } {
+    if (this.circuitOpen) return { messages, strategy: "circuit-open" };
+    const strategy = pickStrategy(estimatedTokens / maxTokens, messages.length);
+    this.lastOriginal = messages;
+    switch (strategy) {
+      case "none":
+        return { messages, strategy };
+      case "micro":
+        return { messages: this.microcompact(messages), strategy };
+      case "snip":
+        return { messages: this.snip(messages), strategy };
+      case "collapse":
+      case "force":
+        return { messages: this.contextCollapse(messages), strategy };
+      default:
+        return { messages, strategy: "none" };
+    }
+  }
+
+  compactToBudget(
+    messages: Anthropic.MessageParam[],
+    estimatedTokens: number,
+    maxTokens: number,
+    maxIterations: number,
+  ): { messages: Anthropic.MessageParam[]; iterations: number } {
+    if (estimatedTokens <= maxTokens) return { messages, iterations: 0 };
+    this.lastOriginal = messages;
+    let current = messages;
+    let currentTokens = estimatedTokens;
+    let iterations = 0;
+    while (currentTokens > maxTokens && iterations < maxIterations && current.length > 4) {
+      const r = this.compactByLadder(current, currentTokens, maxTokens);
+      if (r.strategy === "none" || r.strategy === "circuit-open") break;
+      if (r.messages.length >= current.length && r.strategy !== "snip") break;
+      current = r.messages;
+      currentTokens = estimateTokens(current);
+      iterations++;
+    }
+    if (currentTokens > maxTokens) {
+      this.lastOriginal = messages;
+      current = this.budgetReduction(messages);
+      iterations++;
+    }
+    return { messages: current, iterations };
   }
 
   shouldCompact(messages: Anthropic.MessageParam[], estimatedTokens: number, maxTokens: number): boolean {
@@ -91,7 +189,7 @@ export class ContextCompactor {
 
     try {
       const resp = await client.anthropic.messages.create({
-        model: "claude-haiku-4-20250414",
+        model: model || "claude-haiku-4-20250414",
         max_tokens: 1024,
         system: "请简洁地总结对话历史，保留关键决策、代码变更和上下文信息。",
         messages: [{

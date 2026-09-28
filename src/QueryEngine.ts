@@ -18,7 +18,7 @@ import { join } from "path";
 import { mapWithConcurrency, partitionRuns } from "./tools/parallel.js";
 import { canUseTool, promptUser } from "./services/permissions.js";
 import { hookSystem } from "./hooks/system.js";
-import { ContextCompactor } from "./compact/index.js";
+import { ContextCompactor, LADDER_MICRO } from "./compact/index.js";
 import { appStore } from "./state/AppState.js";
 import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS } from "./constants.js";
 import { loadProjectRules, formatRulesForPrompt, type ProjectRules } from "./rules/index.js";
@@ -255,12 +255,16 @@ export class QueryEngine {
       loopState.turnCount = turn + 1;
 
       const estimatedTokens = this.estimateTokens(loopState.messages);
-      if (this.compactor.shouldCompact(loopState.messages, estimatedTokens, MAX_CONTEXT_TOKENS)) {
-        if (!loopState.hasAttemptedReactiveCompact) {
-          const result = await this.compactor.compact(this.client, this.config.model, loopState.messages);
-          loopState.messages = result.messages;
+      if (
+        !loopState.hasAttemptedReactiveCompact &&
+        estimatedTokens > MAX_CONTEXT_TOKENS * LADDER_MICRO
+      ) {
+        const r = this.compactor.compactByLadder(loopState.messages, estimatedTokens, MAX_CONTEXT_TOKENS);
+        loopState.hasAttemptedReactiveCompact = true;
+        if (r.strategy !== "none" && r.strategy !== "circuit-open") {
+          this.compactor.recordResult(loopState.messages, r.messages, estimatedTokens, MAX_CONTEXT_TOKENS);
+          loopState.messages = r.messages;
           loopState.compacted = true;
-          loopState.hasAttemptedReactiveCompact = true;
           appStore.setState((s) => ({ ...s, compactionCount: s.compactionCount + 1 }));
         }
       }
