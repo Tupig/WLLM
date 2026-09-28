@@ -13,6 +13,7 @@ import { stageMemory, commitMemory, loadMemories, formatMemoriesForPrompt } from
 import { loadSkills, resolveSkill } from "./skills/index.js";
 import { createSpec, listSpecs, loadSpec, buildWaves, parseTasks, approveSpec } from "./spec/index.js";
 import { runDoctor, renderDoctor, initAgentMd, buildReviewPrompt, isValidRef } from "./diag/index.js";
+import { buildRetroPrompt, parseReviewDecision, applyReviewDecision, extractFailures } from "./reflexion/index.js";
 import { promptUser } from "./services/permissions.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { query, type SDKMessage } from "./QueryEngine.js";
@@ -47,6 +48,7 @@ function printHelp(): void {
   /doctor  环境与配置体检
   /init [--force]  生成 AGENTS.md
   /review [ref]  只读评审未提交改动（或对某 ref 的 diff）
+  /retro         会话复盘：discard/merge/skill/rule 四选一，草稿入 staging
   /sessions  历史会话列表
   /resume <id>        恢复会话
   /fork <id> <条数>   从历史分叉
@@ -240,6 +242,51 @@ async function startREPL(): Promise<void> {
           if (msg.type === "session") { sessionHistory = msg.messages; continue; }
           handleSDKMessage(msg);
         }
+      } catch (err) {
+        console.error(chalk.red(`\n错误：${err instanceof Error ? err.message : err}\n`));
+      }
+      rl.prompt();
+      return;
+    }
+    if (input === "/retro" || input.startsWith("/retro ")) {
+      const workDir = appStore.getState().workDir;
+      let diff = "";
+      try {
+        const { execSync } = await import("child_process");
+        diff = execSync("git diff HEAD --no-color", {
+          cwd: workDir, encoding: "utf-8", maxBuffer: 8 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"],
+        });
+      } catch {
+        diff = "";
+      }
+      const failures = extractFailures(sessionHistory);
+      const prompt = buildRetroPrompt({ diff, failures });
+      if (prompt.startsWith("无可复盘")) {
+        console.log(chalk.gray(prompt + "\n"));
+        rl.prompt();
+        return;
+      }
+      try {
+        let text = "";
+        for await (const msg of query({
+          prompt,
+          initialMessages: sessionHistory,
+          options: { cwd: workDir, model: process.env.PILOT_MODEL, initialMode: "plan" },
+        })) {
+          if (msg.type !== "assistant") continue;
+          for (const b of (msg.message?.content ?? []) as any[]) {
+            if (b?.type === "text") text += b.text;
+          }
+        }
+        const decision = parseReviewDecision(text);
+        if (!decision) {
+          console.log(chalk.yellow("复盘输出无法解析为四选一 JSON，未做任何写入。\n"));
+          rl.prompt();
+          return;
+        }
+        const r = applyReviewDecision(workDir, decision, `run-${Date.now()}`);
+        console.log(chalk.green(`复盘动作：${decision.action}（${decision.reason || "无理由"}）`));
+        console.log(chalk.gray(` ${r.message}\n`));
       } catch (err) {
         console.error(chalk.red(`\n错误：${err instanceof Error ? err.message : err}\n`));
       }
