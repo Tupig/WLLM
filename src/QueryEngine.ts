@@ -12,7 +12,7 @@ import { createClient, streamMessage, type StreamEvent, type ApiClient } from ".
 import { resolveHarness, parseXmlToolCalls, buildXmlToolSection } from "./harness.js";
 import { resolveFallback, streamWithFailover, isInfraError } from "./providers/failover.js";
 import { renderSystemPrompt } from "./prompt.js";
-import { routeTask, formatRouteLog } from "./router.js";
+import { routeTask, formatRouteLog, profileTask, appendRouteFeedback } from "./router.js";
 import { appendFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { mapWithConcurrency, partitionRuns } from "./tools/parallel.js";
@@ -125,7 +125,7 @@ function appendRouteLog(prompt: string, route: ReturnType<typeof routeTask>, cwd
   try {
     const dir = join(cwd, ".wllm");
     mkdirSync(dir, { recursive: true });
-    appendFileSync(join(dir, "route.log"), formatRouteLog({ ...route, prompt }) + "\n");
+    appendFileSync(join(dir, "route.log"), formatRouteLog({ ...route, prompt, kind: profileTask(prompt).kind }) + "\n");
   } catch { /* routelog 失败不影响主流程 */ }
 }
 
@@ -344,6 +344,14 @@ export class QueryEngine {
     if (trajectoryPath && this.config.verbose) {
       console.log(chalk.gray(`\n轨迹已保存：${trajectoryPath}`));
     }
+
+    // routelog 反馈回填（A23 闭环，供画像选型）
+    appendRouteFeedback(this.config.cwd, {
+      model: this.config.model,
+      kind: profileTask(prompt).kind,
+      success: !hitMaxTurns,
+      oneShot: !hitMaxTurns && loopState.turnCount <= 2,
+    });
   }
 
   private async executeTurn(
@@ -697,15 +705,17 @@ export async function* query(params: {
   initialMessages?: Anthropic.MessageParam[];
   options?: Partial<QueryEngineConfig>;
 }): AsyncGenerator<SDKMessage, void, unknown> {
+  const cwd = params.options?.cwd ?? process.cwd();
   const route = routeTask({
     prompt: params.prompt,
     model: params.options?.model,
     env: process.env,
+    workDir: cwd,
   });
-  appendRouteLog(params.prompt, route, process.cwd());
+  appendRouteLog(params.prompt, route, cwd);
 
   const engine = new QueryEngine({
-    cwd: process.cwd(),
+    cwd,
     maxTokens: 8192,
     maxTurns: 20,
     ...params.options,
