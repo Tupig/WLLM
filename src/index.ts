@@ -12,6 +12,7 @@ import { saveSessionMessages, loadSessionMessages, listSessions, forkMessages } 
 import { stageMemory, commitMemory, loadMemories, formatMemoriesForPrompt } from "./memory.js";
 import { loadSkills, resolveSkill } from "./skills/index.js";
 import { createSpec, listSpecs, loadSpec, buildWaves, parseTasks, approveSpec } from "./spec/index.js";
+import { runDoctor, renderDoctor, initAgentMd, buildReviewPrompt, isValidRef } from "./diag/index.js";
 import { promptUser } from "./services/permissions.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { query, type SDKMessage } from "./QueryEngine.js";
@@ -43,6 +44,9 @@ function printHelp(): void {
   /skill <name>  加载技能全文
   /remember [内容]  查看/存入记忆（存入需确认）
   /spec new|list|show|waves|approve  spec 三件套与计划批准
+  /doctor  环境与配置体检
+  /init [--force]  生成 AGENTS.md
+  /review [ref]  只读评审未提交改动（或对某 ref 的 diff）
   /sessions  历史会话列表
   /resume <id>        恢复会话
   /fork <id> <条数>   从历史分叉
@@ -180,6 +184,64 @@ async function startREPL(): Promise<void> {
         }
       } catch (e) {
         console.log(chalk.red(`${e instanceof Error ? e.message : String(e)}\n`));
+      }
+      rl.prompt();
+      return;
+    }
+    if (input === "/doctor") {
+      const workDir = appStore.getState().workDir;
+      console.log(renderDoctor(runDoctor(workDir)) + "\n");
+      rl.prompt();
+      return;
+    }
+    if (input === "/init" || input.startsWith("/init ")) {
+      const force = input.includes("--force");
+      try {
+        const out = initAgentMd(appStore.getState().workDir, { force });
+        console.log(chalk.green(`已生成 ${out.path}\n`));
+        console.log(chalk.gray(out.content));
+      } catch (e) {
+        console.log(chalk.red(`${e instanceof Error ? e.message : String(e)}\n`));
+      }
+      rl.prompt();
+      return;
+    }
+    if (input === "/review" || input.startsWith("/review ")) {
+      const workDir = appStore.getState().workDir;
+      const ref = input.split(/\s+/)[1];
+      if (ref && !isValidRef(ref)) {
+        console.log(chalk.red(`非法 ref：${ref}\n`));
+        rl.prompt();
+        return;
+      }
+      let diff = "";
+      try {
+        const { execSync } = await import("child_process");
+        diff = execSync(ref ? `git diff --no-color ${ref}` : "git diff HEAD --no-color", {
+          cwd: workDir, encoding: "utf-8", maxBuffer: 8 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"],
+        });
+      } catch (e) {
+        console.log(chalk.red(`收集 diff 失败：${e instanceof Error ? e.message : String(e)}\n`));
+        rl.prompt();
+        return;
+      }
+      const prompt = buildReviewPrompt(diff);
+      if (prompt.startsWith("没有可评审")) {
+        console.log(chalk.gray(prompt + "\n"));
+        rl.prompt();
+        return;
+      }
+      try {
+        for await (const msg of query({
+          prompt,
+          initialMessages: sessionHistory,
+          options: { cwd: workDir, model: process.env.PILOT_MODEL, initialMode: "plan" },
+        })) {
+          if (msg.type === "session") { sessionHistory = msg.messages; continue; }
+          handleSDKMessage(msg);
+        }
+      } catch (err) {
+        console.error(chalk.red(`\n错误：${err instanceof Error ? err.message : err}\n`));
       }
       rl.prompt();
       return;
