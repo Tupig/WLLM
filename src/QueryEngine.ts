@@ -21,7 +21,8 @@ import { hookSystem } from "./hooks/system.js";
 import { ContextCompactor, LADDER_MICRO } from "./compact/index.js";
 import { appStore } from "./state/AppState.js";
 import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS } from "./constants.js";
-import { loadProjectRules, formatRulesForPrompt, type ProjectRules } from "./rules/index.js";
+import { resolveRuleLayers, formatLayersForPrompt, type RuleLayer } from "./rules/index.js";
+import { loadMemoriesSync, formatMemoriesForPrompt, type MemoryEntry } from "./memory.js";
 import { createToolState, recordToolExecution, formatToolStateForPrompt, type ToolExecutionState } from "./tools/state.js";
 import { ModeManager, type AgentMode } from "./modes/index.js";
 import { createTrajectoryRecorder, type TrajectoryRecorder } from "./trajectory/index.js";
@@ -132,7 +133,8 @@ export class QueryEngine {
   private readFileState: Map<string, { mtime: number }> = new Map();
   private currentMessages: Anthropic.MessageParam[] = [];
   private toolState: ToolExecutionState;
-  private projectRules: ProjectRules | null = null;
+  private ruleLayers: RuleLayer[] = [];
+  private memoryEntries: MemoryEntry[] = [];
   private streaming = false;
   private modeManager: ModeManager;
   private trajectory: TrajectoryRecorder | null = null;
@@ -195,9 +197,10 @@ export class QueryEngine {
     }
 
     // 加载项目规则文件
-    this.projectRules = loadProjectRules(config.cwd);
-    if (this.projectRules && config.verbose) {
-      console.log(`\n已加载项目规则：${this.projectRules.source}`);
+    this.ruleLayers = resolveRuleLayers(config.cwd);
+    this.memoryEntries = loadMemoriesSync(config.cwd);
+    if (this.ruleLayers.length > 0 && config.verbose) {
+      console.log(`\n已加载规则层：${this.ruleLayers.map((l) => l.tier).join(" → ")}`);
     }
 
     if (this.client.type === "mock") {
@@ -638,7 +641,8 @@ export class QueryEngine {
   private buildSystemPrompt(toolDefs: Anthropic.Tool[] = []): string {
     void toolDefs;
     return renderSystemPrompt(this.tools, {
-      rulesText: this.projectRules ? formatRulesForPrompt(this.projectRules) : undefined,
+      rulesText: this.ruleLayers.length ? formatLayersForPrompt(this.ruleLayers) : undefined,
+      memoryText: this.memoryEntries.length ? formatMemoriesForPrompt(this.memoryEntries) : undefined,
       stateText: formatToolStateForPrompt(this.toolState) || undefined,
       append: this.config.appendSystemPrompt,
     });

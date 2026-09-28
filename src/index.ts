@@ -9,6 +9,8 @@ import { join } from "path";
 import { createInterface, Interface } from "readline";
 import { snapshot, listCheckpoints, rollbackCheckpoint } from "./checkpoint.js";
 import { saveSessionMessages, loadSessionMessages, listSessions, forkMessages } from "./session.js";
+import { stageMemory, commitMemory, loadMemories, formatMemoriesForPrompt } from "./memory.js";
+import { promptUser } from "./services/permissions.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { query, type SDKMessage } from "./QueryEngine.js";
 import { appStore } from "./state/AppState.js";
@@ -35,6 +37,7 @@ function printHelp(): void {
   /cost     查看 Token 用量
   /model    查看当前模型
   /checkpoint [new|list|rollback <id>]  会话检查点/回滚
+  /remember [内容]  查看/存入记忆（存入需确认）
   /sessions  历史会话列表
   /resume <id>        恢复会话
   /fork <id> <条数>   从历史分叉
@@ -106,6 +109,28 @@ async function startREPL(): Promise<void> {
     if (input === "/model") {
       const s = appStore.getState();
       console.log(chalk.gray(`模型：${s.mainLoopModel} | 模式：${s.toolPermissionContext.mode}\n`));
+      rl.prompt();
+      return;
+    }
+    if (input === "/remember" || input.startsWith("/remember ")) {
+      const content = input.slice("/remember".length).trim();
+      if (!content) {
+        const mems = await loadMemories(appStore.getState().workDir);
+        if (mems.length === 0) console.log(chalk.gray("暂无记忆。用法：/remember <内容>\n"));
+        else console.log(formatMemoriesForPrompt(mems) + "\n");
+        rl.prompt();
+        return;
+      }
+      const staged = stageMemory({ content });
+      console.log(chalk.yellow("\n将存入记忆："));
+      console.log(chalk.gray(`  [${staged.category}] ${staged.content}\n`));
+      const ok = await promptUser("remember", { content: staged.content });
+      if (ok) {
+        await commitMemory(appStore.getState().workDir, staged, true);
+        console.log(chalk.gray("已存入记忆。\n"));
+      } else {
+        console.log(chalk.gray("已放弃。\n"));
+      }
       rl.prompt();
       return;
     }
