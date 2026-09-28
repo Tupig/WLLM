@@ -83,6 +83,19 @@ export const GrepTool = buildTool<string>({
         const resultLines = truncated ? lines.slice(0, headLimit) : lines;
 
         let result: string;
+        if (mode === "content" && truncated) {
+          // SWE-agent 做法：超量且散在多文件 → 只列文件名，逼模型缩窄条件
+          const files = [...new Set(lines.map((l) => l.split(":")[0]))];
+          if (files.length > 10) {
+            result =
+              `匹配 ${lines.length} 行、散在 ${files.length} 个文件，超出显示预算。\n` +
+              `涉及文件：\n${files.slice(0, 50).join("\n")}\n` +
+              `（先按文件名定位，再用 include / 更精确 pattern / output_mode=files_with_matches 缩窄）`;
+            finish({ data: result });
+            return;
+          }
+        }
+
         if (mode === "files_with_matches") {
           result = `找到 ${resultLines.length} 个文件：\n${resultLines.join("\n")}`;
         } else if (mode === "count") {

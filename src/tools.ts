@@ -26,6 +26,7 @@ import {
 import { QuestionTool } from "./tools/Question.js";
 import { TodoWriteTool } from "./tools/todo.js";
 import { AgentTool } from "./tools/Agent.js";
+import { RepoMapTool } from "./tools/RepoMap.js";
 
 export function getDefaultTools(): Tool[] {
   return [
@@ -35,6 +36,7 @@ export function getDefaultTools(): Tool[] {
     WebSearchTool, QuestionTool,
     TodoWriteTool,
     AgentTool,
+    RepoMapTool,
   ];
 }
 
