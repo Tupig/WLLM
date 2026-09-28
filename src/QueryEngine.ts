@@ -24,6 +24,7 @@ import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS } from "./constants.
 import { resolveRuleLayers, formatLayersForPrompt, type RuleLayer } from "./rules/index.js";
 import { loadMemoriesSync, formatMemoriesForPrompt, type MemoryEntry } from "./memory.js";
 import { loadSkills, formatSkillCatalog, type SkillMeta } from "./skills/index.js";
+import { renderTodoState } from "./tools/todo.js";
 import { createToolState, recordToolExecution, formatToolStateForPrompt, type ToolExecutionState } from "./tools/state.js";
 import { ModeManager, type AgentMode } from "./modes/index.js";
 import { createTrajectoryRecorder, type TrajectoryRecorder } from "./trajectory/index.js";
@@ -654,7 +655,8 @@ export class QueryEngine {
       rulesText: this.ruleLayers.length ? formatLayersForPrompt(this.ruleLayers) : undefined,
       memoryText: this.memoryEntries.length ? formatMemoriesForPrompt(this.memoryEntries) : undefined,
       skillCatalog: this.skillCatalog || undefined,
-      stateText: formatToolStateForPrompt(this.toolState) || undefined,
+      stateText:
+        (formatToolStateForPrompt(this.toolState) + renderTodoState(appStore.getState().todoState ?? null)) || undefined,
       append: this.config.appendSystemPrompt,
     });
   }

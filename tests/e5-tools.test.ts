@@ -4,12 +4,12 @@
 import { describe, expect, it } from "vitest";
 import { getDefaultTools, getExtraTools, getToolByName } from "../src/tools";
 
-describe("默认工具集（裁剪 26→10）", () => {
+describe("默认工具集（裁剪 26→11，N7 增 TodoWrite）", () => {
   const names = getDefaultTools().map((t) => t.name);
 
-  it("恰为 8 核心 + WebSearch + Question", () => {
+  it("恰为 8 核心 + WebSearch + Question + TodoWrite", () => {
     expect(names.sort()).toEqual(
-      ["Bash", "Edit", "Read", "Write", "Glob", "Grep", "GitStatus", "GitDiff", "WebSearch", "Question"].sort(),
+      ["Bash", "Edit", "Read", "Write", "Glob", "Grep", "GitStatus", "GitDiff", "WebSearch", "Question", "TodoWrite"].sort(),
     );
   });
   it("重构/分析/包管理类不在默认", () => {

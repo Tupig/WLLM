@@ -22,6 +22,7 @@ export type AppState = {
   turnCount: number;
   tokenUsage: { input: number; output: number };
   compactionCount: number;
+  todoState?: import("../tools/todo.js").TodoState | null;
 };
 
 export const defaultToolPermissionContext: ToolPermissionContext = {
@@ -41,6 +42,7 @@ export const defaultAppState: AppState = {
   turnCount: 0,
   tokenUsage: { input: 0, output: 0 },
   compactionCount: 0,
+  todoState: null,
 };
 
 export const appStore = createStore<AppState>(defaultAppState);

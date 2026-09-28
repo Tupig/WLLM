@@ -24,6 +24,7 @@ import {
   RunScriptTool,
 } from "./tools/PackageManager.js";
 import { QuestionTool } from "./tools/Question.js";
+import { TodoWriteTool } from "./tools/todo.js";
 
 export function getDefaultTools(): Tool[] {
   return [
@@ -31,6 +32,7 @@ export function getDefaultTools(): Tool[] {
     GlobTool, GrepTool, BashTool,
     GitStatusTool, GitDiffTool,
     WebSearchTool, QuestionTool,
+    TodoWriteTool,
   ];
 }
 
