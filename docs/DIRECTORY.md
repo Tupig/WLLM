@@ -32,11 +32,10 @@ WLLM/
 │   └── ★ gpt-visual-platform/     # D2b：Unity 测试平台归档（源码级，剔 .venv/dist/target 等产物）
 │
 ├── docs/
-│   ├── INVENTORY.md / PILOT_INVENTORY.md   # A1/A2
 │   ├── PROCESS.md                 # 六步流程
 │   ├── DIRECTORY.md               # 本文件（D2）
-│   ├── GAP.md / ABSORPTION.md     # C1/C2
-│   ├── research/（12 份）          # B1-B12
+│   ├── history.md                 # 历史合集（A1/A2 盘点 + C1 差距 + C2 吸收，四合一）
+│   ├── history/research/（12 份）  # B1-B12 调研归档
 │   └── ★ reviews/                 # PROCESS ④⑥ 留痕（每功能一份）
 │
 └── （git：baseline→v3.0，origin=github.com:Tupig/WLLM）
