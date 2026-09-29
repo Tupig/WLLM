@@ -62,7 +62,8 @@ export async function snapshot(workDir: string, label: string): Promise<Checkpoi
 
   const base = await git(workDir, ["rev-parse", "HEAD"]);
   await git(workDir, ["add", "-A"]);
-  await git(workDir, ["commit", "-qm", `[wllm] ${label}`]);
+  // 检查点是内部机制，作者无关：内联 identity，环境无全局配置时也能提交
+  await git(workDir, ["-c", "user.name=wllm", "-c", "user.email=wllm@local", "commit", "-qm", `[wllm] ${label}`]);
   const sha = await git(workDir, ["rev-parse", "HEAD"]);
   const id = `${Date.now().toString(36)}-${sha.slice(0, 7)}`;
   await git(workDir, ["update-ref", CKPT_REF_PREFIX + id, sha]);

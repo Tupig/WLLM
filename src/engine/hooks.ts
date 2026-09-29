@@ -147,6 +147,8 @@ export class HookSystem {
       child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
       child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
 
+      // 子进程可能不读 stdin 就退出（快退 hook/CI 竞态），忽略 EPIPE 防未捕获异常
+      child.stdin.on("error", () => {});
       child.stdin.write(JSON.stringify(ctx));
       child.stdin.end();
 
