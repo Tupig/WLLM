@@ -101,7 +101,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 ### 内核特性
 
 - **上下文工程**：预算制压缩（`compact`）、`PILOT_MAX_CONTEXT_TOKENS` 自适应（30k ~ 10M 窗口）、轨迹（trajectory）记录与复盘
-- **多 Provider 容错**：Anthropic / OpenAI / 本地代理统一接入，`PILOT_FAILOVER` 链式降级，`PILOT_ROLE_MODELS` 分角色选模型
+- **多 Provider 容错**：Anthropic / OpenAI / 本地代理统一接入，`PILOT_FAILOVER` 链式降级；错误标准分类（`services/errors.ts`：rate_limit / auth / context_too_long / overloaded / server / network / invalid_request，429/529/5xx/断连触发切换，401 与业务错误不切换），`PILOT_ROLE_MODELS` 分角色选模型
 - **会话与恢复**：session / checkpoint / 一键回滚，跨进程续跑
 - **知识沉淀**：memory（长期记忆）+ skills（技能库，`.wllm/skills/` 先审后存）+ reflexion（反思入库）
 - **工作模式**：plan / act 双模式 + spec 规格驱动开发（`n8-spec`）

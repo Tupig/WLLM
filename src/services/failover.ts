@@ -1,17 +1,12 @@
 /**
- * providers/failover.ts — 基础设施故障回退（本地 OOM/断连 → 云端兜底）
+ * providers/failover.ts — 基础设施故障回退（本地 OOM/断连/限流/过载 → 云端兜底）
+ * 分类逻辑统一在 services/errors.ts（LiteLLM 思路），此处只保留 failover 语义。
  */
 import type { StreamEvent } from "./api.js";
-
-const INFRA_PATTERNS = [
-  /ECONNREFUSED/i, /fetch failed/i, /ETIMEDOUT/i, /EPIPE/i, /ENOTFOUND/i,
-  /\b50[0-9]\b/, /status 50[0-9]/, /返回错误 50[0-9]/,
-  /out of memory/i, /\bOOM\b/i, /server crashed/i, /socket hang up/i,
-];
+import { classifyProviderError } from "./errors.js";
 
 export function isInfraError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return INFRA_PATTERNS.some((p) => p.test(msg));
+  return classifyProviderError(err).failoverEligible;
 }
 
 export function resolveFallback(env: NodeJS.ProcessEnv = process.env): "anthropic" | "openai" | null {
