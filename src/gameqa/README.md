@@ -2,7 +2,7 @@
 
 跨环境（Mac / Linux / Windows / iOS / Android）的 Unity3D 游戏自动化测试编排与结果收集。
 本模块是原 `gpt-visual-platform`（Go server + Rust agent + Python legacy）的 TypeScript 统一重写，
-API、`data/` 数据格式与旧版完全兼容；历史设计文档见 `docs/history/gameqa/`。
+API、`data/` 数据格式与旧版完全兼容（原蓝本文档已删，历史见 git）。
 
 ## 快速开始
 

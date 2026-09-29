@@ -31,13 +31,9 @@ WLLM/
 │   ├── models/ venv/ logs/ state/ # 运行时（gitignore）
 │   └── models.json / README.md    # 模型目录 + 说明（shell/py 已删，服务管理走 src/cli/mlxcmd.ts）
 │
-├── docs/
+├── docs/                          # 仅保留说明文件（计划/归档/验收记录已删，历史见 git）
 │   ├── PROCESS.md                 # 六步流程
-│   ├── DIRECTORY.md               # 本文件（D2）
-│   ├── history.md                 # 历史合集（A1/A2 盘点 + C1 差距 + C2 吸收，四合一）
-│   ├── history/research/（12 份）  # B1-B12 调研归档
-│   ├── history/gameqa/            # ★ 原 Unity 平台蓝本文档（README/SECURITY/技术方案…）
-│   └── ★ reviews/                 # PROCESS ④⑥ 留痕（每功能一份）
+│   └── DIRECTORY.md               # 本文件（D2）
 │
 └── （git：baseline→v3.0，origin=github.com:Tupig/WLLM）
 ```
@@ -47,7 +43,7 @@ WLLM/
 | 项 | 决议 |
 |----|------|
 | `.DS_Store` | 已全清，gitignore 已有 |
-| gpt-visual-platform | D2b 曾归档 `archive/`；现已 TS 重写并入 `src/gameqa/`，蓝本文档移 `docs/history/gameqa/`，archive 删除（gameqa 整合 Phase 5） |
+| gpt-visual-platform | D2b 曾归档 `archive/`；现已 TS 重写并入 `src/gameqa/`，archive 与蓝本文档删除（历史在 git，gameqa 整合 Phase 5） |
 | pilot src | 模块树两级（engine/session/context/knowledge/modes/agents/commands…），根仅 index.ts+config.ts |
 | bin 启动器 | 已消除：入口=src/cli/*.ts（node shebang），package.json bin → dist/cli/*.js，`~/.local/bin` 直链 dist |
 | mlx 服务层 | 5 shell + unified_proxy.py → `src/cli/mlxcmd.ts` + `src/proxy/`（pytest 31 用例平移 vitest），config.env 删除（配置走环境变量） |
