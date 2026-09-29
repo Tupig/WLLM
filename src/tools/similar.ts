@@ -49,3 +49,48 @@ export function formatNoMatchFeedback(content: string, oldString: string, filePa
   }
   return lines.join("\n");
 }
+
+export type FuzzyHit = { start: number; end: number };
+
+function normalizeLine(s: string): string {
+  return s.replace(/\t/g, "  ").trim().replace(/ +/g, " ");
+}
+
+/**
+ * 模糊定位（精确 indexOf 失败后的回退，思路来自 Aider fuzzy-match）：
+ * - L1 行级归一化全等（tab/缩进/行尾空白/连续空格差异）
+ * - L2 归一化后编辑距离 ≤1 且行 min 长度 ≥8（单字符拼写漂移）
+ * 返回原文字符区间 [start, end)；多窗口候选由调用方判定歧义。
+ */
+export function fuzzyLocate(content: string, oldString: string): FuzzyHit[] {
+  if (!oldString.trim()) return [];
+  const oldLines = oldString.split("\n");
+  const cLines = content.split("\n");
+  const starts: number[] = [];
+  let off = 0;
+  for (const l of cLines) {
+    starts.push(off);
+    off += l.length + 1;
+  }
+  const n = oldLines.length;
+  const hits: FuzzyHit[] = [];
+  for (let i = 0; i + n <= cLines.length; i++) {
+    let matched = true;
+    for (let j = 0; j < n; j++) {
+      const a = normalizeLine(cLines[i + j]);
+      const b = normalizeLine(oldLines[j]);
+      if (a === b) continue;
+      const minLen = Math.min(a.length, b.length);
+      if (minLen < 8 || levenshtein(a, b) > 1) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) {
+      const start = starts[i];
+      const end = starts[i + n - 1] + cLines[i + n - 1].length;
+      hits.push({ start, end });
+    }
+  }
+  return hits;
+}

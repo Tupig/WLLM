@@ -6,7 +6,7 @@ import { readFile, writeFile, stat } from "fs/promises";
 import { buildTool, type ToolUseContext, type ToolResult } from "../engine/Tool.js";
 import { safePath } from "../utils/path.js";
 import { runPostEditLint, formatLintResult } from "./lint.js";
-import { formatNoMatchFeedback } from "./similar.js";
+import { formatNoMatchFeedback, fuzzyLocate } from "./similar.js";
 import { writeWithRollback } from "./rollback.js";
 import { resolveSandboxPolicy, checkPath, checkBashPaths } from "../services/sandbox.js";
 
@@ -28,8 +28,8 @@ export const FileEditTool = buildTool<string>({
   name: "Edit",
   inputSchema: FileEditInput,
   maxResultSizeChars: 100_000,
-  description: () => "通过精确替换文本来编辑文件。old_string 必须精确匹配。",
-  prompt: () => "执行精确的字符串替换。old_string 必须在文件中恰好出现一次，除非设置了 replace_all。",
+  description: () => "通过替换文本来编辑文件。优先精确匹配，失败时自动容忍缩进/空白差异做模糊回退。",
+  prompt: () => "执行字符串替换。old_string 应在文件中恰好出现一次（精确或唯一模糊命中），除非设置 replace_all。",
   userFacingName: () => "Edit",
   isReadOnly: () => false,
   isDestructive: () => true,
@@ -66,6 +66,26 @@ export const FileEditTool = buildTool<string>({
 
     const idx = findActualString(content, input.old_string);
     if (idx === -1) {
+      const fuzzy = fuzzyLocate(content, input.old_string);
+      if (fuzzy.length === 1 && !input.replace_all) {
+        const { start, end } = fuzzy[0];
+        const lintFn = () => runPostEditLint(context.workDir, resolved);
+        const next = content.slice(0, start) + input.new_string + content.slice(end);
+        const fr = await writeWithRollback(resolved, next, lintFn);
+        if (!fr.ok) {
+          const msg = `${fr.error}\n${formatLintResult(fr.lint!)}\n请修正后重试，本次编辑未生效。`;
+          return { data: msg, resultForAssistant: msg };
+        }
+        const s = await stat(resolved);
+        context.readFileState.set(resolved, { mtime: s.mtimeMs });
+        const lintMsg = fr.lint ? "\n" + formatLintResult(fr.lint) : "";
+        const result = `已成功编辑 ${resolved}（模糊匹配：已容忍缩进/空白差异）${lintMsg}`;
+        return { data: result, resultForAssistant: result };
+      }
+      if (fuzzy.length > 1) {
+        const msg = `错误：old_string 精确匹配失败，且有 ${fuzzy.length} 处模糊相似位置，无法确定目标。请重新读取文件并提供更多上下文（或更精确的 old_string）。`;
+        return { data: msg, resultForAssistant: msg };
+      }
       const fb = formatNoMatchFeedback(content, input.old_string, resolved);
       return { data: fb, resultForAssistant: fb };
     }
