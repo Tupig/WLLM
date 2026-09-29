@@ -5,9 +5,9 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { Json, Job } from "./store";
-import { adbBase, adbOutput, adbShell } from "./adb";
-import { outcomeFailure, type Outcome } from "./outcome";
+import type { Json, Job } from "./store.js";
+import { adbBase, adbOutput, adbShell } from "./adb.js";
+import { outcomeFailure, type Outcome } from "./outcome.js";
 
 export interface GfxStats {
   frames: number;

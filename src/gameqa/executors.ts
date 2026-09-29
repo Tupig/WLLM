@@ -7,17 +7,17 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { Json, Job } from "./store";
-import { outcomeFailure, type Outcome } from "./outcome";
-import { runAirtestScript } from "./airtest";
-import { runGamePerf } from "./gameperf";
-import { runAiExploratory } from "./ai";
+import type { Json, Job } from "./store.js";
+import { outcomeFailure, type Outcome } from "./outcome.js";
+import { runAirtestScript } from "./airtest.js";
+import { runGamePerf } from "./gameperf.js";
+import { runAiExploratory } from "./ai.js";
 
-export { outcomeFailure, type Outcome } from "./outcome";
+export { outcomeFailure, type Outcome } from "./outcome.js";
 
 // ---------- ADB（实现见 adb.ts） ----------
 
-import { adbBase, adbOutput, adbShell } from "./adb";
+import { adbBase, adbOutput, adbShell } from "./adb.js";
 export { adbBase, adbOutput, adbShell };
 
 // ---------- unity_log_scan ----------

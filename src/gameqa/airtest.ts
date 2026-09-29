@@ -5,8 +5,8 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { Json, Job } from "./store";
-import { outcomeFailure, type Outcome } from "./outcome";
+import type { Json, Job } from "./store.js";
+import { outcomeFailure, type Outcome } from "./outcome.js";
 
 /** URL 查询参数编码（非保留字符外的字节全部转 %XX） */
 export function urlencode(s: string): string {

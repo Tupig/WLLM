@@ -2,7 +2,7 @@
  * gameqa/notify.ts — 失败任务 webhook 通知（notify.go 移植）
  * NOTIFY_WEBHOOK_URL 配置后，任务失败时 POST JSON；尽力而为：异步、5s 超时、失败仅记日志。
  */
-import type { Json, Job } from "./store";
+import type { Json, Job } from "./store.js";
 
 function summaryText(summary: Record<string, Json> | null | undefined): string {
   if (!summary) return "";

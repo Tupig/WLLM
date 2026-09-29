@@ -12,10 +12,10 @@ import * as tls from "node:tls";
 import * as dns from "node:dns";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Store, type Json, type Job, BUILTIN_TYPES } from "./store";
-import { SKILLS } from "./skills";
-import { VERSION } from "./server";
-import { notifyJobFailure } from "./notify";
+import { Store, type Json, type Job, BUILTIN_TYPES } from "./store.js";
+import { SKILLS } from "./skills.js";
+import { VERSION } from "./server.js";
+import { notifyJobFailure } from "./notify.js";
 
 export const BUILTIN_WEB_AGENT_ID = "builtin-web";
 

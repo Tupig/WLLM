@@ -56,6 +56,6 @@ describe("入口 shebang（bin 已消除，直接走 dist）", () => {
     const pkg = JSON.parse(readFileSync(join(cliRoot(), "package.json"), "utf-8"));
     expect(pkg.bin.pilot).toBe("dist/cli/pilot.js");
     expect(pkg.bin.llm).toBe("dist/cli/llm.js");
-    expect(Object.keys(pkg.bin)).toHaveLength(6);
+    expect(Object.keys(pkg.bin)).toHaveLength(7);
   });
 });

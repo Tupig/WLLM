@@ -7,9 +7,9 @@
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { Json, Job } from "./store";
-import { adbBase } from "./adb";
-import { outcomeFailure, type Outcome } from "./outcome";
+import type { Json, Job } from "./store.js";
+import { adbBase } from "./adb.js";
+import { outcomeFailure, type Outcome } from "./outcome.js";
 
 /** 模型可输出的动作空间（与 Python 版一致，供文档与校验参考） */
 export const ALLOWED_ACTIONS = ["tap", "swipe", "text", "key", "wait", "finish"] as const;

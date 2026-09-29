@@ -15,10 +15,10 @@ import * as http from "node:http";
 import * as https from "node:https";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { Json, Job } from "./store";
-import { runUnityTests, parseNUnitXml, tailUtf8, ARTIFACT_MAX_BYTES } from "./unity";
-import { mcpPost } from "./mcp";
-import { executeAgentJobType, type Outcome } from "./executors";
+import type { Json, Job } from "./store.js";
+import { runUnityTests, parseNUnitXml, tailUtf8, ARTIFACT_MAX_BYTES } from "./unity.js";
+import { mcpPost } from "./mcp.js";
+import { executeAgentJobType, type Outcome } from "./executors.js";
 
 const POLL_INTERVAL_MS = 15_000;
 const MAX_BACKOFF_MS = 120_000;

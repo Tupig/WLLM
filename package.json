@@ -10,10 +10,13 @@
     "claude-local": "dist/cli/claude-local.js",
     "codex-local": "dist/cli/codex-local.js",
     "opencode-local": "dist/cli/opencode-local.js",
-    "mlx-local": "dist/cli/mlx-local.js"
+    "mlx-local": "dist/cli/mlx-local.js",
+    "gameqa": "dist/cli/gameqa.js"
   },
   "scripts": {
-    "build": "tsc && chmod +x dist/cli/pilot.js dist/cli/llm.js dist/cli/claude-local.js dist/cli/codex-local.js dist/cli/opencode-local.js dist/cli/mlx-local.js",
+    "build": "tsc && node scripts/copy-gameqa-static.mjs && chmod +x dist/cli/pilot.js dist/cli/llm.js dist/cli/claude-local.js dist/cli/codex-local.js dist/cli/opencode-local.js dist/cli/mlx-local.js dist/cli/gameqa.js",
+    "gameqa:serve": "tsx src/cli/gameqa.ts serve --tls off",
+    "gameqa:agent": "tsx src/cli/gameqa.ts agent",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",

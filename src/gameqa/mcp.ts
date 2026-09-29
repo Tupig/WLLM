@@ -2,7 +2,7 @@
  * gameqa/mcp.ts — Unity MCP 代理（mcp.go 移植）
  * /api/mcp/* 转发到 MCP_SERVER_URL（默认 http://localhost:8080/mcp）。
  */
-import type { Json } from "./store";
+import type { Json } from "./store.js";
 
 const MCP_MAX_BODY = 10 << 20; // 上游响应上限 10MB
 

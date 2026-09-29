@@ -7,11 +7,11 @@ import * as http from "node:http";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { timingSafeEqual } from "node:crypto";
-import { Store, type Json, type Job, type Agent } from "./store";
-import { SKILLS } from "./skills";
-import { mcpGet, mcpPost, mcpAvailable, mcpMergeProps, TOOL_NAME_RE } from "./mcp";
-import { generateTestCase } from "./openai";
-import { notifyJobFailure } from "./notify";
+import { Store, type Json, type Job, type Agent } from "./store.js";
+import { SKILLS } from "./skills.js";
+import { mcpGet, mcpPost, mcpAvailable, mcpMergeProps, TOOL_NAME_RE } from "./mcp.js";
+import { generateTestCase } from "./openai.js";
+import { notifyJobFailure } from "./notify.js";
 
 export const VERSION = process.env["GAMEQA_VERSION"] ?? "1.0.0";
 const MAX_BODY_BYTES = 1 << 20; // 1 MiB
