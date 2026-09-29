@@ -99,7 +99,8 @@ function waitForHealth(url: string, proc: ChildProcess, timeoutMs = 20_000): Pro
 }
 
 async function spawnCli(args: string[]): Promise<{ proc: ChildProcess; logs: () => string; exited: Promise<number | null> }> {
-  const proc = spawn("npx", ["tsx", "src/cli/gameqa.ts", ...args], { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] });
+  // node --import tsx 单进程直跑：npx/npm wrapper 与 tsx 子进程都会吞 SIGTERM（exit code 为 null）
+  const proc = spawn(process.execPath, ["--import", "tsx", "src/cli/gameqa.ts", ...args], { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] });
   let out = "";
   proc.stdout?.on("data", (c: Buffer) => (out += c.toString()));
   proc.stderr?.on("data", (c: Buffer) => (out += c.toString()));
