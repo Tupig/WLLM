@@ -60,6 +60,41 @@ export const GrepTool = buildTool<string>({
         resolve(result);
       };
 
+      // rg 与 find+grep fallback 共用：格式化 + 超量降级（行为一致）
+      const format = (raw: string): ToolResult<string> => {
+        const lines = raw.trim().split("\n").filter(Boolean);
+        if (!lines.length) return { data: `未找到匹配「${input.pattern}」的结果` };
+        const truncated = lines.length > headLimit;
+        const resultLines = truncated ? lines.slice(0, headLimit) : lines;
+
+        if (mode === "content" && truncated) {
+          // SWE-agent 做法：超量且散在多文件 → 只列文件名，逼模型缩窄条件
+          const files = [...new Set(lines.map((l) => l.split(":")[0]))];
+          if (files.length > 10) {
+            return {
+              data:
+                `匹配 ${lines.length} 行、散在 ${files.length} 个文件，超出显示预算。\n` +
+                `涉及文件：\n${files.slice(0, 50).join("\n")}\n` +
+                `（先按文件名定位，再用 include / 更精确 pattern / output_mode=files_with_matches 缩窄）`,
+            };
+          }
+        }
+
+        let result: string;
+        if (mode === "files_with_matches") {
+          result = `找到 ${resultLines.length} 个文件：\n${resultLines.join("\n")}`;
+        } else if (mode === "count") {
+          result = `匹配数：\n${resultLines.join("\n")}`;
+        } else {
+          result = `找到 ${resultLines.length} 处匹配：\n${resultLines.join("\n")}`;
+        }
+        if (truncated) result += `\n（显示前 ${headLimit} 条，共 ${lines.length} 条匹配）`;
+        return { data: result };
+      };
+
+      // ENOENT 时 error 后仍会触发 close（实测 error → close:-2），
+      // 必须屏蔽 rg 的空 close，否则 fallback 结果会被先 settle 丢弃
+      let rgFailed = false;
       const child = spawn("rg", args, { timeout: TOOL_TIMEOUT_MS });
       let stdout = "";
       let stderr = "";
@@ -73,59 +108,32 @@ export const GrepTool = buildTool<string>({
       }, TOOL_TIMEOUT_MS + 5000);
 
       child.on("close", () => {
+        if (rgFailed) return;
         if (stderr && !stdout) {
           finish({ data: `错误：${stderr.trim()}` });
           return;
         }
-
-        const lines = stdout.trim().split("\n").filter(Boolean);
-        const truncated = lines.length > headLimit;
-        const resultLines = truncated ? lines.slice(0, headLimit) : lines;
-
-        let result: string;
-        if (mode === "content" && truncated) {
-          // SWE-agent 做法：超量且散在多文件 → 只列文件名，逼模型缩窄条件
-          const files = [...new Set(lines.map((l) => l.split(":")[0]))];
-          if (files.length > 10) {
-            result =
-              `匹配 ${lines.length} 行、散在 ${files.length} 个文件，超出显示预算。\n` +
-              `涉及文件：\n${files.slice(0, 50).join("\n")}\n` +
-              `（先按文件名定位，再用 include / 更精确 pattern / output_mode=files_with_matches 缩窄）`;
-            finish({ data: result });
-            return;
-          }
-        }
-
-        if (mode === "files_with_matches") {
-          result = `找到 ${resultLines.length} 个文件：\n${resultLines.join("\n")}`;
-        } else if (mode === "count") {
-          result = `匹配数：\n${resultLines.join("\n")}`;
-        } else {
-          result = `找到 ${resultLines.length} 处匹配：\n${resultLines.join("\n")}`;
-        }
-
-        if (truncated) result += `\n（显示前 ${headLimit} 条，共 ${lines.length} 条匹配）`;
-        finish({ data: result });
+        finish(format(stdout));
       });
 
       child.on("error", () => {
+        if (rgFailed) return;
+        rgFailed = true;
         const findArgs = [searchPath, "-type", "f"];
         if (include) findArgs.push("-name", include);
         findArgs.push("-exec", "grep", "-Hn", "--", input.pattern, "{}", "+");
 
+        let fbFailed = false;
         const fallback = spawn("find", findArgs, { timeout: GREP_FALLBACK_TIMEOUT_MS });
         let out = "";
         fallback.stdout.on("data", (d: Buffer) => { out += d.toString(); });
         fallback.stderr.on("data", () => {});
         fallback.on("close", () => {
-          const fl = out.trim().split("\n").filter(Boolean).slice(0, headLimit);
-          finish({
-            data: fl.length
-              ? `找到 ${fl.length} 处匹配：\n${fl.join("\n")}`
-              : `未找到匹配「${input.pattern}」的结果`,
-          });
+          if (fbFailed) return;
+          finish(format(out));
         });
         fallback.on("error", () => {
+          fbFailed = true;
           finish({ data: "错误：ripgrep 和 find+grep 均不可用" });
         });
       });

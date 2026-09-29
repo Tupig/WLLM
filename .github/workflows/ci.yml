@@ -18,6 +18,9 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: 安装 ripgrep（Grep 工具主路径）
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+
       - name: 安装依赖
         run: npm ci
 
