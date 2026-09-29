@@ -196,14 +196,12 @@ export async function* streamMessage(
   if (client.type === "openai") { yield* streamOpenAI(model, maxTokens, system, messages, tools); }
 }
 
-async function* streamOpenAI(
-  model: string, maxTokens: number, system: string,
-  messages: Anthropic.MessageParam[], tools: Anthropic.Tool[],
-): AsyncGenerator<StreamEvent> {
-  const base = process.env.OPENAI_BASE_URL;
-  const key = process.env.OPENAI_API_KEY;
-  if (!base || !key) throw new Error("必须设置 OPENAI_BASE_URL 和 OPENAI_API_KEY 环境变量");
-
+/**
+ * Anthropic 消息 → OpenAI chat 格式。
+ * tool_result 含图片时：文本走 role:tool（OpenAI tool content 仅 string），
+ * 图片追加一条 user 消息（image_url data URI）。
+ */
+export function toOpenAIMessages(messages: Anthropic.MessageParam[], system: string): any[] {
   const oaiMsgs: any[] = [{ role: "system", content: system }];
 
   for (const m of messages) {
@@ -225,7 +223,27 @@ async function* streamOpenAI(
         });
       } else if (m.role === "user" && toolResultBlocks.length > 0) {
         for (const tr of toolResultBlocks) {
-          oaiMsgs.push({ role: "tool", tool_call_id: (tr as any).tool_use_id, content: (tr as any).content });
+          const trId = (tr as any).tool_use_id;
+          const c = (tr as any).content;
+          if (typeof c === "string") {
+            oaiMsgs.push({ role: "tool", tool_call_id: trId, content: c });
+          } else if (Array.isArray(c)) {
+            const texts = c.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
+            oaiMsgs.push({ role: "tool", tool_call_id: trId, content: texts });
+            for (const b of c) {
+              if (b.type === "image") {
+                oaiMsgs.push({
+                  role: "user",
+                  content: [
+                    { type: "text", text: "工具返回的图片：" },
+                    { type: "image_url", image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` } },
+                  ],
+                });
+              }
+            }
+          } else {
+            oaiMsgs.push({ role: "tool", tool_call_id: trId, content: String(c ?? "") });
+          }
         }
         const textContent = textBlocks.map((b: any) => b.text).join("\n");
         if (textContent) oaiMsgs.push({ role: "user", content: textContent });
@@ -235,6 +253,18 @@ async function* streamOpenAI(
       }
     }
   }
+  return oaiMsgs;
+}
+
+async function* streamOpenAI(
+  model: string, maxTokens: number, system: string,
+  messages: Anthropic.MessageParam[], tools: Anthropic.Tool[],
+): AsyncGenerator<StreamEvent> {
+  const base = process.env.OPENAI_BASE_URL;
+  const key = process.env.OPENAI_API_KEY;
+  if (!base || !key) throw new Error("必须设置 OPENAI_BASE_URL 和 OPENAI_API_KEY 环境变量");
+
+  const oaiMsgs: any[] = toOpenAIMessages(messages, system);
 
   const oaiTools = tools.map((t) => ({
     type: "function" as const,

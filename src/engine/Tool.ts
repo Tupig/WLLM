@@ -14,9 +14,32 @@ export type ToolResultOutput =
 export type ToolResult<T = unknown> = {
   data: T;
   resultForAssistant?: string;
+  output?: ToolResultOutput;
   newMessages?: Message[];
   contextModifier?: (ctx: ToolUseContext) => ToolUseContext;
 };
+
+/**
+ * 工具结果 → Anthropic tool_result.content。
+ * 带 image output 时返回 [text, image] 数组，否则原样返回字符串（现状零变化）。
+ */
+export function anthropicToolResultContent(
+  result: Pick<ToolResult, "output">,
+  text: string,
+): string | Anthropic.ToolResultBlockParam["content"] {
+  const out = result.output;
+  if (out?.type === "image") {
+    const mediaType = out.mimeType as Extract<
+      Anthropic.ImageBlockParam["source"],
+      { type: "base64" }
+    >["media_type"];
+    return [
+      { type: "text", text },
+      { type: "image", source: { type: "base64", media_type: mediaType, data: out.data } },
+    ];
+  }
+  return text;
+}
 
 export type PermissionMode =
   | "plan"

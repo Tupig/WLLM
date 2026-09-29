@@ -7,6 +7,7 @@ import chalk from "chalk";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { Tool, ToolUseContext, CanUseToolFn } from "./Tool.js";
+import { anthropicToolResultContent } from "./Tool.js";
 import { getDefaultTools, getToolByName, resolveExtraTools } from "./toolRegistry.js";
 import { createClient, streamMessage, type StreamEvent, type ApiClient } from "../services/api.js";
 import { resolveHarness, parseXmlToolCalls, buildXmlToolSection } from "./harness.js";
@@ -615,7 +616,7 @@ export class QueryEngine {
         recordToolExecution(this.toolState, buf.name, filePath, operation);
 
         const resultStr = result.resultForAssistant || JSON.stringify(result.data);
-        toolResults.push({ tool_use_id: buf.id, content: resultStr, is_error: false });
+        toolResults.push({ tool_use_id: buf.id, content: anthropicToolResultContent(result, resultStr) as never, is_error: false });
         events.push({ type: "tool_result", toolUseId: buf.id, content: resultStr, isError: false });
 
         // 记录工具结果

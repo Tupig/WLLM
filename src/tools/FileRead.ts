@@ -3,12 +3,23 @@
  */
 import { z } from "zod";
 import { readFile, stat } from "fs/promises";
+import { extname } from "path";
 import { resolveSandboxPolicy, checkPath, checkBashPaths } from "../services/sandbox.js";
 import { buildTool, type ToolUseContext, type ToolResult } from "../engine/Tool.js";
 import { safePath } from "../utils/path.js";
 import { MAX_FILE_SIZE_BYTES } from "../engine/constants.js";
 
 const FILE_UNCHANGED_STUB = "FILE_UNCHANGED";
+
+const IMAGE_EXT_MIME: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+};
+// Anthropic 单图硬限 5MB
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export const FileReadInput = z.object({
   file_path: z.string().describe("文件的绝对路径或相对路径"),
@@ -54,6 +65,21 @@ export const FileReadTool = buildTool<string>({
     const existing = context.readFileState.get(resolved);
     if (existing && existing.mtime === fileStat.mtimeMs) {
       return { data: FILE_UNCHANGED_STUB, resultForAssistant: FILE_UNCHANGED_STUB };
+    }
+
+    const mime = IMAGE_EXT_MIME[extname(resolved).toLowerCase()];
+    if (mime) {
+      if (fileStat.size > MAX_IMAGE_BYTES) {
+        return { data: `错误：图片过大（${(fileStat.size / 1024 / 1024).toFixed(1)}MB），单图上限 5MB` };
+      }
+      const buf = await readFile(resolved);
+      context.readFileState.set(resolved, { mtime: fileStat.mtimeMs });
+      const info = `图片 ${resolved}（${mime}，${(fileStat.size / 1024).toFixed(1)}KB，已作为图像输入附带）`;
+      return {
+        data: info,
+        resultForAssistant: info,
+        output: { type: "image", data: buf.toString("base64"), mimeType: mime },
+      };
     }
 
     const content = await readFile(resolved, "utf-8");
