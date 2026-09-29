@@ -216,7 +216,7 @@ CLI（llm / *-local / 任意 OpenAI/Anthropic 客户端）
 
 ```
 WLLM/
-├── AGENTS.md / CLAUDE.md      # AI 协作约定（CLAUDE.md = @AGENTS.md 引用）
+├── AGENTS.md                  # AI 协作约定（工作流/issue 闭环/README 维护规则）
 ├── README.md                  # 本文件——项目唯一文档，随代码同步更新
 ├── package.json               # 7 bin + 构建/开发脚本
 ├── scripts/                   # gameqa 运维：e2e/start/stop/status/install-service…
