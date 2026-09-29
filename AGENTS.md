@@ -30,4 +30,9 @@
 ## Bug / 优化
 
 - 本地发现的任何 bug 或优化点：**先 `gh issue create` 上报，再修**（提交引用 `fix #N`），回归绿 + CI 绿后 `gh issue close`
-- 无 issue 不许动代码；流程细则见 `docs/PROCESS.md`
+- 无 issue 不许动代码；流程细则见 `README.md`「开发流程」
+
+## 文档
+
+- **根 `README.md` 是项目唯一文档**（docs/ 目录不建），随代码同步更新：功能、命令、配置、结构、流程任一变更后**必须**当轮更新 README
+- 不新增其他 .md 文档；历史用 `git log` / `gh issue list --state all`
