@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * cli/claude-local.ts — 用本地 MLX 模型运行 Claude Code（原 bin/claude-local）
  */

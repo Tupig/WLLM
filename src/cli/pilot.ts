@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * cli/pilot.ts — pilot 启动器（原 bin/pilot shell）
  * 无显式凭据时确保本地代理 :4100 就绪，再进入主程序。
@@ -5,7 +6,7 @@
 import { spawnSync } from "child_process";
 import { existsSync } from "fs";
 import { join } from "path";
-import { cliRoot, die, ensureMlxScript, ensureService, info, portListening } from "./common.js";
+import { cliRoot, die, ensureService, info, portListening } from "./common.js";
 
 const PORT = Number(process.env.MLX_UNIFIED_PORT ?? 4100);
 
@@ -14,7 +15,6 @@ async function main(): Promise<void> {
   const hasCreds = !!(process.env.OPENAI_BASE_URL || process.env.ANTHROPIC_API_KEY);
 
   if (!hasCreds) {
-    ensureMlxScript("pilot");
     await ensureService("pilot", PORT, [], 60);
     if (!(await portListening(PORT))) die("pilot", `等待 :${PORT} 就绪超时`);
     process.env.OPENAI_BASE_URL = `http://127.0.0.1:${PORT}/v1`;

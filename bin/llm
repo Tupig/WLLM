@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-# 薄壳：实现见 src/cli/llm.ts（dist 存在走 node，否则 tsx 直跑源码）
-SELF="${BASH_SOURCE[0]}"
-while [ -L "$SELF" ]; do SELF="$(readlink "$SELF")"; done
-ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
-if [ -f "$ROOT/dist/cli/llm.js" ]; then exec node "$ROOT/dist/cli/llm.js" "$@"; fi
-exec npx --yes tsx "$ROOT/src/cli/llm.ts" "$@"

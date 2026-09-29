@@ -40,13 +40,16 @@ describe("llm chat 纯函数", () => {
   });
 });
 
-describe("bin 薄壳", () => {
-  it("6 个入口均为薄壳且可执行", () => {
+describe("入口 shebang（bin 已消除，直接走 dist）", () => {
+  it("6 个 src/cli 入口带 node shebang", () => {
     for (const n of ["pilot", "llm", "claude-local", "codex-local", "opencode-local", "mlx-local"]) {
-      const body = readFileSync(join(cliRoot(), "bin", n), "utf-8");
-      expect(body).toContain("src/cli/");
-      expect(body.length).toBeLessThan(500);
+      const body = readFileSync(join(cliRoot(), "src", "cli", `${n}.ts`), "utf-8");
+      expect(body.startsWith("#!/usr/bin/env node")).toBe(true);
     }
+  });
+
+  it("bin/ 目录已移除", () => {
+    expect(existsSync(join(cliRoot(), "bin"))).toBe(false);
   });
 
   it("package.json bin 指向 dist/cli", () => {

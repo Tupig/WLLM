@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * cli/opencode-local.ts — 用本地 MLX 模型运行 opencode（原 bin/opencode-local）
  */

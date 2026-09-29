@@ -9,10 +9,6 @@ WLLM/
 ├── package.json / tsconfig.json / vitest.config.ts
 ├── .gitignore                     # venv/ models/ logs/ state/ node_modules/ dist/ .reasonix/ .DS_Store *.bak …
 │
-├── bin/                           # CLI 薄壳（3-5 行，实现见 src/cli/）
-│   ├── pilot / llm                # 主入口 / 本地大模型 CLI
-│   └── mlx-local / opencode-local / claude-local / codex-local   # 第三方桥
-│
 ├── src/                           # pilot-agent 源码（模块树，全 TS / UTF-8）
 │   ├── index.ts / config.ts       # CLI 入口 + 全局配置
 │   ├── engine/                    # 主链路：QueryEngine prompt Tool toolRegistry router harness…
@@ -24,15 +20,15 @@ WLLM/
 │   ├── modes/                     # plan/act + spec
 │   ├── agents/                    # 子代理（原 subagent）
 │   ├── commands/                  # /doctor /init /review + REPL
-│   ├── cli/                       # bin 启动器 TS 实现（pilot llm *-local）
+│   ├── proxy/                     # ★ 统一协议代理（convert 三协议转换 + server SSE relay）
+│   ├── cli/                       # 6 个入口（shebang）+ common/mlxcmd（服务管理 TS 化）
 │   └── git/ state/ utils/
 │
-├── tests/                         # vitest 30 文件 / 339 用例
+├── tests/                         # vitest 32 文件 / 381 用例
 │
-├── mlx/                           # 推理服务层（已有）
-│   ├── mlx-local.sh / lib.sh / unified_proxy.py / healthcheck.sh …
+├── mlx/                           # 推理服务层
 │   ├── models/ venv/ logs/ state/ # 运行时（gitignore）
-│   └── test_unified_proxy.py      # pytest 31 用例
+│   └── models.json / README.md    # 模型目录 + 说明（shell/py 已删，服务管理走 src/cli/mlxcmd.ts）
 │
 ├── archive/
 │   └── ★ gpt-visual-platform/     # D2b：Unity 测试平台归档（源码级，剔 .venv/dist/target 等产物）
@@ -57,5 +53,6 @@ WLLM/
 | `.DS_Store` | 已全清，gitignore 已有 |
 | gpt-visual-platform | 归档移入 `archive/gpt-visual-platform/`（D2b 剔产物，根目录保持干净） |
 | pilot src | 模块树两级（engine/session/context/knowledge/modes/agents/commands…），根仅 index.ts+config.ts |
-| bin 启动器 | shell 全部 TS 化到 `src/cli/`，bin/ 只留薄壳 |
+| bin 启动器 | 已消除：入口=src/cli/*.ts（node shebang），package.json bin → dist/cli/*.js，`~/.local/bin` 直链 dist |
+| mlx 服务层 | 5 shell + unified_proxy.py → `src/cli/mlxcmd.ts` + `src/proxy/`（pytest 31 用例平移 vitest），config.env 删除（配置走环境变量） |
 | 技能库 | `.wllm/skills/`（运行时，先审后存）+ `src/knowledge/skills.ts`（披露与门禁） |

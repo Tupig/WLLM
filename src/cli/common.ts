@@ -1,8 +1,7 @@
 /**
  * cli/common.ts — 启动器共享设施（端口探测、服务拉起、进程替换）
  */
-import { spawn, spawnSync } from "child_process";
-import { existsSync } from "fs";
+import { spawn } from "child_process";
 import net from "net";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -19,18 +18,6 @@ export function info(name: string, msg: string): void {
 export function die(name: string, msg: string): never {
   process.stderr.write(`[${name}] 错误: ${msg}\n`);
   process.exit(1);
-}
-
-export function mlxHome(): string {
-  return join(cliRoot(), "mlx");
-}
-
-export function mlxScript(): string {
-  return join(mlxHome(), "mlx-local.sh");
-}
-
-export function ensureMlxScript(name: string): void {
-  if (!existsSync(mlxScript())) die(name, `未找到 ${mlxScript()}`);
 }
 
 export function portListening(port: number): Promise<boolean> {
@@ -59,8 +46,12 @@ export async function ensureService(
 ): Promise<void> {
   if (await portListening(port)) return;
   info(name, "本地服务未运行，正在启动（首次约 30 秒）…");
-  const r = spawnSync(mlxScript(), ["start", ...startArgs], { stdio: "ignore" });
-  if (r.status !== 0) die(name, "服务启动失败");
+  const { runMlxCmd } = await import("./mlxcmd.js");
+  try {
+    await runMlxCmd(["start", ...startArgs]);
+  } catch {
+    die(name, "服务启动失败");
+  }
   for (let i = 0; i < 10; i++) {
     if (await portListening(port)) return;
     await sleep(200);
@@ -83,9 +74,4 @@ export function execReplace(name: string, cmd: string, args: string[]): never {
   });
   // 保持父进程存活直到子进程退出
   return undefined as never;
-}
-
-/** 转交子命令（如 mlx-local.sh）：同样的 stdio 与退出码 */
-export function passthrough(name: string, script: string, args: string[]): never {
-  return execReplace(name, script, args);
 }

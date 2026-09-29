@@ -25,11 +25,14 @@ codex-local exec "写个快排"
 ## 架构
 
 ```
-CLI工具 → :4100 unified_proxy.py → :8080 mlx_lm.server
+CLI工具 → :4100 TS 统一代理 (src/proxy/) → :8080 mlx_lm.server
 ```
 
-- **:4100** 统一代理 - 对外，支持 Chat/Responses/Anthropic 三种协议
+- **:4100** 统一代理 - 对外，支持 Chat/Responses/Anthropic 三种协议（TS 实现）
 - **:8080** 推理服务 - 仅本地内部调用
+
+服务管理（`mlx-local` / `llm`）为 TS 实现（`src/cli/mlxcmd.ts`），配置走环境变量
+（`MLX_UNIFIED_PORT` / `MLX_SERVER_PORT` / `MLX_DEFAULT_MODEL` / `MLX_AUTH_TOKEN` 等）。
 
 ## 模型
 

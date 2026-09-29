@@ -2,6 +2,8 @@
 
 > 范围：`~/Workspace/WLLM` 中纳入 git 的全部源码与配置（运行时 `venv/ models/ logs/ state/` 已 gitignore）。
 > 行号为写本文时的实测行号，供后续 E/F 阶段引用。
+> **现状更新（rewrite-ts）**：`bin/` 与 `mlx/` 5 个 shell、`unified_proxy.py`、`test_unified_proxy.py`、`config.env` 已删除，
+> 分别由 `src/cli/*.ts`（shebang 入口）、`src/cli/mlxcmd.ts`、`src/proxy/`（vitest 31+10 用例）取代；本文以下保留为 A1 时点历史盘点，现状以 `docs/DIRECTORY.md` 为准。
 
 ## 1. 仓库概况
 

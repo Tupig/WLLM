@@ -3,7 +3,7 @@
  */
 import { spawnSync } from "child_process";
 import { existsSync } from "fs";
-import { execReplace, ensureMlxScript, ensureService, die } from "./common.js";
+import { execReplace, ensureService, die } from "./common.js";
 
 export type AgentSpec = {
   /** 展示名，用于日志前缀 */
@@ -12,7 +12,7 @@ export type AgentSpec = {
   checkFiles?: string[];
   /** codex 类：GPU 上限未提升时打印提示 */
   gpuWarning?: boolean;
-  /** mlx-local.sh start 的参数 */
+  /** 服务 start 参数（模型别名等） */
   startArgs?: string[];
   /** 等待端口就绪秒数 */
   waitSeconds?: number;
@@ -35,7 +35,6 @@ function printGpuWarning(name: string): void {
 }
 
 export async function launchAgent(spec: AgentSpec): Promise<void> {
-  ensureMlxScript(spec.name);
   for (const f of spec.checkFiles ?? []) {
     if (!existsSync(f)) die(spec.name, `配置文件缺失：${f}`);
   }

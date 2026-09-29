@@ -1,9 +1,13 @@
+#!/usr/bin/env node
 /**
  * cli/llm.ts — 统一本地大模型 CLI（原 bin/llm shell）
- * 服务管理委托 mlx-local.sh；对话走 fetch（替代原 curl+python 构造 JSON）。
+ * 服务管理走 src/cli/mlxcmd.ts；对话走 fetch（替代原 curl+python 构造 JSON）。
  */
 import readline from "readline";
-import { die, ensureMlxScript, ensureService, mlxScript, passthrough } from "./common.js";
+import { realpathSync } from "fs";
+import { fileURLToPath } from "url";
+import { die, ensureService, info } from "./common.js";
+import { runMlxCmd } from "./mlxcmd.js";
 
 const NAME = "llm";
 const PORT = Number(process.env.MLX_UNIFIED_PORT ?? 4100);
@@ -87,9 +91,8 @@ const HELP = `用法: llm [命令|问题]
   llm status`;
 
 export async function main(argv: string[]): Promise<void> {
-  ensureMlxScript(NAME);
   const [cmd, ...rest] = argv;
-  const sh = (args: string[]): never => passthrough(NAME, mlxScript(), args);
+  const sh = (args: string[]): Promise<void> => runMlxCmd(args);
 
   switch (cmd) {
     case undefined:
@@ -110,7 +113,7 @@ export async function main(argv: string[]): Promise<void> {
     case "model":
       return sh(["model", ...rest]);
     case "logs":
-      return sh(["logs", ...rest[0] ?? "server"]);
+      return sh(["logs", rest[0] ?? "server"]);
     case "help":
     case "-h":
     case "--help":
@@ -122,6 +125,12 @@ export async function main(argv: string[]): Promise<void> {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main(process.argv.slice(2)).catch((e) => die(NAME, e instanceof Error ? e.message : String(e)));
+{
+  let invoked = false;
+  try {
+    invoked = realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch { /* argv[1] 缺失或解析失败时不自执行 */ }
+  if (invoked) {
+    main(process.argv.slice(2)).catch((e) => die(NAME, e instanceof Error ? e.message : String(e)));
+  }
 }

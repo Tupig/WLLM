@@ -13,7 +13,7 @@
     "mlx-local": "dist/cli/mlx-local.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/cli/pilot.js dist/cli/llm.js dist/cli/claude-local.js dist/cli/codex-local.js dist/cli/opencode-local.js dist/cli/mlx-local.js",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",

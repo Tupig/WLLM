@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * cli/codex-local.ts — 用本地 MLX 模型运行 Codex CLI（原 bin/codex-local）
  */
