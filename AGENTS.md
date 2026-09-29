@@ -26,3 +26,8 @@
 
 - 用简体中文
 - 做不到的事直接说，不要编造结果
+
+## Bug / 优化
+
+- 本地发现的任何 bug 或优化点：**先 `gh issue create` 上报，再修**（提交引用 `fix #N`），回归绿 + CI 绿后 `gh issue close`
+- 无 issue 不许动代码；流程细则见 `docs/PROCESS.md`
