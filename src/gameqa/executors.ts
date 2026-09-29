@@ -4,60 +4,21 @@
  *   device_inventory ：ADB 设备清单与关键属性
  * 纯文本/命令行实现，无第三方依赖。adb 可通过 ADB_PATH 覆盖可执行文件（测试用）。
  */
-import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Json, Job } from "./store";
+import { outcomeFailure, type Outcome } from "./outcome";
+import { runAirtestScript } from "./airtest";
+import { runGamePerf } from "./gameperf";
+import { runAiExploratory } from "./ai";
 
-export interface Outcome {
-  success: boolean;
-  logPath: string | null;
-  summary: Record<string, Json>;
-  artifacts: [string, string][];
-}
+export { outcomeFailure, type Outcome } from "./outcome";
 
-export function outcomeFailure(message: string, extra?: Record<string, Json>): Outcome {
-  return { success: false, logPath: null, summary: { message, ...extra }, artifacts: [] };
-}
+// ---------- ADB（实现见 adb.ts） ----------
 
-// ---------- ADB ----------
-
-function adbBin(): string {
-  return process.env["ADB_PATH"] ?? "adb";
-}
-
-/** 构造 adb 命令参数（可带 -s 序列号） */
-export function adbBase(serial?: string): string[] {
-  const v = [adbBin()];
-  if (serial !== undefined && serial !== "") {
-    v.push("-s", serial);
-  }
-  return v;
-}
-
-/** 执行 adb 命令返回 stdout；非零退出抛错 */
-export function adbOutput(args: string[]): string {
-  try {
-    return execFileSync(args[0], args.slice(1), { encoding: "utf-8", maxBuffer: 8 * 1024 * 1024 });
-  } catch (err) {
-    const e = err as { status?: number; stderr?: string; message?: string };
-    if (e.status !== undefined) {
-      throw new Error(`adb 退出码 ${String(e.status)}: ${(e.stderr ?? "").trim()}`);
-    }
-    throw new Error(`adb 执行失败: ${e.message ?? String(err)}`);
-  }
-}
-
-function adbShell(serial: string | undefined, cmd: string): string {
-  const args = adbBase(serial);
-  args.push("shell", cmd);
-  try {
-    return adbOutput(args).trim();
-  } catch {
-    return "";
-  }
-}
+import { adbBase, adbOutput, adbShell } from "./adb";
+export { adbBase, adbOutput, adbShell };
 
 // ---------- unity_log_scan ----------
 
@@ -225,10 +186,18 @@ export async function executeAgentJobType(
         return runLogScan(job, workdir);
       case "device_inventory":
         return runDeviceInventory(workdir);
-      case "airtest":
-      case "ai_exploratory":
+      case "airtest": {
+        const out = await runAirtestScript(job, typeof job["platform"] === "string" ? job["platform"] : "", workdir);
+        out.artifacts = [...out.artifacts, ...collectArtifacts("airtest", workdir)];
+        return out;
+      }
       case "game_perf":
-        return outcomeFailure("该 job_type 执行器尚未实现", { job_type: jobType });
+        return runGamePerf(job, workdir);
+      case "ai_exploratory": {
+        const out = await runAiExploratory(job, typeof job["platform"] === "string" ? job["platform"] : "", workdir);
+        out.artifacts = [...out.artifacts, ...collectArtifacts("ai_exploratory", workdir)];
+        return out;
+      }
       default:
         return null;
     }

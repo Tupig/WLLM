@@ -240,11 +240,11 @@ describe("执行器分发", () => {
     expect(out.summary["message"]).toBe("placeholder run");
   });
 
-  it("未移植执行器（airtest 等）结构化失败而非假成功", async () => {
+  it("ai_exploratory 缺 prompt → 结构化失败（对齐 Rust 测试）", async () => {
     for (const jt of ["airtest", "ai_exploratory", "game_perf"]) {
       const out = await executeAgentJobType(jt, job({ job_type: jt }), dir);
       expect(out!.success).toBe(false);
-      expect(out!.summary["message"]).toBe("该 job_type 执行器尚未实现");
+      expect(String(out!.summary["message"]).length).toBeGreaterThan(0);
     }
   });
 
