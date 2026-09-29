@@ -5,9 +5,7 @@
 ```
 WLLM/
 ├── AGENTS.md / CLAUDE.md          # 工作约定（中文）
-├── reasonix.toml                  # reasonix 配置（路径已改 WLLM）
 ├── package.json / tsconfig.json / vitest.config.ts
-├── .gitignore                     # venv/ models/ logs/ state/ node_modules/ dist/ .reasonix/ .DS_Store *.bak …
 │
 ├── src/                           # pilot-agent 源码（模块树，全 TS / UTF-8）
 │   ├── index.ts / config.ts       # CLI 入口 + 全局配置
@@ -48,8 +46,6 @@ WLLM/
 
 | 项 | 决议 |
 |----|------|
-| reasonix.toml filesystem 路径 | 已改 `/Users/tupig/Workspace/WLLM` |
-| `.reasonix/` 任务状态 | gitignore（不入库） |
 | `.DS_Store` | 已全清，gitignore 已有 |
 | gpt-visual-platform | 归档移入 `archive/gpt-visual-platform/`（D2b 剔产物，根目录保持干净） |
 | pilot src | 模块树两级（engine/session/context/knowledge/modes/agents/commands…），根仅 index.ts+config.ts |
