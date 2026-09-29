@@ -1,6 +1,6 @@
 /**
  * gameqa/store.ts — Unity 游戏测试平台 · 编排存储（gameqa-server 移植）
- * 对应 archive/gpt-visual-platform/server/store.go：内存 + JSON 文件（agents.json / jobs.json / job_id.txt）。
+ * 对应原 gpt-visual-platform（Go 版 server/store.go）：内存 + JSON 文件（agents.json / jobs.json / job_id.txt）。
  * 与 Python v1 / Go v2 数据格式完全兼容，可直接读写现有 data/ 目录。
  * 并发模型：Node 单线程 + 同步 fs —— 每个方法在一次调用栈内完成（无 await），
  * 等价 Go 版的"锁内完成、只输出序列化结果"，避免数据竞争。

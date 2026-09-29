@@ -14,12 +14,8 @@ __pycache__/
 .env
 *.local
 
-# gpt-visual-platform 构建产物
-gpt-visual-platform/target/
-gpt-visual-platform/server/unity-orchestrator-go
-gpt-visual-platform/data/
-gpt-visual-platform/.venv/
-gpt-visual-platform/dist/
+# gameqa 运行数据（任务/Agent/自签证书）
+/data/
 
 # agent 运行状态
 .wllm/
