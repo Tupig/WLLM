@@ -16,7 +16,7 @@
 | 提示词优化 | 无（E10 规划 /optimize） | prompt-optimizer：命令触发＋diff 确认＋最多 3 问＋特征清单改写<br>WorkBuddy：增强开关（不透明无 diff）<br>Cline/Roo：走 Plan 澄清而非静默改写 | 缺失 |
 | 会话管理 | session/index.ts 183 行持久化＋/clear；无 checkpoint/undo/resume | claude：checkpoint＋/rewind 四动作、--resume/fork/worktree<br>gemini：shadow git＋Rewind 三档<br>Cline：checkpoints 三档恢复<br>opencode：/undo /redo；codex：resume | 缺失 |
 | 流式 UX | REPL 经 QueryEngine 异步迭代器；bin/llm chat 非流式＋300s 超时（E7/E8） | claude：yield* 背压＋流式工具执行＋只读并发<br>Kimi：wire.jsonl 记完整请求轨迹<br>Plandex：--bg/ps/connect 后台任务 | 薄弱 |
-| 沙箱 | 无（reasonix.toml 白名单属外部 reasonix，非 pilot） | codex：Seatbelt/Landlock 三级＋writable_roots<br>claude：OS sandbox＋autoAllowBashIfSandboxed<br>Qwen 容器 -s；OpenHands Docker 默认 | 缺失 |
+| 沙箱 | 无 | codex：Seatbelt/Landlock 三级＋writable_roots<br>claude：OS sandbox＋autoAllowBashIfSandboxed<br>Qwen 容器 -s；OpenHands Docker 默认 | 缺失 |
 | 校验自修复 | 有 lint 工具(131)却列为裁剪对象；无 auto-lint 循环 | aider：--auto-lint/--auto-test 默认开、错误回喂<br>SWE-agent：落盘前 linter 拦截<br>Kiro：Correctness 属性测试；Replit：浏览器自测 | 薄弱（且拟裁方向相反） |
 | spec/计划工作流 | modes 169 行 plan/acceptEdits 雏形 | Kiro：spec 三件套＋依赖图 wave 并行<br>claude：plan 5 阶段＋allowedPrompts<br>Cline：plan/act 双模式<br>Devin：plan 落盘＋Ask/Agent；Plandex 计划版本分支 | 薄弱 |
 | 搜索 | Glob/Grep(125) 保留；Web(196) 列为裁剪；无 repo 地图 | opencode：ripgrep 尊重 .gitignore<br>aider repo-map：tree-sitter 符号热度＋磁盘缓存＋token 预算<br>Cursor/Augment：语义索引（Merkle 增量）<br>codex --search 联网；SWE-agent 结果只列文件名、超量拒绝 | 薄弱 |

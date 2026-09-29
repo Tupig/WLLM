@@ -17,8 +17,6 @@
 WLLM/
 ├── AGENTS.md          # 模型工作约定（中文，962B）
 ├── CLAUDE.md          # 指向 AGENTS.md（11B）
-├── reasonix.toml      # reasonix agent 配置：sandbox 白名单 + 4 个 MCP 插件（25 行）
-├── .reasonix/tasks/   # reasonix 运行状态（已 gitignore 之外的遗留，见 §6）
 ├── bin/               # 5 个 CLI 入口（详见 §3）
 ├── mlx/               # 本地推理服务（详见 §4）
 ├── docs/              # 本文档
@@ -94,8 +92,6 @@ CLI 工具 → :4100 unified_proxy.py → :8080 mlx_lm.server（仅 127.0.0.1）
 
 | 项 | 状态 |
 |----|------|
-| `reasonix.toml` filesystem 插件硬编码旧路径 | **已修**（D2 → WLLM） |
-| `.reasonix/tasks/` + `.DS_Store` | **已处理**（D2 gitignore + 全清） |
 | 旧 `~/Workspace/LLM` | 仅留环境垫片，H1 阶段一并清理 |
 | `bin/llm chat` 非流式、`--max-time 300` < config 1800s | **已修**（E8 → 1800） |
 | BUG-1：pilot 带工具调用端到端卡死 | **已修**（E3：doom loop+工具超时+非TTY快拒） |

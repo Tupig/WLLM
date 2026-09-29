@@ -8,7 +8,7 @@ import { join, relative, resolve } from "path";
 export const REPO_SKIP_DIRS = [
   "node_modules", ".git", ".svn", ".hg", "dist", "build", "out",
   "venv", ".venv", "models", "logs", "state", ".wllm", "coverage",
-  "__pycache__", ".pytest_cache", "target", ".reasonix",
+  "__pycache__", ".pytest_cache", "target",
 ];
 
 export const REPO_MAP_BUDGET = 6_000;
