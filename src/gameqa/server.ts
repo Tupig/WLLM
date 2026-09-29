@@ -11,6 +11,7 @@ import { Store, type Json, type Job, type Agent } from "./store.js";
 import { SKILLS } from "./skills.js";
 import { mcpGet, mcpPost, mcpAvailable, mcpMergeProps, TOOL_NAME_RE } from "./mcp.js";
 import { generateTestCase } from "./openai.js";
+import { renderReportHtml } from "./report.js";
 import { notifyJobFailure } from "./notify.js";
 
 export const VERSION = process.env["GAMEQA_VERSION"] ?? "1.0.0";
@@ -517,6 +518,12 @@ function buildRoutes(store: Store, staticDir: string): Router {
   r.add("GET", "/api/mcp/scene-info", async ({ res }) => writeJSON(res, 200, await mcpGet("/resources/scene_info", new URLSearchParams(), 30_000)));
 
   // ---------- 看板 ----------
+
+  r.add("GET", "/report", ({ res }) => {
+    const html = renderReportHtml(store.listJobs().items);
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(html);
+  });
 
   r.add("GET", "/", ({ res }) => {
     const idx = path.join(staticDir, "index.html");

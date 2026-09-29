@@ -31,7 +31,7 @@
 | 组件 | 是什么 | 入口 |
 | --- | --- | --- |
 | **pilot-agent** | 参照 Claude Code 架构实现的 AI 编码代理：读代码、改文件、跑命令、多步规划，全链路可本地运行 | `pilot` |
-| **gameqa** | Unity3D 游戏自动化测试编排平台：HTTPS 看板 + 任务队列 + 跨机 Agent + Unity batchmode 真执行，API 与数据格式兼容原 gpt-visual-platform（Go 版） | `gameqa serve` / `gameqa agent` |
+| **gameqa** | Unity3D 游戏自动化测试编排平台：HTTPS 看板 + 任务队列 + 跨机 Agent + Unity batchmode 真执行，`GET /report` 单文件测试报告（汇总卡片 + 近 20 次通过率 SVG 趋势 + 失败明细 + 历史表，零外部依赖），API 与数据格式兼容原 gpt-visual-platform（Go 版） | `gameqa serve` / `gameqa agent` |
 | **MLX 推理层** | Apple Silicon（M4）上用 MLX 跑本地大模型，管理服务生命周期，单端口暴露给任意客户端 | `llm` |
 | **协议代理** | 一个端口同时说 OpenAI Chat / OpenAI Responses / Anthropic Messages 三种协议，互相转换后转本地后端 | `:4100`（由 `llm` 拉起） |
 
