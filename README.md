@@ -174,7 +174,7 @@ CLI（llm / *-local / 任意 OpenAI/Anthropic 客户端）
 
 - **llm**：`llm start|stop|status|doctor`（服务生命周期）、`llm use 8b`（切模型，`mlx/models.json` 管清单）、`llm "问题"`（直连对话）
 - **mlx-local 全命令**：`start [模型]` / `restart [模型]` / `stop` / `status` / `logs server|proxy` / `healthcheck` / `model list|info` / `metrics`
-- **代理三协议**：`/v1/chat/completions`（OpenAI Chat）、`/v1/responses`（OpenAI Responses）、`/v1/messages`（Anthropic Messages）互转（`src/proxy/convert.ts`），后端统一 `mlx_lm.server`；`:4100` 对外、`:8080` 仅本地内部调用
+- **代理三协议**：`/v1/chat/completions`（OpenAI Chat）、`/v1/responses`（OpenAI Responses）、`/v1/messages`（Anthropic Messages）互转（`src/proxy/convert.ts`），后端统一 `mlx_lm.server`；流式自动注入 `stream_options.include_usage`，三协议末事件均透传 token usage；`:4100` 对外、`:8080` 仅本地内部调用
 - **客户端接入**：`opencode-local` / `claude-local` / `codex-local` 三个 shim 已配好本机 provider；配到别的 AI 工具同样只要把 base URL 指到 `:4100`
 - 模型目录 `mlx/models/`、虚拟环境 `mlx/venv/`、日志与状态均运行时（gitignore）
 

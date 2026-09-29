@@ -189,6 +189,7 @@ export function createProxyServer(opts: ProxyOptions = {}): http.Server {
     });
 
     let contentText = "";
+    let inTokens = 0, outTokens = 0;
     try {
       for await (const line of sseLines(backendResp)) {
         if (!line.startsWith("data:")) continue;
@@ -200,6 +201,9 @@ export function createProxyServer(opts: ProxyOptions = {}): http.Server {
         } catch {
           continue;
         }
+        const usage = chunk.usage ?? {};
+        if (usage.prompt_tokens) inTokens = usage.prompt_tokens;
+        if (usage.completion_tokens) outTokens = usage.completion_tokens;
         const choice = (chunk.choices ?? [{}])[0];
         const piece = (choice.delta ?? {}).content;
         if (piece) {
@@ -209,7 +213,14 @@ export function createProxyServer(opts: ProxyOptions = {}): http.Server {
       }
       sse(res, "response.output_item.done", {
         type: "response.output_item.done",
-        item: { type: "message", id: `msg_${hex(24)}`, role: "assistant", content: [{ type: "output_text", text: contentText }], status: "completed" },
+        item: { type: "message", id: `msg_${hex(16)}`, role: "assistant", content: [{ type: "output_text", text: contentText }], status: "completed" },
+      });
+      sse(res, "response.completed", {
+        type: "response.completed",
+        response: {
+          id: responseId, object: "response", status: "completed", output: [],
+          usage: { input_tokens: inTokens, output_tokens: outTokens, total_tokens: inTokens + outTokens },
+        },
       });
       sse(res, "response.completed", {
         type: "response.completed",
@@ -232,7 +243,11 @@ export function createProxyServer(opts: ProxyOptions = {}): http.Server {
 
   const relay = async (res: http.ServerResponse, payload: any, originalBody: any, protocol: "chat" | "anthropic" | "responses", wantStream: boolean) => {
     try {
-      if (wantStream) payload.stream = true;
+      if (wantStream) {
+        payload.stream = true;
+        // OpenAI 兼容后端默认不在流末 chunk 附 usage，需显式请求
+        payload.stream_options = { include_usage: true };
+      }
       const backendResp = await callBackend(payload);
 
       if (wantStream) {
