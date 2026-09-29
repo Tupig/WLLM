@@ -101,6 +101,8 @@ export type ToolDefinition<
   aliases?: string[];
   searchHint?: string;
   readonly inputSchema: Input;
+  /** 旁路 JSON Schema（MCP 桥等无法用 zod 表达时由 QueryEngine 优先取用） */
+  jsonSchema?: unknown;
   maxResultSizeChars?: number;
   readonly strict?: boolean;
 

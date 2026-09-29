@@ -8,6 +8,7 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { Tool, ToolUseContext, CanUseToolFn } from "./Tool.js";
 import { anthropicToolResultContent } from "./Tool.js";
+import { connectMcpServers, type McpConnection } from "./mcp.js";
 import { getDefaultTools, getToolByName, resolveExtraTools } from "./toolRegistry.js";
 import { createClient, streamMessage, type StreamEvent, type ApiClient } from "../services/api.js";
 import { resolveHarness, parseXmlToolCalls, buildXmlToolSection } from "./harness.js";
@@ -149,6 +150,8 @@ export class QueryEngine {
   private sessionState: SessionState | null = null;
   private budgetManager: TokenBudgetManager;
   private doomDetector = createDoomDetector(3);
+  private mcp: McpConnection | null = null;
+  private mcpInitialized = false;
   private fallbackClient: ApiClient | null = null;
   private fallbackLabel: string | null = null;
 
@@ -227,7 +230,23 @@ export class QueryEngine {
     }
   }
 
+  /** 惰性连接 .wllm/mcp.json 配置的 MCP server；未配置零变化，失败只降级 */
+  private async ensureMcpTools(): Promise<void> {
+    if (this.mcpInitialized) return;
+    this.mcpInitialized = true;
+    try {
+      const mcp = await connectMcpServers(this.config.cwd, (msg) =>
+        process.stderr.write(`⚠️  ${msg}\n`),
+      );
+      this.mcp = mcp;
+      if (mcp.tools.length > 0) this.tools.push(...mcp.tools);
+    } catch {
+      /* MCP 不可用不影响主流程 */
+    }
+  }
+
   async *submitMessage(prompt: string): AsyncGenerator<SDKMessage, void, unknown> {
+    await this.ensureMcpTools();
     // 记录用户消息
     this.trajectory?.recordUserMessage(prompt);
 
@@ -366,7 +385,7 @@ export class QueryEngine {
   }> {
     const events: SDKMessage[] = [];
     const toolDefs: Anthropic.Tool[] = this.tools.map((t) => {
-      const raw = zodToJsonSchema(t.inputSchema);
+      const raw = (t.jsonSchema as any) ?? zodToJsonSchema(t.inputSchema);
       // 清理 zod-to-json-schema 添加的多余字段
       const { $schema, additionalProperties, ...schema } = raw as any;
       return {

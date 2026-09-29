@@ -97,6 +97,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 | 执行 | `Bash`（沙箱 + 安全护栏）`PackageManager` `lint` `Refactor` `Analysis` |
 | 规划 | `todo`（任务清单）`Question`（向用户澄清）`parallel`（并行子任务）`Agent`（子代理派发） |
 | 状态 | `rollback`（回滚）`state`（状态机）`Web`（联网抓取） |
+| 扩展 | **MCP 客户端**：`.wllm/mcp.json`（Claude Code 兼容 `{ mcpServers: { name: { command, args, env } } }`）接入外部 MCP server，工具自动桥接为 `mcp_<server>_<tool>`（`readOnlyHint`→只读标记、inputSchema 透传、单 server 失败降级） |
 
 ### 内核特性
 
