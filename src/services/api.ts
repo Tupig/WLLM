@@ -396,13 +396,36 @@ export async function* parseOpenAISSE(
   yield { type: "message_stop" };
 }
 
+/** full-jitter 退避（issue #25）：rand(0, min(cap, base*2^attempt)） */
+export function computeBackoffMs(
+  attempt: number,
+  opts?: { base?: number; cap?: number },
+): number {
+  const base = opts?.base ?? 1000;
+  const cap = opts?.cap ?? 10_000;
+  const ceiling = Math.min(cap, base * 2 ** Math.max(0, attempt));
+  return Math.floor(Math.random() * (ceiling + 1));
+}
+
+/**
+ * 带抖动与总预算的重试（issue #25）：
+ * - full jitter 防多请求同步重试风暴
+ * - 总预算 TUPIG_RETRY_BUDGET_MS（默认 60s）超限立即抛最后一次错误
+ * - 401/403 语义错误立即抛
+ */
 export async function callWithRetry<T>(fn: () => Promise<T>): Promise<T> {
+  const budgetMs = Number(process.env.TUPIG_RETRY_BUDGET_MS ?? 60_000);
+  const startedAt = Date.now();
   let lastErr: Error | undefined;
   for (let i = 0; i <= MAX_RETRIES; i++) {
     try { return await fn(); } catch (e) {
       lastErr = e instanceof Error ? e : new Error(String(e));
       if (lastErr.message.includes("401") || lastErr.message.includes("403")) throw lastErr;
-      if (i < MAX_RETRIES) await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** i, 10000)));
+      if (i >= MAX_RETRIES) break;
+      if (Date.now() - startedAt >= budgetMs) break; // 超预算即停
+      const wait = computeBackoffMs(i);
+      if (Date.now() - startedAt + wait > budgetMs) break; // 等待会超预算也不等
+      await new Promise((r) => setTimeout(r, wait));
     }
   }
   throw lastErr;
