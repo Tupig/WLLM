@@ -15,6 +15,7 @@ export type TrajectoryEventType =
   | "tool_use"
   | "tool_result"
   | "compaction"
+  | "permission"
   | "error"
   | "system";
 

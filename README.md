@@ -108,7 +108,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **知识沉淀**：memory（长期记忆）+ skills（技能库，`.tupigcode/skills/` 先审后存）+ reflexion（反思入库）
 - **MCP 接入**：`.tupigcode/mcp.json`（Claude Code 兼容）接入外部 MCP server，工具自动桥接为 `mcp_<server>_<tool>`，单 server 失败降级不阻塞；**双重审批**：server/tool 级 `approval` 白名单 + `TUPIG_MCP_APPROVAL=off|ask` 全局开关，未配置沿用只读放行/可写询问
 - **工作模式**：plan / act 双模式 + spec 规格驱动开发（`n8-spec`）
-- **工程护栏**：写路径沙箱（`TUPIG_SANDBOX_WRITE/DENY`）、权限分级、**自修改面复审**（写 `.tupigcode/skills|mcp.json|config.json`、hooks 文件时绕过 allow 规则强制确认）、hooks（`TUPIG_HOOKS_FILE`）、`/doctor` 自诊断、`/init` 项目初始化、`/review` 代码评审
+- **工程护栏**：写路径沙箱（`TUPIG_SANDBOX_WRITE/DENY`）、权限分级与**风险分类器**（mutate 命令自动放行、系统敏感路径 deny、git push/publish 恒询问，判定入 trajectory）、**自修改面复审**（写 `.tupigcode/skills|mcp.json|config.json`、hooks 文件时绕过 allow 规则强制确认）、hooks（`TUPIG_HOOKS_FILE`）、`/doctor` 自诊断、`/init` 项目初始化、`/review` 代码评审
 
 ## 🎮 gameqa — Unity 自动化测试平台
 

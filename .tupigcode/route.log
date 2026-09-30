@@ -2,3 +2,5 @@
 {"ts":1790774704906,"type":"feedback","model":"mock","kind":"chat","success":true,"oneShot":true}
 {"ts":1790775389882,"type":"route","kind":"chat","model":"mock","provider":"mock","reason":"显式指定 model","ctx":0,"prompt":"读 src/index.ts"}
 {"ts":1790775389970,"type":"feedback","model":"mock","kind":"chat","success":true,"oneShot":true}
+{"ts":1790775720234,"type":"route","kind":"chat","model":"mock","provider":"mock","reason":"显式指定 model","ctx":0,"prompt":"读 src/index.ts"}
+{"ts":1790775720330,"type":"feedback","model":"mock","kind":"chat","success":true,"oneShot":true}

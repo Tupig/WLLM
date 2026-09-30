@@ -552,6 +552,11 @@ export class QueryEngine {
     parallel: boolean,
   ): Promise<void> {
       const permission = await canUseToolFn(buf.name, input);
+      this.trajectory?.record("permission", {
+        toolName: buf.name,
+        behavior: permission.behavior,
+        reason: (permission as any).decisionReason ?? (permission as any).message ?? "",
+      });
 
       if (permission.behavior === "deny") {
         const msg = permission.message || "已拒绝";

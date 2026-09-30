@@ -60,9 +60,9 @@ describe("canUseTool 分级审批（A7）", () => {
     const r = await canUseTool("Bash", { command: "ls -la" }, bashTool, ctx("default"));
     expect(r.behavior).toBe("allow");
   });
-  it("默认模式：mutate Bash 要审批", async () => {
+  it("默认模式：mutate Bash 自动放行（issue #13 分类器；远程/敏感除外）", async () => {
     const r = await canUseTool("Bash", { command: "npm install x" }, bashTool, ctx("default"));
-    expect(r.behavior).toBe("ask");
+    expect(r.behavior).toBe("allow");
   });
   it("默认模式：destructive 要审批且消息标明危险", async () => {
     const r = await canUseTool("Bash", { command: "rm -rf dist" }, bashTool, ctx("default"));
@@ -155,5 +155,58 @@ describe("自修改面强制复审（A7 补全）", () => {
   it("plan 模式 specs 产物特例不回归", async () => {
     const r = await canUseTool("Write", { file_path: "/repo/.tupigcode/specs/s1.md", content: "x" }, writeTool, ctx("plan"));
     expect(r.behavior).toBe("allow");
+  });
+});
+
+// ---------- issue #13：审批风险分类器 ----------
+describe("审批风险分类器（A8 补全）", () => {
+  const writeTool = { name: "Write", isReadOnly: () => false, isDestructive: () => true } as any;
+  const readTool = { name: "Read", isReadOnly: () => true } as any;
+  const unknownTool = { name: "Frobnicate", isReadOnly: () => false, isDestructive: () => false } as any;
+
+  it("Bash mutate 命令自动放行（降审批疲劳）", async () => {
+    for (const cmd of ["mv a.ts b.ts", "cp -r src src2", "npm install lodash", "git commit -m x", "mkdir -p out"]) {
+      const r = await canUseTool("Bash", { command: cmd }, bashTool, ctx("default"));
+      expect(r.behavior, cmd).toBe("allow");
+    }
+  });
+  it("mutate 放行的 decisionReason 标明分类器", async () => {
+    const r = await canUseTool("Bash", { command: "cp a b" }, bashTool, ctx("default"));
+    expect(r.behavior).toBe("allow");
+    if (r.behavior === "allow") expect(r.decisionReason).toContain("风险分类器");
+  });
+  it("git push / npm publish 恒 ask（远程发布类）", async () => {
+    for (const cmd of ["git push origin main", "npm publish"]) {
+      const r = await canUseTool("Bash", { command: cmd }, bashTool, ctx("default"));
+      expect(r.behavior, cmd).toBe("ask");
+    }
+  });
+  it("Write 系统敏感路径 → deny", async () => {
+    const r = await canUseTool("Write", { file_path: "/etc/passwd", content: "x" }, writeTool, ctx("default"));
+    expect(r.behavior).toBe("deny");
+  });
+  it("Bash 写系统敏感路径 → deny", async () => {
+    const r = await canUseTool("Bash", { command: "echo x > /etc/hosts" }, bashTool, ctx("default"));
+    expect(r.behavior).toBe("deny");
+  });
+  it("Read 系统路径 → allow（只读不涉敏感写）", async () => {
+    const r = await canUseTool("Read", { file_path: "/etc/hosts" }, readTool, ctx("default"));
+    expect(r.behavior).toBe("allow");
+  });
+  it("完全未知工具 → 仍 ask", async () => {
+    const r = await canUseTool("Frobnicate", { x: 1 }, unknownTool, ctx("default"));
+    expect(r.behavior).toBe("ask");
+  });
+  it("destructive 恒 ask 且标危险（分类器不放行）", async () => {
+    const r = await canUseTool("Bash", { command: "rm -rf dist" }, bashTool, ctx("default"));
+    expect(r.behavior).toBe("ask");
+    if (r.behavior === "ask") expect(r.message).toMatch(/危险|destructive/);
+  });
+  it("allow 规则与 deny 规则优先级不受分类器影响", async () => {
+    const d = ctx("default");
+    d.alwaysDenyRules.set("d", [{ pattern: "Bash", source: "test" }]);
+    expect((await canUseTool("Bash", { command: "mv a b" }, bashTool, d)).behavior).toBe("deny");
+    const a = ctx("bypassPermissions");
+    expect((await canUseTool("Bash", { command: "rm -rf x" }, bashTool, a)).behavior).toBe("allow");
   });
 });

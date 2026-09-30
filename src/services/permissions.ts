@@ -56,6 +56,17 @@ function evaluateRules(
 
 const WRITE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
 
+/** 系统敏感路径（写入一律 deny） */
+const SENSITIVE_PATH = /(^|[\s'"=])(\/etc(\/|$)|\/usr\/|\/bin\/|\/sbin\/|\/System\/|\/Library\/|\/private\/|\/dev\/(sd|disk|nvme)|\/\.ssh(\/|$))/;
+
+/** 远程/发布类命令：即使 mutate 也恒 ask（issue #13） */
+const REMOTE_PUBLISH = /\bgit\s+push\b|\bpublish\b|\brelease\b|\bdeploy\b/;
+
+/** 内容是否触及系统敏感路径（命令串或文件路径） */
+export function touchesSensitivePath(s: string): boolean {
+  return SENSITIVE_PATH.test(s);
+}
+
 /** 命中自身护栏文件（skills/mcp/hooks/config）的写操作 → 强制复审（issue #12） */
 export function isSelfModifyWrite(toolName: string, input: Record<string, unknown>): boolean {
   if (toolName === "Bash") {
@@ -153,8 +164,31 @@ export async function canUseTool(
     return { behavior: "deny", message: "dontAsk 模式：工具未被预先批准", decisionReason: "dontAsk 模式" };
   }
 
-  if (toolName === "Bash" && classifyBash(String(input.command ?? "")) === "destructive") {
-    return { behavior: "ask", message: `危险命令（destructive）：${String(input.command).slice(0, 200)}` };
+  if (toolName === "Bash") {
+    const cmd = String(input.command ?? "");
+    const safety = classifyBash(cmd);
+    if (safety === "destructive") {
+      return { behavior: "ask", message: `危险命令（destructive）：${cmd.slice(0, 200)}` };
+    }
+    if (safety === "mutate") {
+      // 风险分类器（issue #13）：敏感路径 deny → 远程发布 ask → 其余 mutate 自动放行
+      if (touchesSensitivePath(cmd)) {
+        return { behavior: "deny", message: `命令触及系统敏感路径，已拒绝：${cmd.slice(0, 200)}` };
+      }
+      if (REMOTE_PUBLISH.test(cmd)) {
+        return { behavior: "ask", message: `远程/发布类命令需确认：${cmd.slice(0, 200)}` };
+      }
+      return { behavior: "allow", decisionReason: "风险分类器：mutate 命令自动放行" };
+    }
+    // safe → 落到下方只读放行
+  }
+
+  if (WRITE_TOOLS.has(toolName)) {
+    const p = String((input as any).file_path ?? (input as any).path ?? (input as any).notebook_path ?? "");
+    if (p && touchesSensitivePath(p)) {
+      return { behavior: "deny", message: `目标为系统敏感路径，已拒绝：${p}` };
+    }
+    // 非敏感写 → 落到下方 ask（仓内写入由 allow 规则 / acceptEdits 模式放行）
   }
 
   if (tool?.isReadOnly(input)) {
