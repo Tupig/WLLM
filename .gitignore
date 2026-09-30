@@ -18,5 +18,5 @@ __pycache__/
 /data/
 
 # agent 运行状态
-.wllm/
+.tupigcode/
 /mlx/state/
