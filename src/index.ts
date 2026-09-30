@@ -13,6 +13,7 @@ import {
   renderFileDiff, rollbackOps, applyHunkDecision, type FileOp,
 } from "./engine/diffReview.js";
 import { applyStaged, listStaged } from "./engine/staging.js";
+import { listTrust, clearTrust } from "./engine/hookTrust.js";
 import { saveSessionMessages, loadSessionMessages, listSessions, forkMessages } from "./session/session.js";
 import { stageMemory, commitMemory, loadMemories, formatMemoriesForPrompt } from "./knowledge/memory.js";
 import { loadSkills, resolveSkill } from "./knowledge/skills.js";
@@ -48,6 +49,7 @@ function printHelp(): void {
   /checkpoint [new|list|rollback <id>]  会话检查点/回滚
   /rewind [chat|code|all] [id]         三档回卷（默认 all，缺省 id=最新）
   /apply                              落盘 plan 模式暂存改动
+  /hooks [clear]                      查看/清除 hook 信任（TOFU）
   /skills  技能目录
   /skill <name>  加载技能全文
   /remember [内容]  查看/存入记忆（存入需确认）
@@ -388,6 +390,25 @@ async function startREPL(): Promise<void> {
         await pruneCheckpoints(workDir, 20).catch(() => {});
       } catch (e: any) {
         console.log(chalk.red(`rewind 错误：${e.message}\n`));
+      }
+      rl.prompt();
+      return;
+    }
+
+    if (input === "/hooks" || input === "/hooks clear") {
+      const workDir = appStore.getState().workDir;
+      if (input === "/hooks clear") {
+        clearTrust(workDir);
+        console.log(chalk.green("✓ 已清除全部 hook 信任记录（下次触发重新询问）\n"));
+      } else {
+        const list = listTrust(workDir);
+        if (list.length === 0) {
+          console.log(chalk.gray("暂无 hook 信任记录（首次触发时询问，确认后持久化）\n"));
+        } else {
+          console.log(chalk.cyan(`已信任 ${list.length} 个 hook：`));
+          for (const t of list) console.log(chalk.gray(`  ${t.command}（${t.trustedAt}，hash ${t.hash}）`));
+          console.log(chalk.gray("清除：/hooks clear\n"));
+        }
       }
       rl.prompt();
       return;

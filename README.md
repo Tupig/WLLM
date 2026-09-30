@@ -104,6 +104,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 
 - **上下文工程**：预算制压缩（`compact`）含阈值梯子与熔断，**force 档 LLM 摘要三链路可用**（openai 本地非流式 sideQuery 短超时 / anthropic / mock，失败回退预算削减且 keep_first）；`TUPIG_MAX_CONTEXT_TOKENS` 自适应（30k ~ 10M 窗口）、轨迹（trajectory）记录与复盘
 - **多 Provider 容错**：Anthropic / OpenAI / 本地代理统一接入，`TUPIG_FAILOVER` 链式降级；错误标准分类（`services/errors.ts`：rate_limit / auth / context_too_long / overloaded / server / network / invalid_request，429/529/5xx/断连触发切换，401 与业务错误不切换），`TUPIG_ROLE_MODELS` 分角色选模型
+- **hook 信任 TOFU**：shell hook 首次触发询问、确认后写 `.tupigcode/hook-trust.json`（规则 hash：event/matcher/command/timeout 任一变更即重询），拒绝不持久化、异常/超时仍 fail-closed；非 TTY 与 `TUPIG_HOOK_TRUST=0` 不打断；`/hooks` 查看、`/hooks clear` 清除、`/doctor` 有信任清单
 - **内置技能包（10 个）**：git-workflow / git-log / gitingest / shell-command-engager / code-review / debugging / test-first / docs-sync / release-check / refactor-safe，`src/knowledge/skills/` 静态装载（build 拷贝到 dist），用户 `.tupigcode/skills/` 同名覆盖、无效回落内置，三重门禁与 3000 字目录预算对内置同样生效
 - **三级 diff 审查**：每轮写操作聚合为结构化 diff（自研 LCS，上下文 3），REPL 全局 a/r/s → 文件 y/n/h/q → 块 y/n 三级判定；拒绝按文件回滚（同文件多次修改回到首次之前）；超大 diff 降级为仅文件级；`TUPIG_DIFF_REVIEW=0` 关闭；**plan 模式改动暂存** `.tupigcode/staging/`，**`/apply` 才落盘**（越界条目拒绝）
 - **工具延迟装载**：核心集（Read/Write/Edit/Bash/Glob/Grep/TodoWrite/Question）+ `ToolSearch` 元工具常驻，其余（git/测试/网页/子代理/仓库地图等）按需检索挂载（下一轮生效）；`TUPIG_EXTRA_TOOLS` 显式指定与 MCP 工具保持常驻；`TUPIG_LAZY_TOOLS=0` 回退全量注入

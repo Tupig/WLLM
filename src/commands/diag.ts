@@ -2,6 +2,7 @@
  * diag/index.ts — /doctor 体检、/init 生成 AGENTS.md、/review 评审 prompt（N11 / A22）
  */
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, readdirSync } from "fs";
+import { listTrust } from "../engine/hookTrust.js";
 import { join } from "path";
 import { resolveProvider, resolveModel } from "../services/api.js";
 import { getDefaultTools } from "../engine/toolRegistry.js";
@@ -121,6 +122,21 @@ export function runDoctor(workDir: string, env: NodeJS.ProcessEnv = process.env)
     } catch (e) {
       out.push({ id: "hooks", level: "warn", label: "Hooks 配置", detail: `hooks.json 解析失败：${e instanceof Error ? e.message : e}` });
     }
+  }
+
+  // hook 信任清单（TOFU，issue #20）
+  try {
+    const trust = listTrust(workDir);
+    out.push({
+      id: "hook-trust",
+      level: "ok",
+      label: "Hook 信任",
+      detail: trust.length
+        ? `已信任 ${trust.length} 条：${trust.map((t) => t.command.slice(0, 40)).join(" | ")}（/hooks clear 清除）`
+        : "暂无信任记录（hook 首次触发时询问）",
+    });
+  } catch (e) {
+    out.push({ id: "hook-trust", level: "warn", label: "Hook 信任", detail: String(e) });
   }
 
   // 缓存体积

@@ -22,6 +22,7 @@ import { join } from "path";
 import { mapWithConcurrency, partitionRuns } from "../tools/parallel.js";
 import { canUseTool, promptUser } from "../services/permissions.js";
 import { hookSystem, loadShellHooks } from "./hooks.js";
+import { ensureHookTrust, answerHookTrust, promptHookTrust } from "./hookTrust.js";
 import { ContextCompactor, LADDER_MICRO } from "../context/compact/index.js";
 import { appStore } from "../state/AppState.js";
 import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS } from "./constants.js";
@@ -219,7 +220,17 @@ export class QueryEngine {
       hookSystem.register({
         event: h.event,
         matcher: h.matcher,
-        handler: (c) => hookSystem.triggerShellHook(h.command, c, h.timeout),
+        handler: async (c) => {
+          // TOFU 信任（issue #20）：首次询问、信任持久化、规则变更重询
+          const gate = await ensureHookTrust(config.cwd, h);
+          if (gate === "ask") {
+            const yes = await promptHookTrust(h);
+            if (answerHookTrust(config.cwd, h, yes) === "deny") {
+              return { block: true, message: "hook 未获信任，已阻止（/hooks clear 可重置后重新询问）" };
+            }
+          }
+          return hookSystem.triggerShellHook(h.command, c, h.timeout);
+        },
       });
     }
     this.ruleLayers = resolveRuleLayers(config.cwd);
