@@ -24,6 +24,7 @@ import { loadMemoriesSync } from "./knowledge/memory.js";
 import {
   saveSessionMessages, loadSessionMessages, listSessions, forkMessages,
   rescueSessionSync, listInterruptedSessions, formatInterruptedNotice,
+  formatSessionRow,
 } from "./session/session.js";
 import { stageMemory, commitMemory, loadMemories, formatMemoriesForPrompt } from "./knowledge/memory.js";
 import { loadSkills, resolveSkill } from "./knowledge/skills.js";
@@ -73,7 +74,7 @@ function printHelp(): void {
   /review [ref]  只读评审未提交改动（或对某 ref 的 diff）
   /retro         会话复盘：discard/merge/skill/rule 四选一，草稿入 staging
   /sessions  历史会话列表
-  /resume <id>        恢复会话
+  /resume [id]        恢复会话（无 id 列出最近会话）
   /fork <id> <条数>   从历史分叉
   /quit     退出
 
@@ -418,9 +419,7 @@ async function startREPL(): Promise<void> {
       const list = await listSessions(appStore.getState().workDir);
       if (list.length === 0) console.log(chalk.gray("暂无历史会话。\n"));
       else {
-        for (const s of list.slice(0, 20)) {
-          console.log(chalk.gray(`  ${s.id}  ${s.updatedAt.slice(0, 19)}  ${s.messageCount} 条  ${s.preview}`));
-        }
+        for (const s of list.slice(0, 20)) console.log(chalk.gray(formatSessionRow(s)));
         console.log(chalk.gray("恢复：/resume <id> | 分叉：/fork <id> <条数>\n"));
       }
       rl.prompt();
@@ -428,7 +427,17 @@ async function startREPL(): Promise<void> {
     }
     if (input === "/resume" || input.startsWith("/resume ")) {
       const id = input.split(/\s+/)[1];
-      if (!id) { console.log(chalk.gray("用法：/resume <id>\n")); rl.prompt(); return; }
+      if (!id) {
+        const list = await listSessions(appStore.getState().workDir);
+        if (list.length === 0) console.log(chalk.gray("暂无历史会话（用 /sessions 查看）。\n"));
+        else {
+          console.log(chalk.gray("选择要恢复的会话（按更新时间倒序）："));
+          for (const s of list.slice(0, 20)) console.log(chalk.gray(formatSessionRow(s)));
+          console.log(chalk.gray("恢复：/resume <id>\n"));
+        }
+        rl.prompt();
+        return;
+      }
       const msgs = await loadSessionMessages(appStore.getState().workDir, id);
       if (!msgs) { console.log(chalk.red(`会话不存在：${id}\n`)); rl.prompt(); return; }
       sessionHistory = msgs as Anthropic.MessageParam[];

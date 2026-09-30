@@ -123,13 +123,16 @@ export async function listSessions(workDir: string): Promise<SessionMeta[]> {
         const raw = await readFile(p, "utf-8");
         const data = JSON.parse(raw);
         const messages: any[] = Array.isArray(data.messages) ? data.messages : [];
-        const first = messages.find((m) => typeof m.content === "string" && m.content.length > 0);
+        // 首条用户 prompt（issue #32）：跳过 assistant 先发 / 空内容
+        const firstUser = messages.find(
+          (m) => m.role === "user" && typeof m.content === "string" && m.content.length > 0,
+        );
         const s = await stat(p);
         metas.push({
           id: f.replace(/\.json$/, ""),
           updatedAt: data.updatedAt ?? s.mtime.toISOString(),
           messageCount: messages.length,
-          preview: String(first?.content ?? "").slice(0, 80),
+          preview: truncatePreview(String(firstUser?.content ?? "")),
         });
       } catch {
         continue;
@@ -154,4 +157,29 @@ export function forkMessages<T extends { role: string; content?: unknown }>(
     (last.content as Array<{ type?: string }>).some((b) => b.type === "tool_use");
   if (danglingToolUse) cut.pop();
   return cut;
+}
+
+/** 预览截断（issue #32）：最多 60 字 */
+export function truncatePreview(text: string, max = 60): string {
+  const t = String(text ?? "");
+  return t.length > max ? t.slice(0, max) : t;
+}
+
+/** 相对时间：刚刚 / N 分钟前 / N 小时前 / N 天前 */
+export function relativeTime(iso: string): string {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "未知时间";
+  const diff = Date.now() - t;
+  if (diff < 60_000) return "刚刚";
+  const min = Math.floor(diff / 60_000);
+  if (min < 60) return `${min} 分钟前`;
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  return `${Math.floor(hours / 24)} 天前`;
+}
+
+/** 会话列表行：id + 相对时间 + 条数 + 首条 prompt 预览（空则占位） */
+export function formatSessionRow(s: SessionMeta): string {
+  const preview = s.preview ? s.preview : "（无预览）";
+  return `  ${s.id}  ${relativeTime(s.updatedAt)}  ${s.messageCount} 条  ${preview}`;
 }
