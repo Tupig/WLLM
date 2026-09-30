@@ -16,6 +16,8 @@ import {
   resolveSubAgentModel,
   type AgentDef,
 } from "./agents.js";
+import { ContextCompactor, estimateTokens, LADDER_MICRO } from "../context/compact/index.js";
+import { MAX_CONTEXT_TOKENS } from "../engine/constants.js";
 
 export type { AgentDef };
 export {
@@ -56,6 +58,8 @@ export interface SubAgentResult {
   turns: number;
   usage?: { input: number; output: number };
   duration: number;
+  /** 本任务内自动压缩次数（issue #29） */
+  compactions?: number;
 }
 
 export type SubAgentStreamFn = (args: {
@@ -154,7 +158,7 @@ export class SubAgentExecutor {
       : baseSystem;
 
     // 独立上下文：只有任务描述，不读父消息
-    const messages: Anthropic.MessageParam[] = [
+    let messages: Anthropic.MessageParam[] = [
       { role: "user", content: task.description },
     ];
 
@@ -162,6 +166,9 @@ export class SubAgentExecutor {
     let turns = 0;
     let inputTokens = 0;
     let outputTokens = 0;
+    let compactions = 0;
+    const compactor = new ContextCompactor();
+    const compactThreshold = MAX_CONTEXT_TOKENS * LADDER_MICRO;
     const streamFn = this.streamFn();
 
     for (let turn = 0; turn < maxTurns; turn++) {
@@ -171,6 +178,20 @@ export class SubAgentExecutor {
       const toolBuffers = new Map<string, { id: string; name: string; inputJson: string }>();
       let fullText = "";
       let stopReason: string | null = null;
+
+      // 自动压缩（issue #29）：超预算 → 走既有流水线重建后继续；失败不崩
+      try {
+        const est = estimateTokens(messages);
+        if (this.client && est > compactThreshold) {
+          const out = await compactor.autoCompact(this.client, model, messages);
+          if (out !== messages && estimateTokens(out) < est) {
+            messages = out;
+            compactions++;
+          }
+        }
+      } catch {
+        /* 压缩失败回退原消息继续（autoCompact 内部已兜底 budgetReduction） */
+      }
 
       try {
         for await (const event of streamFn({
@@ -205,6 +226,7 @@ export class SubAgentExecutor {
           turns,
           usage: { input: inputTokens, output: outputTokens },
           duration: Date.now() - startTime,
+          compactions,
         };
       }
 
@@ -293,6 +315,7 @@ export class SubAgentExecutor {
       turns,
       usage: { input: inputTokens, output: outputTokens },
       duration: Date.now() - startTime,
+      compactions,
     };
   }
 }
