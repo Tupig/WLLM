@@ -12,6 +12,7 @@ import { SKILLS } from "./skills.js";
 import { mcpGet, mcpPost, mcpAvailable, mcpMergeProps, TOOL_NAME_RE } from "./mcp.js";
 import { generateTestCase } from "./openai.js";
 import { renderReportHtml } from "./report.js";
+import { renderAllureHtml } from "./allure.js";
 import { notifyJobFailure } from "./notify.js";
 
 export const VERSION = process.env["GAMEQA_VERSION"] ?? "1.0.0";
@@ -521,6 +522,13 @@ function buildRoutes(store: Store, staticDir: string): Router {
 
   r.add("GET", "/report", ({ res }) => {
     const html = renderReportHtml(store.listJobs().items);
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(html);
+  });
+
+  r.add("GET", "/allure", ({ res, query }) => {
+    const jobRaw = parseInt(query.get("job") ?? "", 10);
+    const html = renderAllureHtml(store.listJobs().items, Number.isNaN(jobRaw) ? undefined : jobRaw);
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(html);
   });
