@@ -5,7 +5,8 @@
  * 门禁③：单文件 ≤ MAX_SKILL_BYTES
  */
 import { readdirSync, readFileSync, existsSync, statSync } from "fs";
-import { join, resolve } from "path";
+import { dirname, join, resolve } from "path";
+import { fileURLToPath } from "url";
 
 export const SKILL_CATALOG_BUDGET = 3_000;
 export const MAX_SKILL_BYTES = 100_000;
@@ -25,6 +26,9 @@ function skillsRoot(workDir: string): string {
   return join(workDir, ".tupigcode", "skills");
 }
 
+/** 内置技能包根目录（src/knowledge/skills → dist/knowledge/skills） */
+export const BUILTIN_SKILLS_ROOT = join(dirname(fileURLToPath(import.meta.url)), "skills");
+
 function parseFrontmatter(raw: string): { meta: Record<string, string>; body: string } | null {
   const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   if (!m) return null;
@@ -36,8 +40,7 @@ function parseFrontmatter(raw: string): { meta: Record<string, string>; body: st
   return { meta, body: m[2] ?? "" };
 }
 
-export function loadSkills(workDir: string): SkillMeta[] {
-  const root = skillsRoot(workDir);
+function scanRoot(root: string): SkillMeta[] {
   if (!existsSync(root)) return [];
   const out: SkillMeta[] = [];
   for (const entry of readdirSync(root, { withFileTypes: true })) {
@@ -53,6 +56,19 @@ export function loadSkills(workDir: string): SkillMeta[] {
     } catch {
       continue;
     }
+  }
+  return out;
+}
+
+/**
+ * 技能目录：用户 `.tupigcode/skills/` 优先，同名覆盖内置包；
+ * 内置包（src/knowledge/skills）静态装载，门禁与用户包一致（issue #19）。
+ */
+export function loadSkills(workDir: string): SkillMeta[] {
+  const out = scanRoot(skillsRoot(workDir)); // 用户条目全保留（用户内重名可被 diag 检出）
+  const userNames = new Set(out.map((s) => s.name));
+  for (const s of scanRoot(BUILTIN_SKILLS_ROOT)) {
+    if (!userNames.has(s.name)) out.push(s); // 同名被用户覆盖 → 内置不入场
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -75,12 +91,9 @@ export function formatSkillCatalog(skills: SkillMeta[]): string {
   return ["", "## 技能目录", "（用 /skill <name> 加载完整技能）", "", ...lines, ""].join("\n");
 }
 
-export function resolveSkill(workDir: string, name: string): SkillPackage | null {
-  if (!name || name.includes("..") || name.includes("/") || name.includes("\\")) return null;
-  const root = resolve(skillsRoot(workDir));
+function tryResolveFrom(root: string, name: string): SkillPackage | null {
   const dir = resolve(root, name);
   if (dir !== root && !dir.startsWith(root + "/")) return null;
-
   const file = join(dir, "SKILL.md");
   if (!existsSync(file)) return null;
   try {
@@ -93,4 +106,11 @@ export function resolveSkill(workDir: string, name: string): SkillPackage | null
   } catch {
     return null;
   }
+}
+
+/** 解析技能：用户目录优先，未命中/被门禁挡则回落内置（issue #19） */
+export function resolveSkill(workDir: string, name: string): SkillPackage | null {
+  if (!name || name.includes("..") || name.includes("/") || name.includes("\\")) return null;
+  return tryResolveFrom(resolve(skillsRoot(workDir)), name)
+    ?? tryResolveFrom(resolve(BUILTIN_SKILLS_ROOT), name);
 }

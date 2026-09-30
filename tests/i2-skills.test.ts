@@ -21,25 +21,29 @@ function mkSkill(name: string, frontmatter: string, body: string) {
 }
 
 describe("loadSkills 扫描与门禁禁①②", () => {
-  it("合法技能解析 name/description", () => {
+  it("合法技能解析 name/description（与内置包共存，用户在列）", () => {
     mkSkill("deploy", "name: deploy\ndescription: 一键部署到测试环境", "# 部署步骤\n...");
     const skills = loadSkills(dir);
-    expect(skills.length).toBe(1);
-    expect(skills[0].name).toBe("deploy");
-    expect(skills[0].description).toContain("部署");
+    const deploy = skills.find((s) => s.name === "deploy");
+    expect(deploy).toBeDefined();
+    expect(deploy!.description).toContain("部署");
+    expect(skills.length).toBeGreaterThanOrEqual(9); // 用户 1 + 内置 ≥8（issue #19）
   });
-  it("缺 description → 门禁拒绝（不入目录）", () => {
+  it("缺 description → 门禁拒绝（不入目录，内置不受影响）", () => {
     mkSkill("bad", "name: bad", "body");
-    expect(loadSkills(dir)).toEqual([]);
+    expect(loadSkills(dir).find((s) => s.name === "bad")).toBeUndefined();
+    expect(loadSkills(dir).length).toBeGreaterThanOrEqual(8);
   });
   it("非 SKILL.md 目录忽略", () => {
     const d = path.join(dir, ".tupigcode", "skills", "nope");
     fs.mkdirSync(d, { recursive: true });
     fs.writeFileSync(path.join(d, "readme.md"), "x");
-    expect(loadSkills(dir)).toEqual([]);
+    expect(loadSkills(dir).find((s) => s.name === "nope")).toBeUndefined();
   });
-  it("无 skills 目录 → []", () => {
-    expect(loadSkills(dir)).toEqual([]);
+  it("无用户 skills 目录 → 仅内置包", () => {
+    const skills = loadSkills(dir);
+    expect(skills.length).toBeGreaterThanOrEqual(8);
+    expect(skills.every((s) => s.dir.includes("knowledge/skills"))).toBe(true);
   });
 });
 

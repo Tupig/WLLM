@@ -7,3 +7,6 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 mkdirSync(join(root, "dist", "gameqa"), { recursive: true });
 cpSync(join(root, "src", "gameqa", "static"), join(root, "dist", "gameqa", "static"), { recursive: true });
 console.log("[copy] src/gameqa/static → dist/gameqa/static");
+// 内置技能包（SKILL.md 非 TS 资产，tsc 不处理；dist/knowledge/skills.js 相对定位）
+cpSync(join(root, "src", "knowledge", "skills"), join(root, "dist", "knowledge", "skills"), { recursive: true });
+console.log("[copy] src/knowledge/skills → dist/knowledge/skills");
