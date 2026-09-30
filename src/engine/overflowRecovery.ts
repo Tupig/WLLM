@@ -39,7 +39,7 @@ export class OverflowRecovery {
     messages: Anthropic.MessageParam[],
   ): Promise<Anthropic.MessageParam[]> {
     try {
-      return await compactor.autoCompact(client, model, messages);
+      return await compactor.autoCompact(client, model, messages, undefined, "overflow");
     } catch {
       return messages;
     }

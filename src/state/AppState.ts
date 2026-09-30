@@ -12,6 +12,16 @@ export type ToolPermissionContext = {
   alwaysAskRules: Map<string, { pattern: string; source: string }[]>;
 };
 
+/** 压缩丢弃可见记录（issue #40） */
+export type CompactionRecord = {
+  before: number;
+  after: number;
+  tokensBefore: number;
+  tokensAfter: number;
+  source: string;
+  at: string;
+};
+
 export type AppState = {
   verbose: boolean;
   mainLoopModel: string;
@@ -22,6 +32,7 @@ export type AppState = {
   turnCount: number;
   tokenUsage: { input: number; output: number };
   compactionCount: number;
+  lastCompaction?: CompactionRecord;
   todoState?: import("../tools/todo.js").TodoState | null;
 };
 

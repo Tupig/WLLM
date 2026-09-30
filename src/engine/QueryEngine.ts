@@ -25,6 +25,7 @@ import { canUseTool, promptUserDecision } from "../services/permissions.js";
 import { deriveAlwaysPattern } from "../services/approvalStore.js";
 import { hookSystem, loadShellHooks } from "./hooks.js";
 import { firePermissionResult, firePostToolUseFailure } from "./hookEvents.js";
+import { formatCompactionLine } from "./compactionMeta.js";
 import { ensureHookTrust, answerHookTrust, promptHookTrust } from "./hookTrust.js";
 import { getLineage } from "./lineage.js";
 import { OverflowRecovery, MAX_OVERFLOW_RETRIES } from "./overflowRecovery.js";
@@ -341,6 +342,8 @@ export class QueryEngine {
           loopState.messages = out;
           loopState.compacted = true;
           appStore.setState((s) => ({ ...s, compactionCount: s.compactionCount + 1 }));
+          const cLine = formatCompactionLine();
+          if (cLine) process.stdout.write(chalk.gray(`\n♻️  已压缩：${cLine}\n`));
           await fireCompactPost(undefined, hctx, "auto");
         }
       }
@@ -503,7 +506,8 @@ export class QueryEngine {
             appStore.setState((st) => ({ ...st, compactionCount: st.compactionCount + 1 }));
             this.trajectory?.recordError(`上下文溢出，自动压缩恢复（第 ${this.overflowRecovery.attempts} 次）`);
             await fireCompactPost(undefined, hctx, "auto");
-            process.stdout.write(chalk.yellow(`\n⚠️  上下文超限，已自动压缩并重试（${this.overflowRecovery.attempts}/${MAX_OVERFLOW_RETRIES}）...\n`));
+            const oLine = formatCompactionLine();
+            process.stdout.write(chalk.yellow(`\n⚠️  上下文超限，已自动压缩并重试（${this.overflowRecovery.attempts}/${MAX_OVERFLOW_RETRIES}）${oLine ? `：${oLine}` : ""}...\n`));
             attempt--; // 溢出恢复不消耗 max_tokens 升级额度（互不干扰）
             continue;
           }

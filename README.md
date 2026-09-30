@@ -106,6 +106,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **多 Provider 容错**：Anthropic / OpenAI / 本地代理统一接入，`TUPIG_FAILOVER` 链式降级；错误标准分类（`services/errors.ts`：rate_limit / auth / context_too_long / overloaded / server / network / invalid_request，429/529/5xx/断连触发切换，401 与业务错误不切换），`TUPIG_ROLE_MODELS` 分角色选模型
 - **hook 信任 TOFU**：shell hook 首次触发询问、确认后写 `.tupigcode/hook-trust.json`（规则 hash：event/matcher/command/timeout 任一变更即重询），拒绝不持久化、异常/超时仍 fail-closed；非 TTY 与 `TUPIG_HOOK_TRUST=0` 不打断；`/hooks` 查看、`/hooks clear` 清除、`/doctor` 有信任清单
 - **会话列表可辨识**：`/resume`（无 id）与 `/sessions` 统一行格式 `id + 相对时间 + 条数 + 首条用户 prompt 预览`（截断 60 字，空会话显示「无预览」占位），按 updatedAt 倒序
+- **压缩丢弃可见记录**：每次压缩落 `lastCompaction`（前后消息数/估 token/source/at），阈值梯度与溢出恢复路径打印「丢 N 条消息 / 省约 M tokens」，`/context` 展示最近一次压缩（来源与时间）
 - **检查点按名称回滚**：`/rewind` 参数为 id-or-label，id 精确优先、label 精确匹配（同名取最新），回滚消息标注匹配方式
 - **子代理工具超时**：子代理内 tool.call 与主循环同享 `TOOL_TIMEOUT_MS`（含 `TUPIG_TOOL_TIMEOUT_MS` 覆盖），挂死工具超时返回 is_error tool_result 后任务继续；withTimeout 抽到 `engine/time.ts` 供两侧共用
 - **PostToolUseFailure 补触发**：工具执行错误与超时（含 Bash 超时改为 reject 的真实失败语义）触发，携带 `output + durationMs`；校验失败/doom 拒绝不触发

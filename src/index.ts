@@ -17,6 +17,7 @@ import { listTrust, clearTrust } from "./engine/hookTrust.js";
 import { fireCompactPre, fireCompactPost, runClearSequence, fireRewindPost } from "./engine/hookEvents.js";
 import { hookSystem } from "./engine/hooks.js";
 import { ContextCompactor, estimateTokens } from "./context/compact/index.js";
+import { formatCompactionLine } from "./engine/compactionMeta.js";
 import { contextBreakdown } from "./context/breakdown.js";
 import { createClient, resolveModel } from "./services/api.js";
 import { getDefaultTools } from "./engine/toolRegistry.js";
@@ -197,7 +198,8 @@ async function startREPL(): Promise<void> {
         await fireCompactPost(undefined, hctx, "manual");
         await saveSessionMessages(appStore.getState().workDir, sessionId, sessionHistory);
         const after = estimateTokens(sessionHistory);
-        console.log(chalk.green(`✓ 已压缩（${r.strategy}${focus ? `，焦点：${focus}` : ""}）：${before} → ${after} tokens，${r.messages.length} 条\n`));
+        const cLine = formatCompactionLine();
+        console.log(chalk.green(`✓ 已压缩（${r.strategy}${focus ? `，焦点：${focus}` : ""}）：${before} → ${after} tokens，${r.messages.length} 条${cLine ? ` · ${cLine}` : ""}\n`));
       } catch (e) {
         console.log(chalk.red(`压缩失败：${e instanceof Error ? e.message : e}\n`));
       }
@@ -223,6 +225,10 @@ async function startREPL(): Promise<void> {
       }
       console.log(chalk.gray(`  ${"─".repeat(36)}`));
       console.log(chalk.white(`  合计${pad(bd.totalTokens)} tokens  ·  消息 ${sessionHistory.length} 条`));
+      const lastC = appStore.getState().lastCompaction;
+      if (lastC) {
+        console.log(chalk.gray(`  最近压缩：${formatCompactionLine()}（${lastC.source}，${lastC.at.slice(0, 19)}）`));
+      }
       console.log(chalk.gray("  自动压缩在预算梯度触发；手动瘦身用 /compact [focusing on X]\n"));
       rl.prompt();
       return;

@@ -5,6 +5,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { ApiClient } from "../../services/api.js";
 import { chatUrl } from "../../services/api.js";
 import { ADAPTIVE_ITERATIONS_CAP, DEFAULT_MAX_CONTEXT_TOKENS } from "../../engine/constants.js";
+import { setCompactionRecord } from "../../engine/compactionMeta.js";
 
 const SUMMARY_MAX_TOKENS = 768;
 const SUMMARY_TIMEOUT_MS = 30_000;
@@ -190,6 +191,7 @@ export class ContextCompactor {
     if (estimateTokens(after) >= estimateTokens(before)) {
       this.circuitOpen = true;
     }
+    setCompactionRecord(before.length, after.length, _beforeTokens, estimateTokens(after), "auto");
   }
 
   compactByLadder(
@@ -302,6 +304,7 @@ export class ContextCompactor {
 
   async autoCompact(
     client: ApiClient, model: string, messages: Anthropic.MessageParam[], focus?: string,
+    source = "auto",
   ): Promise<Anthropic.MessageParam[]> {
     if (messages.length <= 6) return messages;
 
@@ -320,35 +323,54 @@ export class ContextCompactor {
         ...extractToolClues(toSummarize),
       ].filter((c, i, arr) => arr.indexOf(c) === i).slice(0, CLUE_MAX);
       const clueBlock = clues.length ? `\n\n${CLUE_SECTION}\n${clues.join("\n")}` : "";
-      return [
+      const outMsgs = [
         { role: "user", content: `[之前的对话摘要]\n${summary}${clueBlock}` },
         { role: "assistant", content: "已收到之前对话的上下文。" },
         ...recent,
-      ];
+      ] as Anthropic.MessageParam[];
+      setCompactionRecord(
+        messages.length, outMsgs.length, estimateTokens(messages), estimateTokens(outMsgs), source,
+      );
+      return outMsgs;
     } catch {
-      return this.budgetReduction(messages);
+      const fb = this.budgetReduction(messages);
+      if (fb.length < messages.length) {
+        setCompactionRecord(
+          messages.length, fb.length, estimateTokens(messages), estimateTokens(fb), source,
+        );
+      }
+      return fb;
     }
   }
 
   async compact(
     client: ApiClient, model: string, messages: Anthropic.MessageParam[], focus?: string,
+    source = "manual",
   ): Promise<{ messages: Anthropic.MessageParam[]; strategy: string }> {
+    const rec = (out: Anthropic.MessageParam[]) =>
+      setCompactionRecord(
+        messages.length, out.length, estimateTokens(messages), estimateTokens(out), source,
+      );
+
     const afterSnip = this.snip(messages);
     if (JSON.stringify(afterSnip) !== JSON.stringify(messages)) {
+      rec(afterSnip);
       return { messages: afterSnip, strategy: "snip" };
     }
 
     const afterMicro = this.microcompact(messages);
     if (afterMicro.length < messages.length) {
+      rec(afterMicro);
       return { messages: afterMicro, strategy: "microcompact" };
     }
 
     const afterCollapse = this.contextCollapse(messages);
     if (afterCollapse.length < messages.length) {
+      rec(afterCollapse);
       return { messages: afterCollapse, strategy: "context-collapse" };
     }
 
-    const afterAuto = await this.autoCompact(client, model, messages, focus);
+    const afterAuto = await this.autoCompact(client, model, messages, focus, source);
     return { messages: afterAuto, strategy: "auto-compact" };
   }
 }
