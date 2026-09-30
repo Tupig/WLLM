@@ -8,6 +8,11 @@ import { parseOptimizeCommand, optimizePrompt, needsClarification, appendPromptS
 import { join } from "path";
 import { createInterface, Interface } from "readline";
 import { snapshot, listCheckpoints, rollbackCheckpoint, rewind, autoSnapshot, pruneCheckpoints } from "./session/checkpoint.js";
+import {
+  drainTurnOps, buildReview, decideGlobal, decideFile, decideHunk,
+  renderFileDiff, rollbackOps, applyHunkDecision, type FileOp,
+} from "./engine/diffReview.js";
+import { applyStaged, listStaged } from "./engine/staging.js";
 import { saveSessionMessages, loadSessionMessages, listSessions, forkMessages } from "./session/session.js";
 import { stageMemory, commitMemory, loadMemories, formatMemoriesForPrompt } from "./knowledge/memory.js";
 import { loadSkills, resolveSkill } from "./knowledge/skills.js";
@@ -42,6 +47,7 @@ function printHelp(): void {
   /model    查看当前模型
   /checkpoint [new|list|rollback <id>]  会话检查点/回滚
   /rewind [chat|code|all] [id]         三档回卷（默认 all，缺省 id=最新）
+  /apply                              落盘 plan 模式暂存改动
   /skills  技能目录
   /skill <name>  加载技能全文
   /remember [内容]  查看/存入记忆（存入需确认）
@@ -387,6 +393,25 @@ async function startREPL(): Promise<void> {
       return;
     }
 
+    if (input === "/apply") {
+      const workDir = appStore.getState().workDir;
+      try {
+        const staged = await listStaged(workDir);
+        if (staged.length === 0) {
+          console.log(chalk.gray("暂存区为空（plan 模式改动会先暂存，/apply 落盘）\n"));
+        } else {
+          const r = await applyStaged(workDir);
+          const lines = r.applied.map((f) => `  - ${f}`).join("\n");
+          const skip = r.skipped.length ? `\n跳过越界条目 ${r.skipped.length} 个` : "";
+          console.log(chalk.green(`✓ 已落盘 ${r.applied.length} 个文件：\n${lines}${skip}\n`));
+        }
+      } catch (e: any) {
+        console.log(chalk.red(`apply 错误：${e.message}\n`));
+      }
+      rl.prompt();
+      return;
+    }
+
     if (input === "/checkpoint" || input.startsWith("/checkpoint ")) {
       const workDir = appStore.getState().workDir;
       const parts = input.split(/\s+/).slice(1);
@@ -474,10 +499,115 @@ async function startREPL(): Promise<void> {
     } catch (err) {
       console.error(chalk.red(`\n错误：${err instanceof Error ? err.message : err}\n`));
     }
+    await maybeReviewTurn(rl);
     rl.prompt();
   });
 
   rl.on("close", () => { console.log(chalk.gray("\n再见！")); process.exit(0); });
+}
+
+/** 本轮写操作 diff 审查（issue #18）：全局/文件/块三级，拒绝即回滚 */
+async function maybeReviewTurn(rl: Interface): Promise<void> {
+  const ops = drainTurnOps();
+  if (ops.length === 0) return;
+  const realOps = ops.filter((o) => !o.path.includes(".tupigcode/staging"));
+  if (realOps.length === 0) return; // plan 模式暂存改动不落盘，无需即时审查
+  if (process.env.TUPIG_DIFF_REVIEW === "0") return;
+  if (!process.stdin.isTTY) return;
+  try {
+    await runTurnDiffReview(realOps, rl);
+  } catch (e: any) {
+    console.log(chalk.gray(`diff 审查跳过：${e?.message ?? e}\n`));
+  }
+}
+
+async function runTurnDiffReview(ops: FileOp[], rl: Interface): Promise<void> {
+  const plan = buildReview(ops);
+  const workDir = appStore.getState().workDir;
+  const rel = (p: string) => (p.startsWith(workDir) ? p.slice(workDir.length + 1) : p);
+  const firstOp = new Map<string, FileOp>();
+  for (const op of ops) if (!firstOp.has(op.path)) firstOp.set(op.path, op);
+
+  console.log(chalk.cyan(`\n📋 本轮 ${plan.files.length} 个文件改动 — diff 审查`));
+  for (const f of plan.files) {
+    console.log(chalk.gray(`  ${f.op === "create" ? "新增" : "修改"} ${rel(f.path)}（${f.stat}）`));
+  }
+
+  const ask = (q: string) => new Promise<string>((res) => rl.question(q, res));
+  const askValid = async (q: string, parse: (s: string) => string | null): Promise<string> => {
+    for (;;) {
+      const raw = await ask(q);
+      const v = parse(raw);
+      if (v !== null) return v;
+      console.log(chalk.gray("输入无效，请重试。"));
+    }
+  };
+
+  const g = await askValid("全局 [a]接受全部 [r]拒绝全部(回滚) [s]逐项审查 > ", (s) => decideGlobal(s));
+  if (g === "accept") {
+    console.log(chalk.green(`✓ 已接受 ${plan.files.length} 个文件的改动\n`));
+    return;
+  }
+  if (g === "reject") {
+    await rollbackOps(ops);
+    console.log(chalk.yellow(`↩ 已拒绝并回滚 ${plan.files.length} 个文件\n`));
+    return;
+  }
+
+  const rejected = new Set<string>();
+  for (const f of plan.files) {
+    console.log(chalk.cyan(`\n--- ${rel(f.path)}（${f.op === "create" ? "新建" : "修改"} ${f.stat}）`));
+    if (!f.degraded) {
+      const text = renderFileDiff(f);
+      const lines = text.split("\n");
+      const shown = lines.length > 80 ? lines.slice(0, 80).join("\n") + "\n…（diff 过长已截断）" : text;
+      console.log(chalk.gray(shown));
+    } else {
+      console.log(chalk.gray(renderFileDiff(f)));
+    }
+
+    const decision = await askValid(
+      `文件 [y]接受 [n]拒绝回滚${f.degraded ? "" : " [h]逐块审查"} [q]其余默认接受 > `,
+      (s) => {
+        const d = decideFile(s);
+        if (d === null) return null;
+        if (d === "h" && f.degraded) {
+          console.log(chalk.gray("超大改动已降级，仅支持整文件 y/n。"));
+          return null;
+        }
+        return d;
+      },
+    );
+    if (decision === "q") {
+      console.log(chalk.gray("（其余文件默认接受）"));
+      break;
+    }
+    if (decision === "n") {
+      rejected.add(f.path);
+      continue;
+    }
+    if (decision === "h") {
+      const keep: boolean[] = [];
+      for (let i = 0; i < f.hunks.length; i++) {
+        const h = f.hunks[i];
+        console.log(chalk.gray(h.header));
+        const hLines = h.lines.map((l) => l.sign + l.text);
+        const shownH = hLines.length > 30 ? hLines.slice(0, 30).join("\n") + "\n…（块内截断）" : hLines.join("\n");
+        console.log(chalk.gray(shownH));
+        const k = await askValid(`块 ${i + 1}/${f.hunks.length} [y]接受 [n]拒绝 > `, (s) => decideHunk(s));
+        keep.push(k === "y");
+      }
+      await applyHunkDecision({ path: f.path, before: firstOp.get(f.path)!.before }, f.hunks, keep);
+      const keptCount = keep.filter(Boolean).length;
+      console.log(chalk.green(`✓ ${rel(f.path)}：保留 ${keptCount}/${keep.length} 块`));
+    }
+  }
+
+  if (rejected.size > 0) {
+    await rollbackOps(ops.filter((o) => rejected.has(o.path)));
+    console.log(chalk.yellow(`↩ 已拒绝并回滚 ${rejected.size} 个文件`));
+  }
+  console.log(chalk.green("✓ diff 审查完成\n"));
 }
 
 async function runSingle(prompt: string): Promise<void> {

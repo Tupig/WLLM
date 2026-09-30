@@ -11,6 +11,7 @@ import { anthropicToolResultContent } from "./Tool.js";
 import { connectMcpServers, type McpConnection } from "./mcp.js";
 import { getDefaultTools, getToolByName, resolveExtraTools } from "./toolRegistry.js";
 import { promptTools, setExplicitExtras, setSearchPool, markLoaded } from "./lazyTools.js";
+import { resetTurnOps } from "./diffReview.js";
 import { createClient, streamMessage, type StreamEvent, type ApiClient } from "../services/api.js";
 import { resolveHarness, parseXmlToolCalls, buildXmlToolSection } from "./harness.js";
 import { resolveFallback, streamWithFailover, isInfraError } from "../services/failover.js";
@@ -570,6 +571,11 @@ export class QueryEngine {
         reason: (permission as any).decisionReason ?? (permission as any).message ?? "",
       });
 
+      // 应用权限层改写（plan 模式 staging 暂存等，issue #18）
+      if (permission.behavior !== "deny" && (permission as any).updatedInput) {
+        input = (permission as any).updatedInput;
+      }
+
       if (permission.behavior === "deny") {
         const msg = permission.message || "已拒绝";
         process.stdout.write(chalk.red(`\n🚫 ${msg}\n`));
@@ -760,6 +766,7 @@ export async function* query(params: {
     workDir: cwd,
   });
   appendRouteLog(params.prompt, route, cwd);
+  resetTurnOps(); // 清理上一入口（single/spec 等）遗留的写操作，避免审查串轮
 
   const engine = new QueryEngine({
     cwd,

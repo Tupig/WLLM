@@ -6,6 +6,8 @@ import type { ToolPermissionContext } from "../state/AppState.js";
 import { classifyBash } from "./bashSafety.js";
 import { getMcpApproval } from "../engine/mcp.js";
 import { resolve } from "path";
+import { appStore } from "../state/AppState.js";
+import { planRerouteTarget, ensureStagedSeed } from "../engine/staging.js";
 import chalk from "chalk";
 
 function escapeRegExp(s: string): string {
@@ -106,10 +108,23 @@ export async function canUseTool(
     if (tool?.isReadOnly(input)) {
       return { behavior: "allow", decisionReason: "plan 模式：只读工具" };
     }
-    // 唯一可写面：spec/plan 产物（阶段②落盘），路径逃逸在 resolve 后失效
+    // 可写面①：spec/plan 产物（阶段②落盘），路径逃逸在 resolve 后失效
     const artifact = String((input as any).file_path ?? (input as any).path ?? "");
     if (artifact && (toolName === "Write" || toolName === "Edit") && resolve(artifact).includes("/.tupigcode/specs/")) {
       return { behavior: "allow", decisionReason: "plan 模式：计划产物可写" };
+    }
+    // 可写面②：工作区内改动暂存 staging（issue #18），/apply 指令才落盘
+    if (artifact && (toolName === "Write" || toolName === "Edit")) {
+      const workDir = appStore.getState().workDir;
+      const staged = planRerouteTarget(workDir, artifact);
+      if (staged) {
+        await ensureStagedSeed(resolve(workDir, artifact), staged);
+        return {
+          behavior: "allow",
+          decisionReason: "plan 模式：改动暂存 staging（/apply 落盘）",
+          updatedInput: { ...input, file_path: staged },
+        };
+      }
     }
     return { behavior: "deny", message: "plan 模式下不允许写操作", decisionReason: "plan 模式" };
   }

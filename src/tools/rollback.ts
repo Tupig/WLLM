@@ -8,6 +8,8 @@ export type RollbackResult = {
   ok: boolean;
   lint: LintResult | null;
   error?: string;
+  /** 写入前的原内容（null = 新建文件），供 diff 审查记录/回滚（issue #18） */
+  prev: string | null;
 };
 
 export async function writeWithRollback(
@@ -36,7 +38,7 @@ export async function writeWithRollback(
     } else {
       await writeFile(filePath, prev, "utf-8");
     }
-    return { ok: false, lint, error: "lint 拦截：文件已回滚，未落盘" };
+    return { ok: false, lint, error: "lint 拦截：文件已回滚，未落盘", prev };
   }
-  return { ok: true, lint };
+  return { ok: true, lint, prev };
 }

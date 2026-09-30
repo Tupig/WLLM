@@ -9,6 +9,7 @@ import { safePath } from "../utils/path.js";
 import { runPostEditLint, formatLintResult } from "./lint.js";
 import { writeWithRollback } from "./rollback.js";
 import { resolveSandboxPolicy, checkPath, checkBashPaths } from "../services/sandbox.js";
+import { pushTurnOp } from "../engine/diffReview.js";
 
 export const FileWriteInput = z.object({
   file_path: z.string().describe("文件路径"),
@@ -46,6 +47,8 @@ export const FileWriteTool = buildTool<string>({
       const msg = `${r.error}\n${formatLintResult(r.lint!)}\n请修正后重试，本次写入未生效。`;
       return { data: msg, resultForAssistant: msg };
     }
+
+    pushTurnOp({ path: resolved, before: r.prev, after: input.content });
 
     const s = await stat(resolved);
     context.readFileState.set(resolved, { mtime: s.mtimeMs });

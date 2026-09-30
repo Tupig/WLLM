@@ -9,6 +9,7 @@ import { runPostEditLint, formatLintResult } from "./lint.js";
 import { formatNoMatchFeedback, fuzzyLocate } from "./similar.js";
 import { writeWithRollback } from "./rollback.js";
 import { resolveSandboxPolicy, checkPath, checkBashPaths } from "../services/sandbox.js";
+import { pushTurnOp } from "../engine/diffReview.js";
 
 export const FileEditInput = z.object({
   file_path: z.string().describe("文件路径"),
@@ -76,6 +77,8 @@ export const FileEditTool = buildTool<string>({
           const msg = `${fr.error}\n${formatLintResult(fr.lint!)}\n请修正后重试，本次编辑未生效。`;
           return { data: msg, resultForAssistant: msg };
         }
+        pushTurnOp({ path: resolved, before: fr.prev, after: next });
+
         const s = await stat(resolved);
         context.readFileState.set(resolved, { mtime: s.mtimeMs });
         const lintMsg = fr.lint ? "\n" + formatLintResult(fr.lint) : "";
