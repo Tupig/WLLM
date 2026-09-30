@@ -7,9 +7,9 @@ import { getDefaultTools, getExtraTools, getToolByName } from "../src/engine/too
 describe("默认工具集（裁剪 26→13，N7 TodoWrite / N6 Agent / N9 RepoMap）", () => {
   const names = getDefaultTools().map((t) => t.name);
 
-  it("恰为 8 核心 + WebSearch + Question + TodoWrite + RunTests + Agent + RepoMap", () => {
+  it("恰为 8 核心 + WebSearch + Question + TodoWrite + RunTests + ToolSearch + Agent + RepoMap", () => {
     expect(names.sort()).toEqual(
-      ["Bash", "Edit", "Read", "Write", "Glob", "Grep", "GitStatus", "GitDiff", "WebSearch", "Question", "TodoWrite", "RunTests", "Agent", "RepoMap"].sort(),
+      ["Bash", "Edit", "Read", "Write", "Glob", "Grep", "GitStatus", "GitDiff", "WebSearch", "Question", "TodoWrite", "RunTests", "ToolSearch", "Agent", "RepoMap"].sort(),
     );
   });
   it("重构/分析/包管理类不在默认", () => {

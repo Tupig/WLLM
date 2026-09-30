@@ -10,6 +10,7 @@ import type { Tool, ToolUseContext, CanUseToolFn } from "./Tool.js";
 import { anthropicToolResultContent } from "./Tool.js";
 import { connectMcpServers, type McpConnection } from "./mcp.js";
 import { getDefaultTools, getToolByName, resolveExtraTools } from "./toolRegistry.js";
+import { promptTools, setExplicitExtras, setSearchPool, markLoaded } from "./lazyTools.js";
 import { createClient, streamMessage, type StreamEvent, type ApiClient } from "../services/api.js";
 import { resolveHarness, parseXmlToolCalls, buildXmlToolSection } from "./harness.js";
 import { resolveFallback, streamWithFailover, isInfraError } from "../services/failover.js";
@@ -161,6 +162,9 @@ export class QueryEngine {
   constructor(config: QueryEngineConfig) {
     this.config = config;
     this.tools = [...getDefaultTools(), ...resolveExtraTools()];
+    // 工具延迟装载（issue #17）：核心常驻 + ToolSearch 按需挂载；显式 extras 保持常驻
+    setExplicitExtras(resolveExtraTools().map((t) => t.name));
+    setSearchPool(this.tools);
     if (config.routeProvider === "mock") {
       this.client = { type: "mock" };
     } else if (config.routeProvider === "cloud" && process.env.ANTHROPIC_API_KEY) {
@@ -242,7 +246,11 @@ export class QueryEngine {
         process.stderr.write(`⚠️  ${msg}\n`),
       );
       this.mcp = mcp;
-      if (mcp.tools.length > 0) this.tools.push(...mcp.tools);
+      if (mcp.tools.length > 0) {
+        this.tools.push(...mcp.tools);
+        markLoaded(mcp.tools.map((t) => t.name)); // MCP 工具显式配置 → 常驻
+        setSearchPool(this.tools);
+      }
     } catch {
       /* MCP 不可用不影响主流程 */
     }
@@ -392,7 +400,8 @@ export class QueryEngine {
     events: SDKMessage[];
   }> {
     const events: SDKMessage[] = [];
-    const toolDefs: Anthropic.Tool[] = this.tools.map((t) => {
+    const residentTools = promptTools(this.tools);
+    const toolDefs: Anthropic.Tool[] = residentTools.map((t) => {
       const raw = (t.jsonSchema as any) ?? zodToJsonSchema(t.inputSchema);
       // 清理 zod-to-json-schema 添加的多余字段
       const { $schema, additionalProperties, ...schema } = raw as any;
@@ -706,7 +715,7 @@ export class QueryEngine {
       const specs = listSpecs(this.config.cwd);
       planSpec = (specs.find((s) => s.status === "approved") ?? specs[0])?.name;
     }
-    return renderSystemPrompt(this.tools, {
+    return renderSystemPrompt(promptTools(this.tools), {
       planSpec,
       rulesText: this.ruleLayers.length ? formatLayersForPrompt(this.ruleLayers) : undefined,
       memoryText: this.memoryEntries.length ? formatMemoriesForPrompt(this.memoryEntries) : undefined,

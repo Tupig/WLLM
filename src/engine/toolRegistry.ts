@@ -28,6 +28,7 @@ import { TodoWriteTool } from "../tools/todo.js";
 import { AgentTool } from "../tools/Agent.js";
 import { RepoMapTool } from "../tools/RepoMap.js";
 import { RunTestsTool } from "../tools/testRun.js";
+import { ToolSearchTool } from "./lazyTools.js";
 
 export function getDefaultTools(): Tool[] {
   return [
@@ -37,6 +38,7 @@ export function getDefaultTools(): Tool[] {
     WebSearchTool, QuestionTool,
     TodoWriteTool,
     RunTestsTool,
+    ToolSearchTool,
     AgentTool,
     RepoMapTool,
   ];
