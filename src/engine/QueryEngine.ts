@@ -23,6 +23,7 @@ import { mapWithConcurrency, partitionRuns } from "../tools/parallel.js";
 import { canUseTool, promptUser } from "../services/permissions.js";
 import { hookSystem, loadShellHooks } from "./hooks.js";
 import { ensureHookTrust, answerHookTrust, promptHookTrust } from "./hookTrust.js";
+import { getLineage } from "./lineage.js";
 import { ContextCompactor, LADDER_MICRO } from "../context/compact/index.js";
 import { appStore } from "../state/AppState.js";
 import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS } from "./constants.js";
@@ -142,6 +143,7 @@ export class QueryEngine {
   private tools: Tool[];
   private client: ApiClient;
   private compactor: ContextCompactor;
+  private lineageText = ""; // repo-map 变更史摘要（issue #22）
   private abortController: AbortController;
   private readFileState: Map<string, { mtime: number }> = new Map();
   private currentMessages: Anthropic.MessageParam[] = [];
@@ -732,6 +734,8 @@ export class QueryEngine {
       const specs = listSpecs(this.config.cwd);
       planSpec = (specs.find((s) => s.status === "approved") ?? specs[0])?.name;
     }
+    const lineage = this.lineageText ? `## 近期变更\n${this.lineageText}` : undefined;
+    const append = [lineage, this.config.appendSystemPrompt].filter(Boolean).join("\n\n") || undefined;
     return renderSystemPrompt(promptTools(this.tools), {
       planSpec,
       rulesText: this.ruleLayers.length ? formatLayersForPrompt(this.ruleLayers) : undefined,
@@ -739,8 +743,17 @@ export class QueryEngine {
       skillCatalog: this.skillCatalog || undefined,
       stateText:
         (formatToolStateForPrompt(this.toolState) + renderTodoState(appStore.getState().todoState ?? null)) || undefined,
-      append: this.config.appendSystemPrompt,
+      append,
     });
+  }
+
+  /** 预取变更史摘要（issue #22）：失败/超时静默为空，不阻塞主流程 */
+  async preloadLineage(): Promise<void> {
+    try {
+      this.lineageText = await getLineage(this.config.cwd, this.client, this.config.model);
+    } catch {
+      this.lineageText = "";
+    }
   }
 
   private estimateTokens(messages: Anthropic.MessageParam[]): number {
@@ -789,6 +802,7 @@ export async function* query(params: {
     initialMessages: params.initialMessages,
   });
 
+  await engine.preloadLineage(); // 变更史摘要（失败静默跳过，~5s 超时兜底）
   yield* engine.submitMessage(params.prompt);
   yield { type: "session", messages: engine.getSessionMessages() };
 }
