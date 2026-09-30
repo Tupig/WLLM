@@ -102,7 +102,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 
 ### 内核特性
 
-- **上下文工程**：预算制压缩（`compact`）、`TUPIG_MAX_CONTEXT_TOKENS` 自适应（30k ~ 10M 窗口）、轨迹（trajectory）记录与复盘
+- **上下文工程**：预算制压缩（`compact`）含阈值梯子与熔断，**force 档 LLM 摘要三链路可用**（openai 本地非流式 sideQuery 短超时 / anthropic / mock，失败回退预算削减且 keep_first）；`TUPIG_MAX_CONTEXT_TOKENS` 自适应（30k ~ 10M 窗口）、轨迹（trajectory）记录与复盘
 - **多 Provider 容错**：Anthropic / OpenAI / 本地代理统一接入，`TUPIG_FAILOVER` 链式降级；错误标准分类（`services/errors.ts`：rate_limit / auth / context_too_long / overloaded / server / network / invalid_request，429/529/5xx/断连触发切换，401 与业务错误不切换），`TUPIG_ROLE_MODELS` 分角色选模型
 - **会话与恢复**：session / checkpoint / 一键回滚，跨进程续跑
 - **知识沉淀**：memory（长期记忆）+ skills（技能库，`.tupigcode/skills/` 先审后存）+ reflexion（反思入库）
