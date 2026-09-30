@@ -8,18 +8,71 @@ import { ADAPTIVE_ITERATIONS_CAP, DEFAULT_MAX_CONTEXT_TOKENS } from "../../engin
 
 const SUMMARY_MAX_TOKENS = 768;
 const SUMMARY_TIMEOUT_MS = 30_000;
-const SUMMARY_SYSTEM = "请简洁地总结对话历史，保留关键决策、代码变更和上下文信息。";
+export const SUMMARY_SYSTEM =
+  "请简洁地总结对话历史，保留关键决策、代码变更和上下文信息；必须显式保留文件路径、关键命令与结果结论三要素。";
 
 /**
  * 对话历史 LLM 摘要（三链路统一入口）。
  * openai（本地主链路）非流式 chat/completions、独立短超时；anthropic 走 messages.create；mock 返回固定串。
  * 失败抛错，由调用方决定回退策略。
  */
+const CLUE_MAX = 10;
+const CLUE_SECTION = "## 工具调用线索";
+const CLUE_PARAM_KEYS = ["file_path", "path", "command", "pattern", "url", "query", "script"];
+
+export function isSummaryContent(content: unknown): boolean {
+  return typeof content === "string" && content.startsWith("[之前的对话摘要]");
+}
+
+function briefInput(input: unknown): string {
+  if (!input || typeof input !== "object") return "";
+  const obj = input as Record<string, unknown>;
+  for (const k of CLUE_PARAM_KEYS) {
+    if (typeof obj[k] === "string" && obj[k]) return String(obj[k]);
+  }
+  for (const v of Object.values(obj)) {
+    if (typeof v === "string" && v) return v;
+  }
+  return "";
+}
+
+/** 抽取消息中的工具调用线索：`- name(brief)`，去重 + 上限 */
+export function extractToolClues(messages: Anthropic.MessageParam[], max = CLUE_MAX): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of messages) {
+    if (!Array.isArray(m.content)) continue;
+    for (const b of m.content as any[]) {
+      if (b?.type !== "tool_use") continue;
+      const line = `- ${b.name}(${briefInput(b.input)})`;
+      if (seen.has(line)) continue;
+      seen.add(line);
+      out.push(line);
+      if (out.length >= max) return out;
+    }
+  }
+  return out;
+}
+
+/** 从旧摘要文本回收线索区段行（二次压缩时保留） */
+export function extractOldClues(content: string, max = CLUE_MAX): string[] {
+  const idx = content.indexOf(CLUE_SECTION);
+  if (idx < 0) return [];
+  return content
+    .slice(idx + CLUE_SECTION.length)
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith("- "))
+    .slice(0, max);
+}
+
 export async function llmSummary(
   client: ApiClient, model: string, toSummarize: Anthropic.MessageParam[], focus?: string,
 ): Promise<string> {
   const focusHint = focus?.trim() ? `，重点关注：${focus.trim()}` : "";
-  const userContent = `请总结以下对话${focusHint}：\n${JSON.stringify(toSummarize, null, 2)}`;
+  const chained = isSummaryContent(toSummarize[0]?.content);
+  const chainPart = chained ? `前次摘要（须并入新摘要，不得丢弃）：\n${String(toSummarize[0].content)}\n\n` : "";
+  const userContent = `${chainPart}请总结以下对话${focusHint}：\n${JSON.stringify(chained ? toSummarize.slice(1) : toSummarize, null, 2)}`;
 
   if (client.type === "anthropic" && client.anthropic) {
     const resp = await client.anthropic.messages.create({
@@ -31,7 +84,11 @@ export async function llmSummary(
     return resp.content[0]?.type === "text" ? resp.content[0].text : "";
   }
 
-  if (client.type === "mock") return `（mock 链路摘要${focusHint}：此前对话已折叠）`;
+  if (client.type === "mock") {
+    return chained
+      ? `（mock 链路摘要${focusHint}·已并入前摘要：此前对话已折叠）`
+      : `（mock 链路摘要${focusHint}：此前对话已折叠）`;
+  }
 
   if (client.type === "openai") {
     const base = process.env.OPENAI_BASE_URL;
@@ -255,8 +312,16 @@ export class ContextCompactor {
     try {
       const summary = await llmSummary(client, model, toSummarize, focus);
       if (!summary) throw new Error("空摘要");
+      const oldContent = isSummaryContent(toSummarize[0]?.content)
+        ? String(toSummarize[0].content)
+        : "";
+      const clues = [
+        ...extractOldClues(oldContent),
+        ...extractToolClues(toSummarize),
+      ].filter((c, i, arr) => arr.indexOf(c) === i).slice(0, CLUE_MAX);
+      const clueBlock = clues.length ? `\n\n${CLUE_SECTION}\n${clues.join("\n")}` : "";
       return [
-        { role: "user", content: `[之前的对话摘要]\n${summary}` },
+        { role: "user", content: `[之前的对话摘要]\n${summary}${clueBlock}` },
         { role: "assistant", content: "已收到之前对话的上下文。" },
         ...recent,
       ];
@@ -286,4 +351,11 @@ export class ContextCompactor {
     const afterAuto = await this.autoCompact(client, model, messages, focus);
     return { messages: afterAuto, strategy: "auto-compact" };
   }
+}
+
+/** 便捷包装：带工具调用线索保留的自动压缩（issue #30） */
+export async function autoCompactKeepClues(
+  client: ApiClient, model: string, messages: Anthropic.MessageParam[], focus?: string,
+): Promise<Anthropic.MessageParam[]> {
+  return new ContextCompactor().autoCompact(client, model, messages, focus);
 }
