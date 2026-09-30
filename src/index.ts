@@ -14,6 +14,12 @@ import {
 } from "./engine/diffReview.js";
 import { applyStaged, listStaged } from "./engine/staging.js";
 import { listTrust, clearTrust } from "./engine/hookTrust.js";
+import { ContextCompactor, estimateTokens } from "./context/compact/index.js";
+import { contextBreakdown } from "./context/breakdown.js";
+import { createClient, resolveModel } from "./services/api.js";
+import { getDefaultTools } from "./engine/toolRegistry.js";
+import { renderSystemPrompt } from "./engine/prompt.js";
+import { loadMemoriesSync } from "./knowledge/memory.js";
 import { saveSessionMessages, loadSessionMessages, listSessions, forkMessages } from "./session/session.js";
 import { stageMemory, commitMemory, loadMemories, formatMemoriesForPrompt } from "./knowledge/memory.js";
 import { loadSkills, resolveSkill } from "./knowledge/skills.js";
@@ -50,6 +56,8 @@ function printHelp(): void {
   /rewind [chat|code|all] [id]         三档回卷（默认 all，缺省 id=最新）
   /apply                              落盘 plan 模式暂存改动
   /hooks [clear]                      查看/清除 hook 信任（TOFU）
+  /compact [focusing on X]            手动压缩上下文（可带焦点指令）
+  /context                            上下文占用分段明细（system/消息/工具结果/schema/记忆）
   /skills  技能目录
   /skill <name>  加载技能全文
   /remember [内容]  查看/存入记忆（存入需确认）
@@ -132,6 +140,50 @@ async function startREPL(): Promise<void> {
       rl.prompt();
       return;
     }
+    if (input === "/compact" || input.startsWith("/compact ")) {
+      const focus = input.slice("/compact".length).trim();
+      if (sessionHistory.length <= 4) {
+        console.log(chalk.gray(`消息较少（${sessionHistory.length} 条 ≤ 4），无需压缩\n`));
+        rl.prompt();
+        return;
+      }
+      const before = estimateTokens(sessionHistory);
+      try {
+        const r = await new ContextCompactor().compact(createClient(), resolveModel(), sessionHistory, focus);
+        sessionHistory = r.messages;
+        await saveSessionMessages(appStore.getState().workDir, sessionId, sessionHistory);
+        const after = estimateTokens(sessionHistory);
+        console.log(chalk.green(`✓ 已压缩（${r.strategy}${focus ? `，焦点：${focus}` : ""}）：${before} → ${after} tokens，${r.messages.length} 条\n`));
+      } catch (e) {
+        console.log(chalk.red(`压缩失败：${e instanceof Error ? e.message : e}\n`));
+      }
+      rl.prompt();
+      return;
+    }
+    if (input === "/context") {
+      const workDir = appStore.getState().workDir;
+      const tools = getDefaultTools();
+      const systemPrompt = renderSystemPrompt(tools, {});
+      const toolSchemas = tools.map((t) => ({
+        name: t.name,
+        description: t.description({ workDir } as never),
+        schema: (t as { jsonSchema?: unknown }).jsonSchema ?? null,
+      }));
+      const memories = loadMemoriesSync(workDir).map((m) => JSON.stringify(m));
+      const bd = contextBreakdown({ systemPrompt, messages: sessionHistory, toolSchemas, memories });
+      const pad = (n: number) => String(n).padStart(7);
+      console.log(chalk.cyan("\n📊 上下文占用（估算，chars/4）"));
+      for (const seg of bd.segments) {
+        const cnt = seg.count !== undefined ? `（${seg.count} ${seg.id === "tool_results" ? "块" : seg.id === "system" ? "条" : "项"}）` : "";
+        console.log(chalk.gray(`  ${seg.label.padEnd(11)}${pad(seg.tokens)} tokens${cnt}`));
+      }
+      console.log(chalk.gray(`  ${"─".repeat(36)}`));
+      console.log(chalk.white(`  合计${pad(bd.totalTokens)} tokens  ·  消息 ${sessionHistory.length} 条`));
+      console.log(chalk.gray("  自动压缩在预算梯度触发；手动瘦身用 /compact [focusing on X]\n"));
+      rl.prompt();
+      return;
+    }
+
     if (input === "/skills") {
       const skills = loadSkills(appStore.getState().workDir);
       if (skills.length === 0) console.log(chalk.gray("暂无技能（.tupigcode/skills/<name>/SKILL.md）。\n"));

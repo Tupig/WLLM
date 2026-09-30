@@ -16,9 +16,10 @@ const SUMMARY_SYSTEM = "请简洁地总结对话历史，保留关键决策、�
  * 失败抛错，由调用方决定回退策略。
  */
 export async function llmSummary(
-  client: ApiClient, model: string, toSummarize: Anthropic.MessageParam[],
+  client: ApiClient, model: string, toSummarize: Anthropic.MessageParam[], focus?: string,
 ): Promise<string> {
-  const userContent = `请总结以下对话：\n${JSON.stringify(toSummarize, null, 2)}`;
+  const focusHint = focus?.trim() ? `，重点关注：${focus.trim()}` : "";
+  const userContent = `请总结以下对话${focusHint}：\n${JSON.stringify(toSummarize, null, 2)}`;
 
   if (client.type === "anthropic" && client.anthropic) {
     const resp = await client.anthropic.messages.create({
@@ -30,7 +31,7 @@ export async function llmSummary(
     return resp.content[0]?.type === "text" ? resp.content[0].text : "";
   }
 
-  if (client.type === "mock") return "（mock 链路摘要：此前对话已折叠）";
+  if (client.type === "mock") return `（mock 链路摘要${focusHint}：此前对话已折叠）`;
 
   if (client.type === "openai") {
     const base = process.env.OPENAI_BASE_URL;
@@ -243,7 +244,7 @@ export class ContextCompactor {
   }
 
   async autoCompact(
-    client: ApiClient, model: string, messages: Anthropic.MessageParam[],
+    client: ApiClient, model: string, messages: Anthropic.MessageParam[], focus?: string,
   ): Promise<Anthropic.MessageParam[]> {
     if (messages.length <= 6) return messages;
 
@@ -252,7 +253,7 @@ export class ContextCompactor {
     if (toSummarize.length === 0) return messages;
 
     try {
-      const summary = await llmSummary(client, model, toSummarize);
+      const summary = await llmSummary(client, model, toSummarize, focus);
       if (!summary) throw new Error("空摘要");
       return [
         { role: "user", content: `[之前的对话摘要]\n${summary}` },
@@ -265,7 +266,7 @@ export class ContextCompactor {
   }
 
   async compact(
-    client: ApiClient, model: string, messages: Anthropic.MessageParam[],
+    client: ApiClient, model: string, messages: Anthropic.MessageParam[], focus?: string,
   ): Promise<{ messages: Anthropic.MessageParam[]; strategy: string }> {
     const afterSnip = this.snip(messages);
     if (JSON.stringify(afterSnip) !== JSON.stringify(messages)) {
@@ -282,7 +283,7 @@ export class ContextCompactor {
       return { messages: afterCollapse, strategy: "context-collapse" };
     }
 
-    const afterAuto = await this.autoCompact(client, model, messages);
+    const afterAuto = await this.autoCompact(client, model, messages, focus);
     return { messages: afterAuto, strategy: "auto-compact" };
   }
 }
