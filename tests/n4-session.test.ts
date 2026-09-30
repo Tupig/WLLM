@@ -16,7 +16,7 @@ type Msg = { role: "user" | "assistant"; content: string };
 
 let dir: string;
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "wllm-sess-"));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "tupigcode-sess-"));
 });
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
@@ -43,8 +43,8 @@ describe("saveSessionMessages / loadSessionMessages", () => {
     expect(await loadSessionMessages(dir, "nope")).toBeNull();
   });
   it("损坏文件 → null 不抛", async () => {
-    fs.mkdirSync(path.join(dir, ".wllm", "sessions"), { recursive: true });
-    fs.writeFileSync(path.join(dir, ".wllm", "sessions", "bad.json"), "{broken");
+    fs.mkdirSync(path.join(dir, ".tupigcode", "sessions"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".tupigcode", "sessions", "bad.json"), "{broken");
     expect(await loadSessionMessages(dir, "bad")).toBeNull();
   });
 });

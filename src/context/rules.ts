@@ -5,8 +5,8 @@ import { readFileSync, existsSync } from "fs";
 import { join, dirname, resolve } from "path";
 import { homedir } from "os";
 
-const RULE_FILE_NAMES = [".pilotrules", ".cursorrules", ".clinerules"];
-const LOCAL_RULE_NAMES = ["rules.md", ".pilotrules"];
+const RULE_FILE_NAMES = [".tupigcoderules", ".cursorrules", ".clinerules"];
+const LOCAL_RULE_NAMES = ["rules.md", ".tupigcoderules"];
 
 export interface ProjectRules {
   source: string;
@@ -39,8 +39,8 @@ function readIfExists(path: string): string | null {
 export function resolveRuleLayers(workDir: string, filePath?: string): RuleLayer[] {
   const layers: RuleLayer[] = [];
 
-  const global = readIfExists(join(homeDir(), ".wllm", "rules.md"));
-  if (global) layers.push({ tier: "global", source: "~/.wllm/rules.md", content: global, baseDir: join(homeDir(), ".wllm") });
+  const global = readIfExists(join(homeDir(), ".tupigcode", "rules.md"));
+  if (global) layers.push({ tier: "global", source: "~/.tupigcode/rules.md", content: global, baseDir: join(homeDir(), ".tupigcode") });
 
   const projectParts: { source: string; content: string }[] = [];
   for (const name of RULE_FILE_NAMES) {

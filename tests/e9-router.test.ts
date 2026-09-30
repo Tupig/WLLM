@@ -31,7 +31,7 @@ describe("routeTask 分流", () => {
     expect(r.reason).toContain("显式");
   });
   it("mock → mock", () => {
-    const r = routeTask({ prompt: "读文件", env: { PILOT_MOCK: "1" } as any });
+    const r = routeTask({ prompt: "读文件", env: { TUPIG_MOCK: "1" } as any });
     expect(r.model).toBe("mock");
   });
   it("easy + 纯本地 → 14b", () => {

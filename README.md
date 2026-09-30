@@ -1,19 +1,19 @@
-# WLLM
+# tupigcode
 
-[![CI](https://img.shields.io/github/actions/workflow/status/Tupig/WLLM/ci.yml?branch=main&label=CI)](https://github.com/Tupig/WLLM/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/Tupig/tupigcode/ci.yml?branch=main&label=CI)](https://github.com/Tupig/tupigcode/actions/workflows/ci.yml)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A520-black?logo=nodedotjs&logoColor=white)](#-快速开始)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue?logo=typescript&logoColor=white)](#-项目结构)
 [![vitest](https://img.shields.io/badge/vitest-531%20%E7%BB%BF-brightgreen?logo=vitest&logoColor=white)](#-测试与-ci)
 [![gameqa](https://img.shields.io/badge/gameqa-Unity%20%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-orange?logo=unity&logoColor=white)](#-gameqa--unity-%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0)
 
-> 全 TypeScript 的**本地 AI 工作站**：Claude Code 式编码代理（pilot）+ Unity 游戏自动化测试平台（gameqa）+ Apple MLX 本地推理层（llm）+ 单端口三协议代理，全部自托管、零云依赖、一份 README 即全部文档。
+> 全 TypeScript 的**本地 AI 工作站**：Claude Code 式编码代理（tupigcode）+ Unity 游戏自动化测试平台（gameqa）+ Apple MLX 本地推理层（llm）+ 单端口三协议代理，全部自托管、零云依赖、一份 README 即全部文档。
 
 ## 目录
 
 - [🥮 这是什么](#-这是什么)
 - [🚀 快速开始](#-快速开始)
 - [🧭 七个命令入口](#-七个命令入口)
-- [🤖 pilot — AI 编码代理](#-pilot--ai-编码代理)
+- [🤖 tupigcode — AI 编码代理](#-tupigcode--ai-编码代理)
 - [🎮 gameqa — Unity 自动化测试平台](#-gameqa--unity-自动化测试平台)
 - [🧠 MLX 本地推理 + 协议代理](#-mlx-本地推理--协议代理)
 - [🏗️ 架构](#️-架构)
@@ -30,7 +30,7 @@
 
 | 组件 | 是什么 | 入口 |
 | --- | --- | --- |
-| **pilot-agent** | 参照 Claude Code 架构实现的 AI 编码代理：读代码、改文件、跑命令、多步规划，全链路可本地运行 | `pilot` |
+| **tupigcode-agent** | 参照 Claude Code 架构实现的 AI 编码代理：读代码、改文件、跑命令、多步规划，全链路可本地运行 | `tupigcode` |
 | **gameqa** | Unity3D 游戏自动化测试编排平台：HTTPS 看板 + 任务队列 + 跨机 Agent + Unity batchmode 真执行，NUnit3 结果解析保留**全量用例明细**（`summary.cases`：classname/duration/message/stack/stdout，上限 2000 条、单字段 4KB）。两个报告出口：`GET /report` 轻量单文件（汇总卡片 + 近 20 次通过率 SVG 趋势 + 历史表）、`GET /allure?job=N` Allure 风格富报告（Overview/Suites/Categories 三 tab + 用例树与失败详情 + 历史切换，均零外链）。API 与数据格式兼容原 gpt-visual-platform（Go 版） | `gameqa serve` / `gameqa agent` |
 | **MLX 推理层** | Apple Silicon（M4）上用 MLX 跑本地大模型，管理服务生命周期，单端口暴露给任意客户端 | `llm` |
 | **协议代理** | 一个端口同时说 OpenAI Chat / OpenAI Responses / Anthropic Messages 三种协议，互相转换后转本地后端 | `:4100`（由 `llm` 拉起） |
@@ -45,7 +45,7 @@
 ## 🚀 快速开始
 
 ```bash
-git clone https://github.com/Tupig/WLLM.git && cd WLLM
+git clone https://github.com/Tupig/tupigcode.git && cd tupigcode
 npm ci                # 安装依赖（Node ≥ 20，构建需 Node 22+）
 npm run build         # tsc 编译 + 拷贝 gameqa 看板静态资源 + 入口 chmod
 npm test              # 45 文件 / 531 用例全绿（tsc + vitest 是 CI 双门槛）
@@ -58,8 +58,8 @@ npm test              # 45 文件 / 531 用例全绿（tsc + vitest 是 CI 双�
 llm "解释闭包"
 
 # 2) AI 编码代理（在任意代码仓里）
-pilot                      # 交互式 REPL
-pilot "把 src/utils 里的重复逻辑抽出来"
+tupigcode                      # 交互式 REPL
+tupigcode "把 src/utils 里的重复逻辑抽出来"
 
 # 3) Unity 测试平台（HTTPS 自签名，看板 https://localhost:9111）
 gameqa serve -p 9111 -d data
@@ -69,7 +69,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 ```
 
 > [!IMPORTANT]
-> - **开发态**可用 `npm run dev:pilot` / `npm run gameqa:serve`（tsx 直跑，免构建）。
+> - **开发态**可用 `npm run dev:tupigcode` / `npm run gameqa:serve`（tsx 直跑，免构建）。
 > - gameqa 默认全站 HTTPS（自签名证书自动生成于 `data/tls/`）；浏览器首次访问点「高级 → 继续前往」，macOS 可用 `./scripts/trust-cert-macos.sh` 一键信任。
 > - 跑 MLX 需要 Apple Silicon；`llm doctor` 自检环境。
 
@@ -77,7 +77,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 
 | 命令 | 用途 | 典型用法 |
 | --- | --- | --- |
-| `pilot` | AI 编码代理主入口 | `pilot "重构这个模块"` / `pilot`（REPL） |
+| `tupigcode` | AI 编码代理主入口 | `tupigcode "重构这个模块"` / `tupigcode`（REPL） |
 | `llm` | MLX 本地服务管理 + 对话 | `llm start` / `llm use 8b` / `llm "问题"` / `llm doctor` |
 | `gameqa` | 测试平台 serve / agent 双子命令 | `gameqa serve --tls off` / `gameqa agent` |
 | `opencode-local` | 走本机代理的 opencode 入口 | `opencode-local "写个快排"` |
@@ -85,9 +85,9 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 | `codex-local` | 走本机代理的 Codex 入口 | `codex-local exec "跑测试"` |
 | `mlx-local` | MLX 模型直连入口 | `mlx-local "补全这段"` |
 
-开发态脚本：`npm run dev`（index）、`dev:pilot`、`dev:llm`、`gameqa:serve`、`gameqa:agent`、`test`、`test:watch`。
+开发态脚本：`npm run dev`（index）、`dev:tupigcode`、`dev:llm`、`gameqa:serve`、`gameqa:agent`、`test`、`test:watch`。
 
-## 🤖 pilot — AI 编码代理
+## 🤖 tupigcode — AI 编码代理
 
 ### 能力清单（20+ 工具）
 
@@ -98,17 +98,17 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 | 执行 | `Bash`（沙箱 + 安全护栏）`PackageManager` `lint` `Refactor` `Analysis` |
 | 规划 | `todo`（任务清单）`Question`（向用户澄清）`parallel`（并行子任务）`Agent`（子代理派发） |
 | 状态 | `rollback`（回滚）`state`（状态机）`Web`（联网抓取） |
-| 扩展 | **MCP 客户端**：`.wllm/mcp.json`（Claude Code 兼容 `{ mcpServers: { name: { command, args, env } } }`）接入外部 MCP server，工具自动桥接为 `mcp_<server>_<tool>`（`readOnlyHint`→只读标记、inputSchema 透传、单 server 失败降级、**双重审批**：`approval`（server 级）+ `tools`（单工具）白名单 allow/ask/deny，`PILOT_MCP_APPROVAL=off|ask` 全局开关） |
+| 扩展 | **MCP 客户端**：`.tupigcode/mcp.json`（Claude Code 兼容 `{ mcpServers: { name: { command, args, env } } }`）接入外部 MCP server，工具自动桥接为 `mcp_<server>_<tool>`（`readOnlyHint`→只读标记、inputSchema 透传、单 server 失败降级、**双重审批**：`approval`（server 级）+ `tools`（单工具）白名单 allow/ask/deny，`TUPIG_MCP_APPROVAL=off|ask` 全局开关） |
 
 ### 内核特性
 
-- **上下文工程**：预算制压缩（`compact`）、`PILOT_MAX_CONTEXT_TOKENS` 自适应（30k ~ 10M 窗口）、轨迹（trajectory）记录与复盘
-- **多 Provider 容错**：Anthropic / OpenAI / 本地代理统一接入，`PILOT_FAILOVER` 链式降级；错误标准分类（`services/errors.ts`：rate_limit / auth / context_too_long / overloaded / server / network / invalid_request，429/529/5xx/断连触发切换，401 与业务错误不切换），`PILOT_ROLE_MODELS` 分角色选模型
+- **上下文工程**：预算制压缩（`compact`）、`TUPIG_MAX_CONTEXT_TOKENS` 自适应（30k ~ 10M 窗口）、轨迹（trajectory）记录与复盘
+- **多 Provider 容错**：Anthropic / OpenAI / 本地代理统一接入，`TUPIG_FAILOVER` 链式降级；错误标准分类（`services/errors.ts`：rate_limit / auth / context_too_long / overloaded / server / network / invalid_request，429/529/5xx/断连触发切换，401 与业务错误不切换），`TUPIG_ROLE_MODELS` 分角色选模型
 - **会话与恢复**：session / checkpoint / 一键回滚，跨进程续跑
-- **知识沉淀**：memory（长期记忆）+ skills（技能库，`.wllm/skills/` 先审后存）+ reflexion（反思入库）
-- **MCP 接入**：`.wllm/mcp.json`（Claude Code 兼容）接入外部 MCP server，工具自动桥接为 `mcp_<server>_<tool>`，单 server 失败降级不阻塞；**双重审批**：server/tool 级 `approval` 白名单 + `PILOT_MCP_APPROVAL=off|ask` 全局开关，未配置沿用只读放行/可写询问
+- **知识沉淀**：memory（长期记忆）+ skills（技能库，`.tupigcode/skills/` 先审后存）+ reflexion（反思入库）
+- **MCP 接入**：`.tupigcode/mcp.json`（Claude Code 兼容）接入外部 MCP server，工具自动桥接为 `mcp_<server>_<tool>`，单 server 失败降级不阻塞；**双重审批**：server/tool 级 `approval` 白名单 + `TUPIG_MCP_APPROVAL=off|ask` 全局开关，未配置沿用只读放行/可写询问
 - **工作模式**：plan / act 双模式 + spec 规格驱动开发（`n8-spec`）
-- **工程护栏**：写路径沙箱（`PILOT_SANDBOX_WRITE/DENY`）、权限分级、hooks（`PILOT_HOOKS_FILE`）、`/doctor` 自诊断、`/init` 项目初始化、`/review` 代码评审
+- **工程护栏**：写路径沙箱（`TUPIG_SANDBOX_WRITE/DENY`）、权限分级、hooks（`TUPIG_HOOKS_FILE`）、`/doctor` 自诊断、`/init` 项目初始化、`/review` 代码评审
 
 ## 🎮 gameqa — Unity 自动化测试平台
 
@@ -191,13 +191,13 @@ CLI（llm / *-local / 任意 OpenAI/Anthropic 客户端）
 | `qwen-vl-8b` | Qwen3-VL-8B-Instruct-4bit | 5.5G | 视觉语言模型 |
 
 > [!WARNING]
-> 24GB 内存机器 GPU 上限约 16GB：30B 模型需调高 `MLX` GPU 上限；超长上下文（5 万+ token）请求可能 OOM，长任务建议切云端 Provider（`PILOT_PROVIDER`）。
+> 24GB 内存机器 GPU 上限约 16GB：30B 模型需调高 `MLX` GPU 上限；超长上下文（5 万+ token）请求可能 OOM，长任务建议切云端 Provider（`TUPIG_PROVIDER`）。
 
 ## 🏗️ 架构
 
 ```
                          ┌─────────────────────────────────────────┐
-   pilot / gameqa /      │  src/engine      QueryEngine 主链路      │
+   tupigcode / gameqa /      │  src/engine      QueryEngine 主链路      │
    *-local 客户端  ──────▶│  src/tools       20+ 工具（读写/检索/执行）│
                          │  src/session     会话/检查点/轨迹         │
                          │  src/context     压缩/预算/RepoMap        │
@@ -218,7 +218,7 @@ CLI（llm / *-local / 任意 OpenAI/Anthropic 客户端）
 ## 📁 项目结构
 
 ```
-WLLM/
+tupigcode/
 ├── AGENTS.md                  # AI 协作约定（工作流/issue 闭环/README 维护规则）
 ├── README.md                  # 本文件——项目唯一文档，随代码同步更新
 ├── package.json               # 7 bin + 构建/开发脚本
@@ -238,29 +238,29 @@ WLLM/
 │   ├── proxy/                 # 统一协议代理（convert 三协议转换 + server SSE relay）
 │   ├── gameqa/                # Unity 测试平台（store/server/builtin/agent/unity/
 │   │                          #   airtest/gameperf/ai/tls + report/allure 报告 + static 看板）
-│   ├── cli/                   # 7 个入口（pilot llm gameqa *-local mlx-local mlxcmd）
+│   ├── cli/                   # 7 个入口（tupigcode llm gameqa *-local mlx-local mlxcmd）
 │   └── git/ state/ utils/
 │
 ├── tests/                     # vitest 45 文件 / 531 用例
 ├── mlx/                       # 推理服务层（models/venv/logs/state 运行时 + models.json）
-├── .wllm/                     # 运行时技能库（先审后存）
+├── .tupigcode/                     # 运行时技能库（先审后存）
 └── .github/workflows/ci.yml   # 门槛：tsc + vitest + build
 ```
 
 ## ⚙️ 配置与环境变量
 
-### pilot / 引擎
+### tupigcode / 引擎
 
 | 变量 | 说明 |
 | --- | --- |
-| `PILOT_PROVIDER` / `PILOT_MODEL` | Provider（`anthropic` / `openai` / `proxy`…）与模型 |
-| `PILOT_CLOUD_MODEL` / `PILOT_ROLE_MODELS` | 云端模型 / 按角色（读码、改码…）分模型 |
-| `PILOT_MAX_CONTEXT_TOKENS` | 上下文窗口 30_000 ~ 10_000_000，自适应压缩迭代 |
-| `PILOT_FAILOVER` | Provider 链式降级 |
-| `PILOT_SANDBOX_WRITE` / `PILOT_SANDBOX_DENY` | 写沙箱白名单 / 黑名单 |
-| `PILOT_MCP_APPROVAL` | MCP 审批全局开关：`off`=全部放行 / `ask`=全部强制询问（未设置=按 mcp.json 白名单与 readOnlyHint 分级） |
-| `PILOT_HOOKS_FILE` / `PILOT_HOOKS_FAIL_OPEN` | hooks 配置 / 失败是否放行 |
-| `PILOT_HARNESS` / `PILOT_DEBUG` / `PILOT_MOCK` / `PILOT_PROMPT_OPT` / `PILOT_EXTRA_TOOLS` | harness、调试、Mock、prompt 优化、额外工具 |
+| `TUPIG_PROVIDER` / `TUPIG_MODEL` | Provider（`anthropic` / `openai` / `proxy`…）与模型 |
+| `TUPIG_CLOUD_MODEL` / `TUPIG_ROLE_MODELS` | 云端模型 / 按角色（读码、改码…）分模型 |
+| `TUPIG_MAX_CONTEXT_TOKENS` | 上下文窗口 30_000 ~ 10_000_000，自适应压缩迭代 |
+| `TUPIG_FAILOVER` | Provider 链式降级 |
+| `TUPIG_SANDBOX_WRITE` / `TUPIG_SANDBOX_DENY` | 写沙箱白名单 / 黑名单 |
+| `TUPIG_MCP_APPROVAL` | MCP 审批全局开关：`off`=全部放行 / `ask`=全部强制询问（未设置=按 mcp.json 白名单与 readOnlyHint 分级） |
+| `TUPIG_HOOKS_FILE` / `TUPIG_HOOKS_FAIL_OPEN` | hooks 配置 / 失败是否放行 |
+| `TUPIG_HARNESS` / `TUPIG_DEBUG` / `TUPIG_MOCK` / `TUPIG_PROMPT_OPT` / `TUPIG_EXTRA_TOOLS` | harness、调试、Mock、prompt 优化、额外工具 |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` | 云端 Provider 凭证（可选） |
 
 ### MLX / 代理
@@ -342,7 +342,7 @@ airtest·性能·AI 集成/TLS·CLI/轻量报告/Allure 报告）、`proxy-*`（
 
 | 阶段 | 内容 |
 | --- | --- |
-| v1 | Python 原版（pilot + FastAPI 平台 + Python Agent） |
+| v1 | Python 原版（tupigcode + FastAPI 平台 + Python Agent） |
 | v2 | gpt-visual-platform：Go server + Rust agent（单二进制，API 兼容 v1） |
 | v3 | **统一语言重写**：全仓 TS 单实现（engine/proxy/mlx/tools），CI 三门槛全绿 |
 | v4 | **gameqa 整合**：蓝本占位全部落地（Unity batchmode 真执行、Agent 全链路、TLS、系统服务与运维脚本），archive 删除 |

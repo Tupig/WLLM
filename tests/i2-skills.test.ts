@@ -9,12 +9,12 @@ import { loadSkills, formatSkillCatalog, resolveSkill, SKILL_CATALOG_BUDGET } fr
 
 let dir: string;
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "wllm-sk-"));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "tupigcode-sk-"));
 });
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 function mkSkill(name: string, frontmatter: string, body: string) {
-  const d = path.join(dir, ".wllm", "skills", name);
+  const d = path.join(dir, ".tupigcode", "skills", name);
   fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "SKILL.md"), `---\n${frontmatter}\n---\n${body}`);
   return d;
@@ -33,7 +33,7 @@ describe("loadSkills 扫描与门禁禁①②", () => {
     expect(loadSkills(dir)).toEqual([]);
   });
   it("非 SKILL.md 目录忽略", () => {
-    const d = path.join(dir, ".wllm", "skills", "nope");
+    const d = path.join(dir, ".tupigcode", "skills", "nope");
     fs.mkdirSync(d, { recursive: true });
     fs.writeFileSync(path.join(d, "readme.md"), "x");
     expect(loadSkills(dir)).toEqual([]);
@@ -77,7 +77,7 @@ describe("resolveSkill 三重门禁③ + 技能包", () => {
   });
   it("门禁①：路径穿越名 → 拒绝", () => {
     mkSkill("x", "name: x\ndescription: d", "b");
-    expect(resolveSkill(dir, "../.wllm/skills/x")).toBeNull();
+    expect(resolveSkill(dir, "../.tupigcode/skills/x")).toBeNull();
     expect(resolveSkill(dir, "x/../../other")).toBeNull();
   });
   it("门禁③：超大文件 → 拒绝", () => {

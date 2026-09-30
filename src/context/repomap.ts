@@ -7,7 +7,7 @@ import { join, relative, resolve } from "path";
 
 export const REPO_SKIP_DIRS = [
   "node_modules", ".git", ".svn", ".hg", "dist", "build", "out",
-  "venv", ".venv", "models", "logs", "state", ".wllm", "coverage",
+  "venv", ".venv", "models", "logs", "state", ".tupigcode", "coverage",
   "__pycache__", ".pytest_cache", "target",
 ];
 
@@ -153,7 +153,7 @@ export function buildRepoMap(
   walk(start, workDir, files);
   files.sort((a, b) => a.rel.localeCompare(b.rel));
 
-  const cacheFile = join(workDir, ".wllm", "cache", "repomap.json");
+  const cacheFile = join(workDir, ".tupigcode", "cache", "repomap.json");
   let symbols: RepoSymbol[] = [];
   let fromCache = false;
   const cache = opts.useCache === false ? null : readCache(cacheFile);
@@ -175,7 +175,7 @@ export function buildRepoMap(
     try {
       const fileMap: Record<string, number> = {};
       for (const f of files) fileMap[f.rel] = f.mtimeMs;
-      mkdirSync(join(workDir, ".wllm", "cache"), { recursive: true });
+      mkdirSync(join(workDir, ".tupigcode", "cache"), { recursive: true });
       writeFileSync(cacheFile, JSON.stringify({ files: fileMap, symbols }, null, 0));
     } catch {
       /* 缓存写失败不影响结果 */

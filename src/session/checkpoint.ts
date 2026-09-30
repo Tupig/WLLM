@@ -1,6 +1,6 @@
 /**
  * checkpoint.ts — 会话检查点（A4：gemini-cli shadow Git 思路）
- * 快照：commit→存 refs/wllm/checkpoints/<id>→mixed reset 还原用户工作区（不污染分支）
+ * 快照：commit→存 refs/tupigcode/checkpoints/<id>→mixed reset 还原用户工作区（不污染分支）
  * 回滚：先自动生成安全检查点，再硬重置到目标
  */
 import { execFile } from "child_process";
@@ -10,7 +10,7 @@ import { join } from "path";
 
 const execFileAsync = promisify(execFile);
 
-const CKPT_REF_PREFIX = "refs/wllm/checkpoints/";
+const CKPT_REF_PREFIX = "refs/tupigcode/checkpoints/";
 
 export type CheckpointRecord = {
   id: string;
@@ -34,11 +34,11 @@ async function isGitRepo(workDir: string): Promise<boolean> {
 }
 
 function jsonlPath(workDir: string): string {
-  return join(workDir, ".wllm", "checkpoints.jsonl");
+  return join(workDir, ".tupigcode", "checkpoints.jsonl");
 }
 
 async function appendRecord(workDir: string, rec: CheckpointRecord): Promise<void> {
-  await mkdir(join(workDir, ".wllm"), { recursive: true });
+  await mkdir(join(workDir, ".tupigcode"), { recursive: true });
   await appendFile(jsonlPath(workDir), JSON.stringify(rec) + "\n", "utf-8");
 }
 
@@ -63,7 +63,7 @@ export async function snapshot(workDir: string, label: string): Promise<Checkpoi
   const base = await git(workDir, ["rev-parse", "HEAD"]);
   await git(workDir, ["add", "-A"]);
   // 检查点是内部机制，作者无关：内联 identity，环境无全局配置时也能提交
-  await git(workDir, ["-c", "user.name=wllm", "-c", "user.email=wllm@local", "commit", "-qm", `[wllm] ${label}`]);
+  await git(workDir, ["-c", "user.name=tupigcode", "-c", "user.email=tupigcode@local", "commit", "-qm", `[tupigcode] ${label}`]);
   const sha = await git(workDir, ["rev-parse", "HEAD"]);
   const id = `${Date.now().toString(36)}-${sha.slice(0, 7)}`;
   await git(workDir, ["update-ref", CKPT_REF_PREFIX + id, sha]);

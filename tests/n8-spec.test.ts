@@ -26,7 +26,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 describe("createSpec", () => {
   it("生成 requirements/design/tasks 三件套", () => {
     const spec = createSpec(dir, "auth", "实现登录");
-    expect(spec.dir).toContain(join(".wllm", "specs", "auth"));
+    expect(spec.dir).toContain(join(".tupigcode", "specs", "auth"));
     for (const f of Object.values(SPEC_FILES)) {
       expect(existsSync(join(spec.dir, f))).toBe(true);
     }
@@ -171,14 +171,14 @@ describe("approveSpec / listSpecs / loadSpec", () => {
   });
 });
 
-describe("plan 模式下唯一可写面：.wllm/ 计划产物", () => {
+describe("plan 模式下唯一可写面：.tupigcode/ 计划产物", () => {
   const makeCtx = (mode: string) => ({ mode }) as any;
 
-  it("plan 模式允许写 .wllm/specs 下的 plan.md", async () => {
+  it("plan 模式允许写 .tupigcode/specs 下的 plan.md", async () => {
     const { canUseTool } = await import("../src/services/permissions");
     const r = await canUseTool(
       "Write",
-      { file_path: join(dir, ".wllm", "specs", "auth", "plan.md"), content: "x" },
+      { file_path: join(dir, ".tupigcode", "specs", "auth", "plan.md"), content: "x" },
       { isReadOnly: () => false, isDestructive: () => false } as any,
       makeCtx("plan"),
     );
@@ -196,9 +196,9 @@ describe("plan 模式下唯一可写面：.wllm/ 计划产物", () => {
     expect(r.behavior).toBe("deny");
   });
 
-  it("plan 模式拒绝写 .wllm 之外的路径（含 ../ 逃逸）", async () => {
+  it("plan 模式拒绝写 .tupigcode 之外的路径（含 ../ 逃逸）", async () => {
     const { canUseTool } = await import("../src/services/permissions");
-    for (const p of [join(dir, "README.md"), join(dir, ".wllm", "..", "evil.ts")]) {
+    for (const p of [join(dir, "README.md"), join(dir, ".tupigcode", "..", "evil.ts")]) {
       const r = await canUseTool(
         "Write",
         { file_path: p, content: "x" },
@@ -215,7 +215,7 @@ describe("plan 阶段指引注入系统提示", () => {
     const { renderSystemPrompt } = await import("../src/engine/prompt");
     const p = renderSystemPrompt([], { planSpec: "auth" });
     expect(p).toContain("Plan 模式");
-    expect(p).toContain(".wllm/specs/auth/plan.md");
+    expect(p).toContain(".tupigcode/specs/auth/plan.md");
     expect(p).toContain("涉及文件");
     expect(p).toContain("/spec approve");
   });

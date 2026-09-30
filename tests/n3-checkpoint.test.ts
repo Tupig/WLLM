@@ -13,7 +13,7 @@ const git = (...args: string[]) =>
   execFileSync("git", args, { cwd: dir, encoding: "utf-8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
 
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "wllm-ckpt-"));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "tupigcode-ckpt-"));
   git("init", "-q");
   fs.writeFileSync(path.join(dir, "a.txt"), "v1\n");
   git("add", ".");
@@ -47,7 +47,7 @@ describe("snapshot 快照", () => {
     expect(list[0].label).toBe("第二");
   });
   it("非 git 目录 → null", async () => {
-    const plain = fs.mkdtempSync(path.join(os.tmpdir(), "wllm-plain-"));
+    const plain = fs.mkdtempSync(path.join(os.tmpdir(), "tupigcode-plain-"));
     const r = await snapshot(plain, "x");
     fs.rmSync(plain, { recursive: true, force: true });
     expect(r).toBeNull();

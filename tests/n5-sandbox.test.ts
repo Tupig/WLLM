@@ -4,7 +4,7 @@
 import { describe, expect, it, afterEach } from "vitest";
 import { resolveSandboxPolicy, checkPath, checkBashPaths } from "../src/services/sandbox";
 
-const ENV_KEYS = ["PILOT_SANDBOX_WRITE", "PILOT_SANDBOX_DENY"] as const;
+const ENV_KEYS = ["TUPIG_SANDBOX_WRITE", "TUPIG_SANDBOX_DENY"] as const;
 afterEach(() => {
   for (const k of ENV_KEYS) delete process.env[k as string];
 });
@@ -16,8 +16,8 @@ describe("resolveSandboxPolicy", () => {
     expect(p.blocked.some((b) => b.includes(".ssh"))).toBe(true);
   });
   it("env 追加允许写目录与额外拦截", () => {
-    process.env.PILOT_SANDBOX_WRITE = "/tmp/x:/data";
-    process.env.PILOT_SANDBOX_DENY = "/secret";
+    process.env.TUPIG_SANDBOX_WRITE = "/tmp/x:/data";
+    process.env.TUPIG_SANDBOX_DENY = "/secret";
     const p = resolveSandboxPolicy("/work");
     expect(p.allowedWrite).toContain("/tmp/x");
     expect(p.allowedWrite).toContain("/data");
@@ -43,7 +43,7 @@ describe("checkPath", () => {
   });
   it("白名单目录写 → allow", () => {
     const p2 = resolveSandboxPolicy("/work");
-    process.env.PILOT_SANDBOX_WRITE = "/tmp/x";
+    process.env.TUPIG_SANDBOX_WRITE = "/tmp/x";
     const p3 = resolveSandboxPolicy("/work");
     expect(checkPath(p3, "/tmp/x/out.txt", "write")).toBe("allow");
     expect(checkPath(p2, "/tmp/x/out.txt", "write")).toBe("deny");

@@ -85,7 +85,7 @@ export function builtinAgents(): AgentDef[] {
 }
 
 function agentsRoot(workDir: string): string {
-  return join(workDir, ".wllm", "agents");
+  return join(workDir, ".tupigcode", "agents");
 }
 
 /**
@@ -97,7 +97,7 @@ export function loadAgents(workDir: string, homeDir?: string): Map<string, Agent
 
   const dirs: string[] = [];
   const home = homeDir ?? process.env.HOME ?? "";
-  if (home) dirs.push(join(home, ".wllm", "agents"));
+  if (home) dirs.push(join(home, ".tupigcode", "agents"));
   dirs.push(agentsRoot(workDir));
 
   for (const dir of dirs) {
@@ -173,5 +173,5 @@ export function resolveSubAgentModel(
   def: Partial<AgentDef> | undefined,
   context: { options: { mainLoopModel?: string } },
 ): string {
-  return task.model || def?.model || context.options.mainLoopModel || process.env.PILOT_MODEL || "default_model";
+  return task.model || def?.model || context.options.mainLoopModel || process.env.TUPIG_MODEL || "default_model";
 }

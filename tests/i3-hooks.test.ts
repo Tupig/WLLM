@@ -35,10 +35,10 @@ describe("interpretShellExit 退出码语义（A9）", () => {
     expect(r.message).toContain("fail-closed");
     expect(r.message).toContain("1");
   });
-  it("PILOT_HOOKS_FAIL_OPEN=1 → 非 0/2 放行", () => {
-    process.env.PILOT_HOOKS_FAIL_OPEN = "1";
+  it("TUPIG_HOOKS_FAIL_OPEN=1 → 非 0/2 放行", () => {
+    process.env.TUPIG_HOOKS_FAIL_OPEN = "1";
     const r = interpretShellExit(1, "", "", false);
-    delete process.env.PILOT_HOOKS_FAIL_OPEN;
+    delete process.env.TUPIG_HOOKS_FAIL_OPEN;
     expect(r.block).toBeFalsy();
   });
   it("超时（code=null）→ fail-closed 阻断", () => {
@@ -77,14 +77,14 @@ describe("HookSystem.triggerShellHook 实跑", () => {
 describe("loadShellHooks 配置加载", () => {
   let dir: string;
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), "wllm-hooks-"));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "tupigcode-hooks-"));
   });
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
   it("有效配置解析", () => {
-    fs.mkdirSync(path.join(dir, ".wllm"), { recursive: true });
+    fs.mkdirSync(path.join(dir, ".tupigcode"), { recursive: true });
     fs.writeFileSync(
-      path.join(dir, ".wllm", "hooks.json"),
+      path.join(dir, ".tupigcode", "hooks.json"),
       JSON.stringify([
         { event: "PreToolUse", matcher: { tool_name: "Bash" }, command: "exit 2", timeout: 1000 },
         { event: "PostToolUse", command: "exit 0" },
@@ -98,8 +98,8 @@ describe("loadShellHooks 配置加载", () => {
     expect(hooks[1].matcher).toBeUndefined();
   });
   it("坏 JSON → 空不抛", () => {
-    fs.mkdirSync(path.join(dir, ".wllm"), { recursive: true });
-    fs.writeFileSync(path.join(dir, ".wllm", "hooks.json"), "{bad");
+    fs.mkdirSync(path.join(dir, ".tupigcode"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".tupigcode", "hooks.json"), "{bad");
     expect(loadShellHooks(dir)).toEqual([]);
   });
   it("无文件 → 空", () => {

@@ -14,7 +14,7 @@ export type MemoryEntry = {
 };
 
 function entriesPath(workDir: string): string {
-  return join(workDir, ".wllm", "memory", "entries.jsonl");
+  return join(workDir, ".tupigcode", "memory", "entries.jsonl");
 }
 
 export function stageMemory(input: { category?: string; content: string }): MemoryEntry {
@@ -33,7 +33,7 @@ export async function commitMemory(
   approved: boolean,
 ): Promise<boolean> {
   if (!approved || !staged.content.trim()) return false;
-  await mkdir(join(workDir, ".wllm", "memory"), { recursive: true });
+  await mkdir(join(workDir, ".tupigcode", "memory"), { recursive: true });
   await appendFile(
     entriesPath(workDir),
     JSON.stringify({ ...staged, approved: true }) + "\n",

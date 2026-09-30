@@ -45,9 +45,9 @@ export function buildXmlToolSection(tools: Anthropic.Tool[]): string {
 }
 
 export function resolveHarness(env: NodeJS.ProcessEnv = process.env): HarnessMode {
-  if (env.PILOT_HARNESS === "off") return "off";
-  if (env.PILOT_HARNESS === "xml") return "xml";
-  if (env.PILOT_MOCK === "1") return "native";
+  if (env.TUPIG_HARNESS === "off") return "off";
+  if (env.TUPIG_HARNESS === "xml") return "xml";
+  if (env.TUPIG_MOCK === "1") return "native";
   if (env.ANTHROPIC_API_KEY && !env.OPENAI_BASE_URL) return "native";
   if (env.OPENAI_BASE_URL && env.OPENAI_API_KEY) return "xml";
   return "native";

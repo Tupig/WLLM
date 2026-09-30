@@ -1,7 +1,7 @@
 /**
  * reflexion/index.ts — 复盘写回（I4 / A24）
  * 会话结束跑 review 代理，四选一：discard / merge / skill / rule；
- * skill 与 rule 走 staging 先审后存（对齐 I1），每次决策落 `.wllm/runs/`。
+ * skill 与 rule 走 staging 先审后存（对齐 I1），每次决策落 `.tupigcode/runs/`。
  */
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
@@ -103,14 +103,14 @@ export function applyReviewDecision(
   decision: ReviewDecision,
   id: string,
 ): ApplyResult {
-  const runsDir = join(workDir, ".wllm", "runs");
+  const runsDir = join(workDir, ".tupigcode", "runs");
   mkdirSync(runsDir, { recursive: true });
   const runPath = join(runsDir, `${id}.json`);
   const record = { ts: Date.now(), id, ...decision };
   writeFileSync(runPath, JSON.stringify(record, null, 2));
 
   if (decision.action === "skill") {
-    const staging = join(workDir, ".wllm", "staging");
+    const staging = join(workDir, ".tupigcode", "staging");
     mkdirSync(staging, { recursive: true });
     const stagedPath = join(staging, `skill-${id}.md`);
     writeFileSync(
@@ -119,12 +119,12 @@ export function applyReviewDecision(
     );
     return {
       applied: true, runPath, stagedPath,
-      message: `技能草稿已入 staging（先审后存）：${stagedPath}。审阅后移入 .wllm/skills/<name>/SKILL.md`,
+      message: `技能草稿已入 staging（先审后存）：${stagedPath}。审阅后移入 .tupigcode/skills/<name>/SKILL.md`,
     };
   }
 
   if (decision.action === "rule") {
-    const rulesDir = join(workDir, ".wllm", "staging", "rules");
+    const rulesDir = join(workDir, ".tupigcode", "staging", "rules");
     mkdirSync(rulesDir, { recursive: true });
     const stagedPath = join(rulesDir, `rule-${id}.md`);
     writeFileSync(stagedPath, `${decision.content}\n`);
@@ -146,7 +146,7 @@ export function applyReviewDecision(
 export type RunRecord = { id: string; action: ReviewAction; reason: string; ts: number };
 
 export function listRuns(workDir: string): RunRecord[] {
-  const runsDir = join(workDir, ".wllm", "runs");
+  const runsDir = join(workDir, ".tupigcode", "runs");
   if (!existsSync(runsDir)) return [];
   const out: RunRecord[] = [];
   for (const f of readdirSync(runsDir)) {

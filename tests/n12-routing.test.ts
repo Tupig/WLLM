@@ -16,7 +16,7 @@ const {
   suggestModel,
 } = await import("../src/engine/router");
 
-const mockEnv = { PILOT_MOCK: "1" } as NodeJS.ProcessEnv;
+const mockEnv = { TUPIG_MOCK: "1" } as NodeJS.ProcessEnv;
 
 describe("profileTask 画像", () => {
   it("编辑/搜索/评审/计划/摘要/对话分类", () => {
@@ -41,22 +41,22 @@ describe("profileTask 画像", () => {
 });
 
 describe("resolveRoleModel 角色制", () => {
-  it("PILOT_MODEL_<ROLE> 优先", () => {
-    const env = { PILOT_MODEL_CHAT: "a", PILOT_MODEL_APPLY: "b", PILOT_MODEL_SUMMARIZE: "c" } as NodeJS.ProcessEnv;
+  it("TUPIG_MODEL_<ROLE> 优先", () => {
+    const env = { TUPIG_MODEL_CHAT: "a", TUPIG_MODEL_APPLY: "b", TUPIG_MODEL_SUMMARIZE: "c" } as NodeJS.ProcessEnv;
     expect(resolveRoleModel("chat", env)).toBe("a");
     expect(resolveRoleModel("apply", env)).toBe("b");
     expect(resolveRoleModel("summarize", env)).toBe("c");
   });
 
-  it("PILOT_ROLE_MODELS JSON 次之", () => {
-    const env = { PILOT_ROLE_MODELS: '{"chat":"x","apply":"y"}' } as NodeJS.ProcessEnv;
+  it("TUPIG_ROLE_MODELS JSON 次之", () => {
+    const env = { TUPIG_ROLE_MODELS: '{"chat":"x","apply":"y"}' } as NodeJS.ProcessEnv;
     expect(resolveRoleModel("apply", env)).toBe("y");
     expect(resolveRoleModel("summarize", env)).toBeUndefined();
   });
 
   it("都没配 → undefined", () => {
     expect(resolveRoleModel("chat", {} as NodeJS.ProcessEnv)).toBeUndefined();
-    expect(resolveRoleModel("chat", { PILOT_ROLE_MODELS: "{bad" } as NodeJS.ProcessEnv)).toBeUndefined();
+    expect(resolveRoleModel("chat", { TUPIG_ROLE_MODELS: "{bad" } as NodeJS.ProcessEnv)).toBeUndefined();
   });
 });
 
@@ -69,7 +69,7 @@ describe("routeTask 角色覆盖与画像建议", () => {
   it("apply 角色 env 覆盖难度分流", () => {
     const r = routeTask({
       prompt: "修改登录函数",
-      env: { ...localOpenAI, PILOT_MODEL_APPLY: "role-apply" },
+      env: { ...localOpenAI, TUPIG_MODEL_APPLY: "role-apply" },
     });
     expect(r.model).toBe("role-apply");
     expect(r.reason).toContain("role");
@@ -78,7 +78,7 @@ describe("routeTask 角色覆盖与画像建议", () => {
   it("summarize 角色 env 覆盖", () => {
     const r = routeTask({
       prompt: "总结这段输出",
-      env: { ...localOpenAI, PILOT_MODEL_SUMMARIZE: "role-sum" },
+      env: { ...localOpenAI, TUPIG_MODEL_SUMMARIZE: "role-sum" },
     });
     expect(r.model).toBe("role-sum");
   });
@@ -92,11 +92,11 @@ describe("routeTask 角色覆盖与画像建议", () => {
   it("画像建议命中时改选（search→8b）", () => {
     const dir = mkdtempSync(join(tmpdir(), "n12-"));
     try {
-      mkdirSync(join(dir, ".wllm"), { recursive: true });
+      mkdirSync(join(dir, ".tupigcode"), { recursive: true });
       for (let i = 0; i < 4; i++) {
         appendRouteFeedback(dir, { model: "8b", kind: "search", success: true, oneShot: true });
         appendFileSync(
-          join(dir, ".wllm", "route.log"),
+          join(dir, ".tupigcode", "route.log"),
           formatRouteLog({ model: "8b", provider: "local", reason: "easy-本地14b", prompt: "找 x", kind: "search" }) + "\n",
         );
       }
@@ -113,13 +113,13 @@ describe("routelog 反馈闭环", () => {
   let dir: string;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "n12b-"));
-    mkdirSync(join(dir, ".wllm"), { recursive: true });
+    mkdirSync(join(dir, ".tupigcode"), { recursive: true });
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   it("feedback 行写入 route.log", () => {
     appendRouteFeedback(dir, { model: "14b", kind: "edit", success: true, oneShot: true });
-    const lines = readFileSync(join(dir, ".wllm", "route.log"), "utf-8").trim().split("\n");
+    const lines = readFileSync(join(dir, ".tupigcode", "route.log"), "utf-8").trim().split("\n");
     const row = JSON.parse(lines[0]);
     expect(row.type).toBe("feedback");
     expect(row).toMatchObject({ model: "14b", kind: "edit", success: true, oneShot: true });
@@ -130,7 +130,7 @@ describe("routelog 反馈闭环", () => {
     appendRouteFeedback(dir, { model: "8b", kind: "search", success: true, oneShot: false });
     appendRouteFeedback(dir, { model: "14b", kind: "edit", success: false, oneShot: false });
     appendFileSync(
-      join(dir, ".wllm", "route.log"),
+      join(dir, ".tupigcode", "route.log"),
       formatRouteLog({ model: "8b", provider: "local", reason: "r", prompt: "p", kind: "search" }) + "\n",
     );
     const p = readRouteProfile(dir);

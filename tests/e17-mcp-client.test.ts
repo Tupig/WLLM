@@ -1,5 +1,5 @@
 /**
- * E17 MCP 客户端：.wllm/mcp.json 配置 + SDK 握手/list/call + 工具桥。对应 issue #6。
+ * E17 MCP 客户端：.tupigcode/mcp.json 配置 + SDK 握手/list/call + 工具桥。对应 issue #6。
  */
 import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
 import * as fs from "node:fs";
@@ -25,8 +25,8 @@ function mkCtx(workDir: string): ToolUseContext {
 }
 
 function writeMcpJson(workDir: string, servers: Record<string, any>) {
-  fs.mkdirSync(path.join(workDir, ".wllm"), { recursive: true });
-  fs.writeFileSync(path.join(workDir, ".wllm", "mcp.json"), JSON.stringify({ mcpServers: servers }));
+  fs.mkdirSync(path.join(workDir, ".tupigcode"), { recursive: true });
+  fs.writeFileSync(path.join(workDir, ".tupigcode", "mcp.json"), JSON.stringify({ mcpServers: servers }));
 }
 
 beforeEach(() => {
@@ -38,13 +38,13 @@ afterEach(() => {
 });
 
 describe("loadMcpConfig", () => {
-  it("无 .wllm/mcp.json → null（零变化）", () => {
+  it("无 .tupigcode/mcp.json → null（零变化）", () => {
     expect(loadMcpConfig(dir)).toBeNull();
   });
 
   it("非法 JSON → null（不抛）", () => {
-    fs.mkdirSync(path.join(dir, ".wllm"), { recursive: true });
-    fs.writeFileSync(path.join(dir, ".wllm", "mcp.json"), "{broken");
+    fs.mkdirSync(path.join(dir, ".tupigcode"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".tupigcode", "mcp.json"), "{broken");
     expect(loadMcpConfig(dir)).toBeNull();
   });
 

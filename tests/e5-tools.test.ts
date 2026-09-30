@@ -42,12 +42,12 @@ describe("extras 可选工具", () => {
     const def = new Set(getDefaultTools().map((t) => t.name));
     expect(names.some((n) => def.has(n))).toBe(false);
   });
-  it("PILOT_EXTRA_TOOLS=webfetch,gitcommit 精确启用", async () => {
+  it("TUPIG_EXTRA_TOOLS=webfetch,gitcommit 精确启用", async () => {
     const { resolveExtraTools } = await import("../src/engine/toolRegistry");
-    process.env.PILOT_EXTRA_TOOLS = "WebFetch,GitCommit";
+    process.env.TUPIG_EXTRA_TOOLS = "WebFetch,GitCommit";
     try {
       const extra = resolveExtraTools().map((t) => t.name);
       expect(extra.sort()).toEqual(["GitCommit", "WebFetch"]);
-    } finally { delete process.env.PILOT_EXTRA_TOOLS; }
+    } finally { delete process.env.TUPIG_EXTRA_TOOLS; }
   });
 });

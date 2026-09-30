@@ -1,7 +1,7 @@
 /**
  * spec/index.ts — spec 三件套 + Plan 5 阶段落地（N8 / A17）
  *
- * 落盘：`.wllm/specs/<name>/{requirements.md, design.md, tasks.md, plan.md, status.json}`
+ * 落盘：`.tupigcode/specs/<name>/{requirements.md, design.md, tasks.md, plan.md, status.json}`
  * 5 阶段：探索(plan 模式) → 写 plan.md → 自校验 validatePlan → 呈现 → 批准 approveSpec
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
@@ -31,7 +31,7 @@ export type SpecSummary = {
 };
 
 function specRoot(workDir: string): string {
-  return join(workDir, ".wllm", "specs");
+  return join(workDir, ".tupigcode", "specs");
 }
 
 function assertName(name: string): void {

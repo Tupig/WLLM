@@ -33,7 +33,7 @@ import { renderTodoState } from "../tools/todo.js";
 import { createToolState, recordToolExecution, formatToolStateForPrompt, type ToolExecutionState } from "../tools/state.js";
 import { ModeManager, type AgentMode } from "../modes/modes.js";
 import { createTrajectoryRecorder, type TrajectoryRecorder } from "../session/trajectory.js";
-import { getConfig, type PilotConfig } from "../config.js";
+import { getConfig, type TupigCodeConfig } from "../config.js";
 import { ToolCache, isCacheable, createDefaultCache } from "../context/cache.js";
 import {
   saveSession, loadSession, createSessionState,
@@ -125,7 +125,7 @@ export async function withTimeout<T>(p: Promise<T>, ms: number, label: string): 
 
 function appendRouteLog(prompt: string, route: ReturnType<typeof routeTask>, cwd: string): void {
   try {
-    const dir = join(cwd, ".wllm");
+    const dir = join(cwd, ".tupigcode");
     mkdirSync(dir, { recursive: true });
     appendFileSync(join(dir, "route.log"), formatRouteLog({ ...route, prompt, kind: profileTask(prompt).kind }) + "\n");
   } catch { /* routelog 失败不影响主流程 */ }
@@ -230,7 +230,7 @@ export class QueryEngine {
     }
   }
 
-  /** 惰性连接 .wllm/mcp.json 配置的 MCP server；未配置零变化，失败只降级 */
+  /** 惰性连接 .tupigcode/mcp.json 配置的 MCP server；未配置零变化，失败只降级 */
   private async ensureMcpTools(): Promise<void> {
     if (this.mcpInitialized) return;
     this.mcpInitialized = true;
@@ -306,8 +306,13 @@ export class QueryEngine {
         const r = this.compactor.compactByLadder(loopState.messages, estimatedTokens, MAX_CONTEXT_TOKENS);
         loopState.hasAttemptedReactiveCompact = true;
         if (r.strategy !== "none" && r.strategy !== "circuit-open") {
-          this.compactor.recordResult(loopState.messages, r.messages, estimatedTokens, MAX_CONTEXT_TOKENS);
-          loopState.messages = r.messages;
+          // force 档（>95%）：LLM 摘要（openai/anthropic/mock 三链路，失败自动回退预算削减）
+          let out = r.messages;
+          if (r.strategy === "force") {
+            out = await this.compactor.autoCompact(this.client, this.config.model, loopState.messages);
+          }
+          this.compactor.recordResult(loopState.messages, out, estimatedTokens, MAX_CONTEXT_TOKENS);
+          loopState.messages = out;
           loopState.compacted = true;
           appStore.setState((s) => ({ ...s, compactionCount: s.compactionCount + 1 }));
         }

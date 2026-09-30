@@ -42,7 +42,7 @@ export function interpretShellExit(
   stderr: string,
   failOpen = false,
 ): HookResult {
-  const enforce = !failOpen && process.env.PILOT_HOOKS_FAIL_OPEN !== "1";
+  const enforce = !failOpen && process.env.TUPIG_HOOKS_FAIL_OPEN !== "1";
 
   if (code === 0) {
     try {
@@ -73,7 +73,7 @@ export type ShellHookConfig = {
 };
 
 export function loadShellHooks(workDir: string): ShellHookConfig[] {
-  const file = process.env.PILOT_HOOKS_FILE || join(workDir, ".wllm", "hooks.json");
+  const file = process.env.TUPIG_HOOKS_FILE || join(workDir, ".tupigcode", "hooks.json");
   try {
     const raw = readFileSync(file, "utf-8");
     const data = JSON.parse(raw);
@@ -122,7 +122,7 @@ export class HookSystem {
           if (result.block) break;
         }
       } catch (err) {
-        if (process.env.PILOT_DEBUG) {
+        if (process.env.TUPIG_DEBUG) {
           console.error(`[Hook] 处理器执行出错：`, err);
         }
       }

@@ -124,12 +124,12 @@ describe("loadAgents", () => {
   let dir: string;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "n6-"));
-    mkdirSync(join(dir, ".wllm", "agents"), { recursive: true });
+    mkdirSync(join(dir, ".tupigcode", "agents"), { recursive: true });
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   it("读取项目 agent 文件 + 内置 explore/general", () => {
-    writeFileSync(join(dir, ".wllm", "agents", "explorer.md"), VALID_AGENT);
+    writeFileSync(join(dir, ".tupigcode", "agents", "explorer.md"), VALID_AGENT);
     const reg = loadAgents(dir, join(dir, "no-home"));
     expect(reg.get("explorer")?.description).toContain("只读探索");
     expect(reg.has("explore")).toBe(true);
@@ -138,7 +138,7 @@ describe("loadAgents", () => {
 
   it("项目文件覆盖同名内置", () => {
     writeFileSync(
-      join(dir, ".wllm", "agents", "explore.md"),
+      join(dir, ".tupigcode", "agents", "explore.md"),
       "---\ndescription: 自定义探索\n---\n覆盖内置\n",
     );
     const reg = loadAgents(dir, join(dir, "no-home"));
@@ -146,9 +146,9 @@ describe("loadAgents", () => {
   });
 
   it("非法文件与超大文件跳过", () => {
-    writeFileSync(join(dir, ".wllm", "agents", "bad.md"), "无 frontmatter");
+    writeFileSync(join(dir, ".tupigcode", "agents", "bad.md"), "无 frontmatter");
     writeFileSync(
-      join(dir, ".wllm", "agents", "huge.md"),
+      join(dir, ".tupigcode", "agents", "huge.md"),
       `---\ndescription: d\n---\n${"x".repeat(MAX_AGENT_BYTES + 10)}`,
     );
     const reg = loadAgents(dir, join(dir, "no-home"));
@@ -220,11 +220,11 @@ describe("resolveSubAgentModel", () => {
 describe("SubAgentExecutor 独立上下文与权限", () => {
   beforeEach(() => {
     (makeTool as any).calls = [];
-    process.env.PILOT_MOCK = "1";
-    delete process.env.PILOT_HARNESS;
+    process.env.TUPIG_MOCK = "1";
+    delete process.env.TUPIG_HARNESS;
   });
   afterEach(() => {
-    delete process.env.PILOT_HARNESS;
+    delete process.env.TUPIG_HARNESS;
   });
 
   it("独立上下文：不读父消息，只有任务描述一条", async () => {
@@ -322,7 +322,7 @@ describe("SubAgentExecutor 独立上下文与权限", () => {
   });
 
   it("XML harness：文本里的 <tool> 块被解析执行", async () => {
-    process.env.PILOT_HARNESS = "xml";
+    process.env.TUPIG_HARNESS = "xml";
     const tool = makeTool("Read", { readOnly: true });
     const exec = new SubAgentExecutor([tool], {
       stream: multiRound([
@@ -338,7 +338,7 @@ describe("SubAgentExecutor 独立上下文与权限", () => {
 
 describe("Agent 工具", () => {
   beforeEach(() => {
-    process.env.PILOT_MOCK = "1";
+    process.env.TUPIG_MOCK = "1";
   });
 
   it("prompt 必填", async () => {

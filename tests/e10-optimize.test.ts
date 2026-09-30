@@ -59,7 +59,7 @@ describe("needsClarification 缺信息检测", () => {
 
 describe("appendPromptStyle 偏好记忆", () => {
   let dir: string;
-  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), "wllm-style-")); });
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), "tupigcode-style-")); });
   afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
 
   it("追加一行 JSONL", () => {

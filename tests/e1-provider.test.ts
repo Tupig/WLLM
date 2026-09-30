@@ -8,7 +8,7 @@ import { resolveProvider, chatUrl, parseOpenAISSE, type ProviderKind } from "../
 type Env = Record<string, string | undefined>;
 function withEnv(env: Env, fn: () => void) {
   const saved: Env = {};
-  for (const k of ["PILOT_MOCK", "PILOT_PROVIDER", "OPENAI_BASE_URL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"]) {
+  for (const k of ["TUPIG_MOCK", "TUPIG_PROVIDER", "OPENAI_BASE_URL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"]) {
     saved[k] = process.env[k];
     delete process.env[k];
   }
@@ -21,12 +21,12 @@ function withEnv(env: Env, fn: () => void) {
 }
 
 describe("resolveProvider 配置优先级", () => {
-  it("PILOT_MOCK=1 → mock（最高优先级）", () => {
-    withEnv({ PILOT_MOCK: "1", OPENAI_BASE_URL: "http://x", OPENAI_API_KEY: "k", ANTHROPIC_API_KEY: "a" },
+  it("TUPIG_MOCK=1 → mock（最高优先级）", () => {
+    withEnv({ TUPIG_MOCK: "1", OPENAI_BASE_URL: "http://x", OPENAI_API_KEY: "k", ANTHROPIC_API_KEY: "a" },
       () => expect(resolveProvider()).toBe("mock"));
   });
-  it("显式 PILOT_PROVIDER=openai 覆盖 anthropic env", () => {
-    withEnv({ PILOT_PROVIDER: "openai", OPENAI_BASE_URL: "http://x", OPENAI_API_KEY: "k", ANTHROPIC_API_KEY: "a" },
+  it("显式 TUPIG_PROVIDER=openai 覆盖 anthropic env", () => {
+    withEnv({ TUPIG_PROVIDER: "openai", OPENAI_BASE_URL: "http://x", OPENAI_API_KEY: "k", ANTHROPIC_API_KEY: "a" },
       () => expect(resolveProvider()).toBe("openai"));
   });
   it("OPENAI_BASE_URL+KEY → openai", () => {
@@ -40,7 +40,7 @@ describe("resolveProvider 配置优先级", () => {
     withEnv({}, () => expect(() => resolveProvider()).toThrow(/设置|配置/));
   });
   it("显式 provider 非法值 → 抛错", () => {
-    withEnv({ PILOT_PROVIDER: "foo" }, () => expect(() => resolveProvider()).toThrow());
+    withEnv({ TUPIG_PROVIDER: "foo" }, () => expect(() => resolveProvider()).toThrow());
   });
 });
 

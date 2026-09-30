@@ -13,8 +13,8 @@ let home: string;
 let origHome: string | undefined;
 
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "wllm-i1-"));
-  home = fs.mkdtempSync(path.join(os.tmpdir(), "wllm-home-"));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "tupigcode-i1-"));
+  home = fs.mkdtempSync(path.join(os.tmpdir(), "tupigcode-home-"));
   origHome = process.env.HOME;
   process.env.HOME = home;
 });
@@ -29,16 +29,16 @@ describe("resolveRuleLayers 分层（A10）", () => {
     expect(resolveRuleLayers(dir)).toEqual([]);
   });
   it("项目规则层存在", () => {
-    fs.writeFileSync(path.join(dir, ".pilotrules"), "- 用 TS");
+    fs.writeFileSync(path.join(dir, ".tupigcoderules"), "- 用 TS");
     const layers = resolveRuleLayers(dir);
     expect(layers.length).toBe(1);
     expect(layers[0].tier).toBe("project");
     expect(layers[0].content).toContain("用 TS");
   });
   it("全局+项目+就近三层按序", () => {
-    fs.mkdirSync(path.join(home, ".wllm"), { recursive: true });
-    fs.writeFileSync(path.join(home, ".wllm", "rules.md"), "全局规则");
-    fs.writeFileSync(path.join(dir, ".pilotrules"), "项目规则");
+    fs.mkdirSync(path.join(home, ".tupigcode"), { recursive: true });
+    fs.writeFileSync(path.join(home, ".tupigcode", "rules.md"), "全局规则");
+    fs.writeFileSync(path.join(dir, ".tupigcoderules"), "项目规则");
     const sub = path.join(dir, "src");
     fs.mkdirSync(sub, { recursive: true });
     fs.writeFileSync(path.join(sub, "rules.md"), "就近规则");
@@ -84,7 +84,7 @@ describe("validateRuleRefs 引用校验（A11）", () => {
 
 describe("formatLayersForPrompt", () => {
   it("分层带标题且已展开引用", () => {
-    fs.writeFileSync(path.join(dir, ".pilotrules"), "@g.md\n- 规则A");
+    fs.writeFileSync(path.join(dir, ".tupigcoderules"), "@g.md\n- 规则A");
     fs.writeFileSync(path.join(dir, "g.md"), "被引用内容");
     const text = formatLayersForPrompt(resolveRuleLayers(dir));
     expect(text).toContain("## 项目规则");
@@ -117,8 +117,8 @@ describe("memory 先审后存（A11）", () => {
     expect(text).toContain("提交前跑测试");
   });
   it("损坏条目跳过不炸", async () => {
-    fs.mkdirSync(path.join(dir, ".wllm", "memory"), { recursive: true });
-    fs.writeFileSync(path.join(dir, ".wllm", "memory", "entries.jsonl"), "not-json\n{\"category\":\"a\",\"content\":\"b\"}\n");
+    fs.mkdirSync(path.join(dir, ".tupigcode", "memory"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".tupigcode", "memory", "entries.jsonl"), "not-json\n{\"category\":\"a\",\"content\":\"b\"}\n");
     const mems = await loadMemories(dir);
     expect(mems.length).toBe(1);
   });

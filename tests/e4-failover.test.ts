@@ -32,11 +32,11 @@ describe("resolveFallback 云端兜底配置", () => {
   it("只有本地无云端 → null", () => {
     expect(resolveFallback({ OPENAI_BASE_URL: "http://l", OPENAI_API_KEY: "k" } as NodeJS.ProcessEnv)).toBeNull();
   });
-  it("显式禁用 PILOT_FAILOVER=off → null", () => {
-    expect(resolveFallback({ ...local, PILOT_FAILOVER: "off" } as NodeJS.ProcessEnv)).toBeNull();
+  it("显式禁用 TUPIG_FAILOVER=off → null", () => {
+    expect(resolveFallback({ ...local, TUPIG_FAILOVER: "off" } as NodeJS.ProcessEnv)).toBeNull();
   });
   it("anthropic 当前（显式） + 有 openai 配置 → openai 兜底", () => {
-    expect(resolveFallback({ PILOT_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "a", OPENAI_BASE_URL: "http://x", OPENAI_API_KEY: "k" } as NodeJS.ProcessEnv)).toBe("openai");
+    expect(resolveFallback({ TUPIG_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "a", OPENAI_BASE_URL: "http://x", OPENAI_API_KEY: "k" } as NodeJS.ProcessEnv)).toBe("openai");
   });
 });
 

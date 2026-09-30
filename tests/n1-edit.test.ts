@@ -56,7 +56,7 @@ describe("writeWithRollback lint 拦截（A2/A3）", () => {
   let dir: string;
   let file: string;
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), "wllm-rollback-"));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "tupigcode-rollback-"));
     file = path.join(dir, "a.ts");
     fs.writeFileSync(file, "const a = 1;\n");
   });

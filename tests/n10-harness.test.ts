@@ -53,20 +53,20 @@ describe("buildXmlToolSection", () => {
 });
 
 describe("resolveHarness 模式判定", () => {
-  const base = { OPENAI_BASE_URL: "http://x", OPENAI_API_KEY: "k", PILOT_MODEL: "14b" };
-  it("PILOT_HARNESS=off 强制关闭", () => {
-    expect(resolveHarness({ ...base, PILOT_HARNESS: "off" } as any)).toBe("off");
+  const base = { OPENAI_BASE_URL: "http://x", OPENAI_API_KEY: "k", TUPIG_MODEL: "14b" };
+  it("TUPIG_HARNESS=off 强制关闭", () => {
+    expect(resolveHarness({ ...base, TUPIG_HARNESS: "off" } as any)).toBe("off");
   });
-  it("PILOT_HARNESS=xml 强制开启", () => {
-    expect(resolveHarness({ ...base, PILOT_HARNESS: "xml" } as any)).toBe("xml");
+  it("TUPIG_HARNESS=xml 强制开启", () => {
+    expect(resolveHarness({ ...base, TUPIG_HARNESS: "xml" } as any)).toBe("xml");
   });
   it("auto + 本地 openai provider → xml", () => {
     expect(resolveHarness(base as any)).toBe("xml");
   });
   it("auto + anthropic 云端 → native", () => {
-    expect(resolveHarness({ ANTHROPIC_API_KEY: "a", PILOT_MODEL: "claude-x" } as any)).toBe("native");
+    expect(resolveHarness({ ANTHROPIC_API_KEY: "a", TUPIG_MODEL: "claude-x" } as any)).toBe("native");
   });
   it("auto + mock → native", () => {
-    expect(resolveHarness({ PILOT_MOCK: "1" } as any)).toBe("native");
+    expect(resolveHarness({ TUPIG_MOCK: "1" } as any)).toBe("native");
   });
 });

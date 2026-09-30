@@ -1,8 +1,10 @@
 /**
  * F1/F2 压缩强化：阈值梯子+熔断+keep_first+结果预算（A13/A14）
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { ContextCompactor, pickStrategy, type Strategy } from "../src/context/compact/index";
+import type { ApiClient } from "../src/services/api";
+import type Anthropic from "@anthropic-ai/sdk";
 
 describe("pickStrategy 阈值梯子（A13）", () => {
   it("<60% → 不压", () => {
@@ -102,5 +104,91 @@ describe("结果预算迭代（A14）", () => {
     const r = c.compactToBudget(msgs, 100, 30_000, 5);
     expect(r.iterations).toBe(0);
     expect(r.messages).toBe(msgs);
+  });
+});
+
+// ---------- issue #11：autoCompact LLM 摘要接本地 openai 主链路 ----------
+describe("autoCompact LLM 摘要（openai/mock/anthropic 三链路）", () => {
+  const longMsgs = (n: number): Anthropic.MessageParam[] =>
+    Array.from({ length: n }, (_, i) => ({ role: i % 2 ? ("assistant" as const) : ("user" as const), content: `消息内容 ${i}` }));
+
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock);
+    process.env.OPENAI_BASE_URL = "http://127.0.0.1:4100/v1";
+    process.env.OPENAI_API_KEY = "test-key";
+    fetchMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.OPENAI_BASE_URL;
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  it("openai 链路执行 LLM 摘要：结果入消息、保留最近 6 条、请求非流式", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "SUMMARY-MOCK：关键决策A、变更B" } }] }),
+    });
+    const client: ApiClient = { type: "openai" };
+    const c = new ContextCompactor();
+    const msgs = longMsgs(10);
+
+    const out = await c.autoCompact(client, "14b", msgs);
+
+    expect(out[0].role).toBe("user");
+    expect(String(out[0].content)).toContain("[之前的对话摘要]");
+    expect(String(out[0].content)).toContain("SUMMARY-MOCK");
+    expect(out).toHaveLength(8); // 1 摘要 + 1 ack + 最近 6
+    expect(out[out.length - 1]).toEqual(msgs[msgs.length - 1]);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/chat/completions");
+    const body = JSON.parse((init as any).body);
+    expect(body.model).toBe("14b"); // 用当前模型，不写死 haiku
+    expect(body.stream).toBe(false);
+    expect(typeof body.max_tokens).toBe("number");
+  });
+
+  it("openai 摘要失败 → 回退 budgetReduction，不抛且不带摘要标记", async () => {
+    fetchMock.mockRejectedValue(new Error("connect ECONNREFUSED"));
+    const client: ApiClient = { type: "openai" };
+    const c = new ContextCompactor();
+    const msgs = longMsgs(20);
+
+    const out = await c.autoCompact(client, "14b", msgs);
+
+    expect(out.length).toBeLessThan(msgs.length); // 有削减
+    expect(out.some((m) => String(m.content).includes("[之前的对话摘要]"))).toBe(false);
+    expect(out[0]).toEqual(msgs[0]); // keep_first
+  });
+
+  it("mock 链路：固定摘要、不发网络请求", async () => {
+    const client: ApiClient = { type: "mock" };
+    const c = new ContextCompactor();
+    const out = await c.autoCompact(client, "m", longMsgs(8));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(String(out[0].content)).toContain("[之前的对话摘要]");
+  });
+
+  it("anthropic 链路不回归：走 messages.create", async () => {
+    const create = vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: "ANTHROPIC-SUMMARY" }],
+    });
+    const client = { type: "anthropic", anthropic: { messages: { create } } } as unknown as ApiClient;
+    const c = new ContextCompactor();
+    const out = await c.autoCompact(client, "claude-x", longMsgs(8));
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(String(out[0].content)).toContain("ANTHROPIC-SUMMARY");
+    expect((create.mock.calls[0][0] as any).model).toBe("claude-x");
+  });
+
+  it("短消息（<=6）直接返回原引用", async () => {
+    const c = new ContextCompactor();
+    const msgs = longMsgs(3);
+    const out = await c.autoCompact({ type: "openai" }, "14b", msgs);
+    expect(out).toBe(msgs);
   });
 });

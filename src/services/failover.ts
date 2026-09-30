@@ -10,11 +10,11 @@ export function isInfraError(err: unknown): boolean {
 }
 
 export function resolveFallback(env: NodeJS.ProcessEnv = process.env): "anthropic" | "openai" | null {
-  if (env.PILOT_FAILOVER === "off") return null;
+  if (env.TUPIG_FAILOVER === "off") return null;
   const hasOpenAI = !!(env.OPENAI_BASE_URL && env.OPENAI_API_KEY);
   const hasAnthropic = !!env.ANTHROPIC_API_KEY;
-  const currentIsOpenAI = hasOpenAI && !env.PILOT_PROVIDER;
-  const explicit = env.PILOT_PROVIDER;
+  const currentIsOpenAI = hasOpenAI && !env.TUPIG_PROVIDER;
+  const explicit = env.TUPIG_PROVIDER;
   if (explicit === "openai" || (currentIsOpenAI && !explicit)) {
     return hasAnthropic ? "anthropic" : null;
   }

@@ -42,7 +42,7 @@ describe("llm chat 纯函数", () => {
 
 describe("入口 shebang（bin 已消除，直接走 dist）", () => {
   it("6 个 src/cli 入口带 node shebang", () => {
-    for (const n of ["pilot", "llm", "claude-local", "codex-local", "opencode-local", "mlx-local"]) {
+    for (const n of ["tupigcode", "llm", "claude-local", "codex-local", "opencode-local", "mlx-local"]) {
       const body = readFileSync(join(cliRoot(), "src", "cli", `${n}.ts`), "utf-8");
       expect(body.startsWith("#!/usr/bin/env node")).toBe(true);
     }
@@ -54,7 +54,7 @@ describe("入口 shebang（bin 已消除，直接走 dist）", () => {
 
   it("package.json bin 指向 dist/cli", () => {
     const pkg = JSON.parse(readFileSync(join(cliRoot(), "package.json"), "utf-8"));
-    expect(pkg.bin.pilot).toBe("dist/cli/pilot.js");
+    expect(pkg.bin.tupigcode).toBe("dist/cli/tupigcode.js");
     expect(pkg.bin.llm).toBe("dist/cli/llm.js");
     expect(Object.keys(pkg.bin)).toHaveLength(7);
   });

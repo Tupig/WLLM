@@ -34,11 +34,11 @@ export function profileTask(prompt: string, opts: { contextTokens?: number } = {
   return { kind, difficulty: estimateDifficulty(p), tokens: opts.contextTokens ?? 0 };
 }
 
-/** 模型角色制：PILOT_MODEL_<ROLE> > PILOT_ROLE_MODELS(JSON) > 未配置 */
+/** 模型角色制：TUPIG_MODEL_<ROLE> > TUPIG_ROLE_MODELS(JSON) > 未配置 */
 export function resolveRoleModel(role: ModelRole, env: NodeJS.ProcessEnv): string | undefined {
-  const direct = env[`PILOT_MODEL_${role.toUpperCase()}`];
+  const direct = env[`TUPIG_MODEL_${role.toUpperCase()}`];
   if (direct) return direct;
-  const raw = env.PILOT_ROLE_MODELS;
+  const raw = env.TUPIG_ROLE_MODELS;
   if (!raw) return undefined;
   try {
     const parsed = JSON.parse(raw);
@@ -100,8 +100,8 @@ export function routeTask(params: {
   if (params.model) {
     return { model: params.model, provider: providerFor(env), reason: "显式指定 model", contextTokens: ctx };
   }
-  if (env.PILOT_MOCK === "1") {
-    return { model: "mock", provider: "mock", reason: "PILOT_MOCK", contextTokens: ctx };
+  if (env.TUPIG_MOCK === "1") {
+    return { model: "mock", provider: "mock", reason: "TUPIG_MOCK", contextTokens: ctx };
   }
 
   const profile = profileTask(params.prompt, { contextTokens: ctx });
@@ -113,7 +113,7 @@ export function routeTask(params: {
 
   const provider = resolveProvider(env);
   const hasCloud = !!env.ANTHROPIC_API_KEY;
-  const cloudModel = env.PILOT_CLOUD_MODEL || "claude-sonnet-4-20250514";
+  const cloudModel = env.TUPIG_CLOUD_MODEL || "claude-sonnet-4-20250514";
   const diff = profile.difficulty;
 
   if (diff === "hard" && hasCloud) {
@@ -157,7 +157,7 @@ export function appendRouteFeedback(
   f: { model: string; kind: TaskKind; success: boolean; oneShot: boolean; ts?: number },
 ): void {
   try {
-    const dir = join(workDir, ".wllm");
+    const dir = join(workDir, ".tupigcode");
     mkdirSync(dir, { recursive: true });
     appendFileSync(join(dir, "route.log"), JSON.stringify({ ts: f.ts ?? Date.now(), type: "feedback", ...f }) + "\n");
   } catch {
@@ -181,7 +181,7 @@ export function readRouteProfile(workDir: string): RouteProfile {
   const out: RouteProfile = { totalRoutes: 0, byKind: {} };
   let raw = "";
   try {
-    raw = readFileSync(join(workDir, ".wllm", "route.log"), "utf-8");
+    raw = readFileSync(join(workDir, ".tupigcode", "route.log"), "utf-8");
   } catch {
     return out;
   }

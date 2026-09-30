@@ -23,24 +23,24 @@ export type ApiClient = {
 export type ProviderKind = "anthropic" | "openai" | "mock";
 
 /**
- * 解析 provider 优先级：PILOT_MOCK > PILOT_PROVIDER(显式) > OpenAI env > Anthropic env
+ * 解析 provider 优先级：TUPIG_MOCK > TUPIG_PROVIDER(显式) > OpenAI env > Anthropic env
  * 配置缺失时抛中文错误（由调用方决定 exit 或传递）
  */
 export function resolveProvider(env: NodeJS.ProcessEnv = process.env): ProviderKind {
-  if (env.PILOT_MOCK === "1") return "mock";
-  const explicit = env.PILOT_PROVIDER;
+  if (env.TUPIG_MOCK === "1") return "mock";
+  const explicit = env.TUPIG_PROVIDER;
   if (explicit) {
     if (explicit !== "openai" && explicit !== "anthropic" && explicit !== "mock")
-      throw new Error(`PILOT_PROVIDER 非法：${explicit}（可选 openai / anthropic / mock）`);
+      throw new Error(`TUPIG_PROVIDER 非法：${explicit}（可选 openai / anthropic / mock）`);
     if (explicit === "openai" && (!env.OPENAI_BASE_URL || !env.OPENAI_API_KEY))
-      throw new Error("PILOT_PROVIDER=openai 需要同时设置 OPENAI_BASE_URL 和 OPENAI_API_KEY");
+      throw new Error("TUPIG_PROVIDER=openai 需要同时设置 OPENAI_BASE_URL 和 OPENAI_API_KEY");
     if (explicit === "anthropic" && !env.ANTHROPIC_API_KEY)
-      throw new Error("PILOT_PROVIDER=anthropic 需要设置 ANTHROPIC_API_KEY");
+      throw new Error("TUPIG_PROVIDER=anthropic 需要设置 ANTHROPIC_API_KEY");
     return explicit;
   }
   if (env.OPENAI_BASE_URL && env.OPENAI_API_KEY) return "openai";
   if (env.ANTHROPIC_API_KEY) return "anthropic";
-  throw new Error("请设置 ANTHROPIC_API_KEY、OPENAI_BASE_URL+OPENAI_API_KEY、PILOT_PROVIDER 或 PILOT_MOCK=1");
+  throw new Error("请设置 ANTHROPIC_API_KEY、OPENAI_BASE_URL+OPENAI_API_KEY、TUPIG_PROVIDER 或 TUPIG_MOCK=1");
 }
 
 /** baseURL 归一 → 统一 chat/completions 地址（避免 /v1/v1 重复） */
@@ -51,7 +51,7 @@ export function chatUrl(base: string): string {
 }
 
 export function resolveModel(env: NodeJS.ProcessEnv = process.env): string {
-  return env.PILOT_MODEL || DEFAULT_MODEL;
+  return env.TUPIG_MODEL || DEFAULT_MODEL;
 }
 
 export function createClient(): ApiClient {

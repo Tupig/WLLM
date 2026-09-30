@@ -6,28 +6,28 @@ import { resolveMaxContextTokens, MAX_CONTEXT_TOKENS, ADAPTIVE_ITERATIONS_CAP } 
 import { adaptiveIterations, pickStrategy, ContextCompactor } from "../src/context/compact/index";
 
 afterEach(() => {
-  delete process.env.PILOT_MAX_CONTEXT_TOKENS;
+  delete process.env.TUPIG_MAX_CONTEXT_TOKENS;
 });
 
 describe("resolveMaxContextTokens 支持 10M", () => {
   it("默认 30_000", () => {
-    delete process.env.PILOT_MAX_CONTEXT_TOKENS;
+    delete process.env.TUPIG_MAX_CONTEXT_TOKENS;
     expect(resolveMaxContextTokens()).toBe(30_000);
   });
   it("env=10M → 10_000_000", () => {
-    process.env.PILOT_MAX_CONTEXT_TOKENS = "10000000";
+    process.env.TUPIG_MAX_CONTEXT_TOKENS = "10000000";
     expect(resolveMaxContextTokens()).toBe(10_000_000);
   });
   it("env 超 10M → clamp 到 10M", () => {
-    process.env.PILOT_MAX_CONTEXT_TOKENS = "99999999";
+    process.env.TUPIG_MAX_CONTEXT_TOKENS = "99999999";
     expect(resolveMaxContextTokens()).toBe(10_000_000);
   });
   it("env 非法/过小 → 回退默认 30_000", () => {
-    process.env.PILOT_MAX_CONTEXT_TOKENS = "abc";
+    process.env.TUPIG_MAX_CONTEXT_TOKENS = "abc";
     expect(resolveMaxContextTokens()).toBe(30_000);
-    process.env.PILOT_MAX_CONTEXT_TOKENS = "100";
+    process.env.TUPIG_MAX_CONTEXT_TOKENS = "100";
     expect(resolveMaxContextTokens()).toBe(30_000);
-    process.env.PILOT_MAX_CONTEXT_TOKENS = "-5";
+    process.env.TUPIG_MAX_CONTEXT_TOKENS = "-5";
     expect(resolveMaxContextTokens()).toBe(30_000);
   });
   it("MAX_CONTEXT_TOKENS 导出存在且 ≤10M", () => {

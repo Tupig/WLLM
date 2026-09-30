@@ -22,7 +22,7 @@ export type SkillPackage = SkillMeta & {
 };
 
 function skillsRoot(workDir: string): string {
-  return join(workDir, ".wllm", "skills");
+  return join(workDir, ".tupigcode", "skills");
 }
 
 function parseFrontmatter(raw: string): { meta: Record<string, string>; body: string } | null {

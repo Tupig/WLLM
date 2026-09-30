@@ -96,16 +96,16 @@ describe("applyReviewDecision", () => {
       action: "skill", reason: "重复犯错", content: "## 用 X 代替 Y",
     }, "run-1");
     expect(r.applied).toBe(true);
-    expect(existsSync(join(dir, ".wllm", "staging"))).toBe(true);
-    const staged = readdirSync(join(dir, ".wllm", "staging"));
+    expect(existsSync(join(dir, ".tupigcode", "staging"))).toBe(true);
+    const staged = readdirSync(join(dir, ".tupigcode", "staging"));
     expect(staged.some((f) => f.endsWith(".md"))).toBe(true);
-    expect(existsSync(join(dir, ".wllm", "skills"))).toBe(false);
+    expect(existsSync(join(dir, ".tupigcode", "skills"))).toBe(false);
   });
 
   it("rule → staging/rules 草稿", () => {
     const r = applyReviewDecision(dir, { action: "rule", reason: "约定", content: "- 禁止盲跑 rm" }, "run-2");
     expect(r.applied).toBe(true);
-    expect(existsSync(join(dir, ".wllm", "staging", "rules"))).toBe(true);
+    expect(existsSync(join(dir, ".tupigcode", "staging", "rules"))).toBe(true);
   });
 
   it("discard/merge 只留 run 记录，不写草稿", () => {
@@ -113,14 +113,14 @@ describe("applyReviewDecision", () => {
     const r2 = applyReviewDecision(dir, { action: "merge", reason: "保留" }, "run-4");
     expect(r1.applied).toBe(true);
     expect(r2.applied).toBe(true);
-    const runs = readdirSync(join(dir, ".wllm", "runs"));
+    const runs = readdirSync(join(dir, ".tupigcode", "runs"));
     expect(runs.length).toBe(2);
-    expect(existsSync(join(dir, ".wllm", "staging"))).toBe(false);
+    expect(existsSync(join(dir, ".tupigcode", "staging"))).toBe(false);
   });
 
   it("每次应用都写 runs 留痕含 action", () => {
     applyReviewDecision(dir, { action: "merge", reason: "ok" }, "run-9");
-    const run = JSON.parse(readFileSync(join(dir, ".wllm", "runs", "run-9.json"), "utf-8"));
+    const run = JSON.parse(readFileSync(join(dir, ".tupigcode", "runs", "run-9.json"), "utf-8"));
     expect(run.action).toBe("merge");
     expect(run.ts).toBeTruthy();
   });

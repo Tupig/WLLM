@@ -19,12 +19,12 @@ function expand(p: string): string {
 }
 
 export function resolveSandboxPolicy(workDir: string): SandboxPolicy {
-  const extraWrite = (process.env.PILOT_SANDBOX_WRITE ?? "")
+  const extraWrite = (process.env.TUPIG_SANDBOX_WRITE ?? "")
     .split(":")
     .map((s) => s.trim())
     .filter(Boolean)
     .map(expand);
-  const extraDeny = (process.env.PILOT_SANDBOX_DENY ?? "")
+  const extraDeny = (process.env.TUPIG_SANDBOX_DENY ?? "")
     .split(":")
     .map((s) => s.trim())
     .filter(Boolean)

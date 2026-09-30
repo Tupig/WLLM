@@ -115,7 +115,7 @@ describe("buildRepoMap", () => {
     mkdirSync(join(dir, "src"), { recursive: true });
     writeFileSync(join(dir, "src", "a.ts"), "export function cached() {}\n");
     buildRepoMap(dir);
-    expect(existsSync(join(dir, ".wllm", "cache", "repomap.json"))).toBe(true);
+    expect(existsSync(join(dir, ".tupigcode", "cache", "repomap.json"))).toBe(true);
 
     // 未变更 → 命中缓存（不重读文件）
     const first = buildRepoMap(dir);

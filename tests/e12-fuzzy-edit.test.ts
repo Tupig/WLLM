@@ -72,8 +72,8 @@ describe("FileEdit 模糊回退", () => {
 
   it("长行单字符拼写差异（编辑距离 1）模糊命中", async () => {
     const p = path.join(dir, "d.ts");
-    fs.writeFileSync(p, "export const projectName = 'wllm-agent-runtime';\n");
-    const msg = await edit(p, "export const projectName = 'wllm-agent-runtme';", "export const projectName = 'fixed';");
+    fs.writeFileSync(p, "export const projectName = 'tupigcode-agent-runtime';\n");
+    const msg = await edit(p, "export const projectName = 'tupigcode-agent-runtme';", "export const projectName = 'fixed';");
     expect(msg).toContain("模糊");
     expect(fs.readFileSync(p, "utf-8")).toBe("export const projectName = 'fixed';\n");
   });

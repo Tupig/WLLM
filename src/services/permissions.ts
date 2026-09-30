@@ -72,7 +72,7 @@ export async function canUseTool(
     }
     // 唯一可写面：spec/plan 产物（阶段②落盘），路径逃逸在 resolve 后失效
     const artifact = String((input as any).file_path ?? (input as any).path ?? "");
-    if (artifact && (toolName === "Write" || toolName === "Edit") && resolve(artifact).includes("/.wllm/specs/")) {
+    if (artifact && (toolName === "Write" || toolName === "Edit") && resolve(artifact).includes("/.tupigcode/specs/")) {
       return { behavior: "allow", decisionReason: "plan 模式：计划产物可写" };
     }
     return { behavior: "deny", message: "plan 模式下不允许写操作", decisionReason: "plan 模式" };
@@ -92,12 +92,12 @@ export async function canUseTool(
   // MCP 双重审批（issue #10）：通用规则（deny/ask/allow）已判，plan/bypass 已前置拦截
   const mcpDecision = getMcpApproval(toolName);
   if (mcpDecision !== undefined) {
-    const env = process.env.PILOT_MCP_APPROVAL;
+    const env = process.env.TUPIG_MCP_APPROVAL;
     if (env === "off") {
-      return { behavior: "allow", decisionReason: "PILOT_MCP_APPROVAL=off" };
+      return { behavior: "allow", decisionReason: "TUPIG_MCP_APPROVAL=off" };
     }
     if (env === "ask") {
-      return { behavior: "ask", message: `MCP 工具「${toolName}」需要用户确认（PILOT_MCP_APPROVAL=ask）` };
+      return { behavior: "ask", message: `MCP 工具「${toolName}」需要用户确认（TUPIG_MCP_APPROVAL=ask）` };
     }
     if (mcpDecision === "deny") {
       return { behavior: "deny", message: `MCP 工具「${toolName}」已被 mcp.json 审批禁止`, decisionReason: "mcp deny" };

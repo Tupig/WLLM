@@ -54,7 +54,7 @@ export function getExtraTools(): Tool[] {
 }
 
 export function resolveExtraTools(): Tool[] {
-  const raw = process.env.PILOT_EXTRA_TOOLS;
+  const raw = process.env.TUPIG_EXTRA_TOOLS;
   if (!raw || !raw.trim()) return [];
   const wanted = new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
   return getExtraTools().filter((t) => wanted.has(t.name));

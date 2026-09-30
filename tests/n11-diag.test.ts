@@ -21,25 +21,25 @@ function byId<T extends { id: string }>(results: T[], id: string): T | undefined
 
 describe("runDoctor", () => {
   it("mock 环境 provider 检查通过", async () => {
-    process.env.PILOT_MOCK = "1";
-    delete process.env.PILOT_PROVIDER;
+    process.env.TUPIG_MOCK = "1";
+    delete process.env.TUPIG_PROVIDER;
     const r = runDoctor(dir);
     expect(byId(r, "provider")?.level).toBe("ok");
   });
 
-  it("非法 PILOT_PROVIDER → error", () => {
-    delete process.env.PILOT_MOCK;
-    process.env.PILOT_PROVIDER = "bogus";
+  it("非法 TUPIG_PROVIDER → error", () => {
+    delete process.env.TUPIG_MOCK;
+    process.env.TUPIG_PROVIDER = "bogus";
     const r = runDoctor(dir);
     expect(byId(r, "provider")?.level).toBe("error");
-    delete process.env.PILOT_PROVIDER;
-    process.env.PILOT_MOCK = "1";
+    delete process.env.TUPIG_PROVIDER;
+    process.env.TUPIG_MOCK = "1";
   });
 
   it("缺 OPENAI env 时 provider 为 error 且给中文建议", () => {
     const saved = { ...process.env };
-    delete process.env.PILOT_MOCK;
-    delete process.env.PILOT_PROVIDER;
+    delete process.env.TUPIG_MOCK;
+    delete process.env.TUPIG_PROVIDER;
     delete process.env.OPENAI_BASE_URL;
     delete process.env.OPENAI_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
@@ -47,35 +47,35 @@ describe("runDoctor", () => {
       const r = runDoctor(dir);
       const p = byId(r, "provider")!;
       expect(p.level).toBe("error");
-      expect(p.detail).toMatch(/PILOT_MOCK|OPENAI|ANTHROPIC/);
+      expect(p.detail).toMatch(/TUPIG_MOCK|OPENAI|ANTHROPIC/);
     } finally {
       Object.assign(process.env, saved);
-      process.env.PILOT_MOCK = "1";
+      process.env.TUPIG_MOCK = "1";
     }
   });
 
   it("重复 skill / agent 名 → warn", () => {
-    mkdirSync(join(dir, ".wllm", "skills", "a"), { recursive: true });
-    mkdirSync(join(dir, ".wllm", "skills", "b"), { recursive: true });
-    writeFileSync(join(dir, ".wllm", "skills", "a", "SKILL.md"), "---\nname: dup\ndescription: d\n---\nbody");
-    writeFileSync(join(dir, ".wllm", "skills", "b", "SKILL.md"), "---\nname: dup\ndescription: d\n---\nbody");
-    mkdirSync(join(dir, ".wllm", "agents"), { recursive: true });
-    writeFileSync(join(dir, ".wllm", "agents", "x.md"), "---\nname: same\ndescription: d\n---\nb");
-    writeFileSync(join(dir, ".wllm", "agents", "y.md"), "---\nname: same\ndescription: d\n---\nb");
+    mkdirSync(join(dir, ".tupigcode", "skills", "a"), { recursive: true });
+    mkdirSync(join(dir, ".tupigcode", "skills", "b"), { recursive: true });
+    writeFileSync(join(dir, ".tupigcode", "skills", "a", "SKILL.md"), "---\nname: dup\ndescription: d\n---\nbody");
+    writeFileSync(join(dir, ".tupigcode", "skills", "b", "SKILL.md"), "---\nname: dup\ndescription: d\n---\nbody");
+    mkdirSync(join(dir, ".tupigcode", "agents"), { recursive: true });
+    writeFileSync(join(dir, ".tupigcode", "agents", "x.md"), "---\nname: same\ndescription: d\n---\nb");
+    writeFileSync(join(dir, ".tupigcode", "agents", "y.md"), "---\nname: same\ndescription: d\n---\nb");
     const r = runDoctor(dir);
     expect(byId(r, "skill-dup")?.level).toBe("warn");
     expect(byId(r, "agent-dup")?.level).toBe("warn");
   });
 
   it("hooks.json 存在但 JSON 非法 → warn", () => {
-    mkdirSync(join(dir, ".wllm"), { recursive: true });
-    writeFileSync(join(dir, ".wllm", "hooks.json"), "{ not json");
+    mkdirSync(join(dir, ".tupigcode"), { recursive: true });
+    writeFileSync(join(dir, ".tupigcode", "hooks.json"), "{ not json");
     const r = runDoctor(dir);
     expect(byId(r, "hooks")?.level).toBe("warn");
   });
 
   it("每项都有 id/level/label，ok 项含 workdir", () => {
-    process.env.PILOT_MOCK = "1";
+    process.env.TUPIG_MOCK = "1";
     const r = runDoctor(dir);
     expect(r.length).toBeGreaterThanOrEqual(5);
     for (const item of r) {

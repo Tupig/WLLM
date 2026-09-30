@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * cli/pilot.ts — pilot 启动器（原 bin/pilot shell）
+ * cli/tupigcode.ts — tupigcode 启动器（原 bin/tupigcode shell）
  * 无显式凭据时确保本地代理 :4100 就绪，再进入主程序。
  */
 import { spawnSync } from "child_process";
@@ -15,22 +15,22 @@ async function main(): Promise<void> {
   const hasCreds = !!(process.env.OPENAI_BASE_URL || process.env.ANTHROPIC_API_KEY);
 
   if (!hasCreds) {
-    await ensureService("pilot", PORT, [], 60);
-    if (!(await portListening(PORT))) die("pilot", `等待 :${PORT} 就绪超时`);
+    await ensureService("tupigcode", PORT, [], 60);
+    if (!(await portListening(PORT))) die("tupigcode", `等待 :${PORT} 就绪超时`);
     process.env.OPENAI_BASE_URL = `http://127.0.0.1:${PORT}/v1`;
     process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || "mlx-local";
   }
 
   const entry = join(root, "dist", "index.js");
   if (!existsSync(entry)) {
-    info("pilot", "dist/ 不存在，先构建…");
+    info("tupigcode", "dist/ 不存在，先构建…");
     const r = spawnSync("npm", ["run", "--silent", "build"], { cwd: root, stdio: "inherit" });
-    if (r.status !== 0) die("pilot", "构建失败");
+    if (r.status !== 0) die("tupigcode", "构建失败");
   }
 
   const r = spawnSync("node", [entry, ...process.argv.slice(2)], { stdio: "inherit" });
-  if (r.error) die("pilot", r.error.message);
+  if (r.error) die("tupigcode", r.error.message);
   process.exit(r.status ?? 1);
 }
 
-main().catch((e) => die("pilot", e instanceof Error ? e.message : String(e)));
+main().catch((e) => die("tupigcode", e instanceof Error ? e.message : String(e)));

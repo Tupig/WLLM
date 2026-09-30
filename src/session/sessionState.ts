@@ -31,7 +31,7 @@ export interface SessionState {
   metadata: Record<string, unknown>;
 }
 
-const SESSIONS_DIR = ".pilot/sessions";
+const SESSIONS_DIR = ".tupigcode/sessions";
 
 /**
  * 保存会话状态

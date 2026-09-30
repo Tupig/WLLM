@@ -1,11 +1,11 @@
 {
-  "name": "pilot-agent",
+  "name": "tupigcode",
   "version": "1.0.0",
   "description": "AI coding agent modeled after Claude Code's architecture",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "pilot": "dist/cli/pilot.js",
+    "tupigcode": "dist/cli/tupigcode.js",
     "llm": "dist/cli/llm.js",
     "claude-local": "dist/cli/claude-local.js",
     "codex-local": "dist/cli/codex-local.js",
@@ -14,14 +14,14 @@
     "gameqa": "dist/cli/gameqa.js"
   },
   "scripts": {
-    "build": "tsc && node scripts/copy-gameqa-static.mjs && chmod +x dist/cli/pilot.js dist/cli/llm.js dist/cli/claude-local.js dist/cli/codex-local.js dist/cli/opencode-local.js dist/cli/mlx-local.js dist/cli/gameqa.js",
+    "build": "tsc && node scripts/copy-gameqa-static.mjs && chmod +x dist/cli/tupigcode.js dist/cli/llm.js dist/cli/claude-local.js dist/cli/codex-local.js dist/cli/opencode-local.js dist/cli/mlx-local.js dist/cli/gameqa.js",
     "gameqa:serve": "tsx src/cli/gameqa.ts serve --tls off",
     "gameqa:agent": "tsx src/cli/gameqa.ts agent",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dev:pilot": "tsx src/cli/pilot.ts",
+    "dev:tupigcode": "tsx src/cli/tupigcode.ts",
     "dev:llm": "tsx src/cli/llm.ts"
   },
   "dependencies": {

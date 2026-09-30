@@ -3,7 +3,66 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import type { ApiClient } from "../../services/api.js";
+import { chatUrl } from "../../services/api.js";
 import { ADAPTIVE_ITERATIONS_CAP, DEFAULT_MAX_CONTEXT_TOKENS } from "../../engine/constants.js";
+
+const SUMMARY_MAX_TOKENS = 768;
+const SUMMARY_TIMEOUT_MS = 30_000;
+const SUMMARY_SYSTEM = "请简洁地总结对话历史，保留关键决策、代码变更和上下文信息。";
+
+/**
+ * 对话历史 LLM 摘要（三链路统一入口）。
+ * openai（本地主链路）非流式 chat/completions、独立短超时；anthropic 走 messages.create；mock 返回固定串。
+ * 失败抛错，由调用方决定回退策略。
+ */
+export async function llmSummary(
+  client: ApiClient, model: string, toSummarize: Anthropic.MessageParam[],
+): Promise<string> {
+  const userContent = `请总结以下对话：\n${JSON.stringify(toSummarize, null, 2)}`;
+
+  if (client.type === "anthropic" && client.anthropic) {
+    const resp = await client.anthropic.messages.create({
+      model: model || "claude-haiku-4-20250414",
+      max_tokens: SUMMARY_MAX_TOKENS,
+      system: SUMMARY_SYSTEM,
+      messages: [{ role: "user", content: userContent }],
+    });
+    return resp.content[0]?.type === "text" ? resp.content[0].text : "";
+  }
+
+  if (client.type === "mock") return "（mock 链路摘要：此前对话已折叠）";
+
+  if (client.type === "openai") {
+    const base = process.env.OPENAI_BASE_URL;
+    const key = process.env.OPENAI_API_KEY;
+    if (!base || !key) throw new Error("摘要失败：OPENAI_BASE_URL / OPENAI_API_KEY 未设置");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SUMMARY_TIMEOUT_MS);
+    try {
+      const resp = await fetch(chatUrl(base), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: SUMMARY_SYSTEM },
+            { role: "user", content: userContent },
+          ],
+          max_tokens: SUMMARY_MAX_TOKENS,
+          stream: false,
+        }),
+        signal: controller.signal,
+      });
+      if (!resp.ok) throw new Error(`摘要请求返回 ${resp.status}：${await resp.text()}`);
+      const data = (await resp.json()) as { choices?: Array<{ message?: { content?: string } }> };
+      return data.choices?.[0]?.message?.content ?? "";
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  throw new Error(`不支持的 provider：${client.type}`);
+}
 
 export interface CompactionConfig {
   threshold: number;
@@ -133,7 +192,8 @@ export class ContextCompactor {
 
   budgetReduction(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
     if (messages.length <= 4) return messages;
-    return messages.slice(-4);
+    // keep_first：首条是主任务指令，绝不能丢（A14）
+    return [messages[0], ...messages.slice(-3)];
   }
 
   snip(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
@@ -186,27 +246,14 @@ export class ContextCompactor {
     client: ApiClient, model: string, messages: Anthropic.MessageParam[],
   ): Promise<Anthropic.MessageParam[]> {
     if (messages.length <= 6) return messages;
-    if (client.type !== "anthropic" || !client.anthropic) {
-      return this.contextCollapse(messages);
-    }
 
     const recent = messages.slice(-6);
     const toSummarize = messages.slice(0, -6);
     if (toSummarize.length === 0) return messages;
 
     try {
-      const resp = await client.anthropic.messages.create({
-        model: model || "claude-haiku-4-20250414",
-        max_tokens: 1024,
-        system: "请简洁地总结对话历史，保留关键决策、代码变更和上下文信息。",
-        messages: [{
-          role: "user",
-          content: `请总结以下对话：\n${JSON.stringify(toSummarize, null, 2)}`,
-        }],
-      });
-
-      const summary = resp.content[0]?.type === "text" ? resp.content[0].text : "之前的上下文。";
-
+      const summary = await llmSummary(client, model, toSummarize);
+      if (!summary) throw new Error("空摘要");
       return [
         { role: "user", content: `[之前的对话摘要]\n${summary}` },
         { role: "assistant", content: "已收到之前对话的上下文。" },

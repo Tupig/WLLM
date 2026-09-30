@@ -4,7 +4,7 @@
 import { describe, expect, it, beforeAll } from "vitest";
 
 beforeAll(() => {
-  process.env.PILOT_MOCK = "1";
+  process.env.TUPIG_MOCK = "1";
 });
 
 describe("mock 端到端不卡死", () => {

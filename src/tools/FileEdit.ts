@@ -39,7 +39,7 @@ export const FileEditTool = buildTool<string>({
   async checkPermissions(input, ctx) {
     const policy = resolveSandboxPolicy(ctx.workDir);
     if (checkPath(policy, safePath(ctx.workDir, (input as any).file_path), "write") === "deny") {
-      return { behavior: "deny", message: "沙箱策略：目标路径不可写（仅允许工作目录与 PILOT_SANDBOX_WRITE 白名单）" } as any;
+      return { behavior: "deny", message: "沙箱策略：目标路径不可写（仅允许工作目录与 TUPIG_SANDBOX_WRITE 白名单）" } as any;
     }
     return { behavior: "allow", updatedInput: input };
   },

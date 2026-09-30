@@ -1,6 +1,6 @@
 /**
  * engine/mcp.ts — MCP 客户端工具桥（协议/握手交给 @modelcontextprotocol/sdk）
- * 配置：workDir/.wllm/mcp.json（Claude Code 兼容 { mcpServers: { name: { command, args, env } } }）
+ * 配置：workDir/.tupigcode/mcp.json（Claude Code 兼容 { mcpServers: { name: { command, args, env } } }）
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -35,10 +35,10 @@ export function clearMcpApprovals(): void {
   approvalTable.clear();
 }
 
-/** 读取 .wllm/mcp.json；不存在/非法 → null（不抛） */
+/** 读取 .tupigcode/mcp.json；不存在/非法 → null（不抛） */
 export function loadMcpConfig(workDir: string): McpConfigFile | null {
   try {
-    const raw = readFileSync(join(workDir, ".wllm", "mcp.json"), "utf-8");
+    const raw = readFileSync(join(workDir, ".tupigcode", "mcp.json"), "utf-8");
     const parsed = JSON.parse(raw) as McpConfigFile;
     return parsed && typeof parsed === "object" && parsed.mcpServers ? parsed : null;
   } catch {
@@ -106,7 +106,7 @@ export type McpConnection = {
 };
 
 /**
- * 连接全部已配置的 MCP server 并桥接为 pilot Tool。
+ * 连接全部已配置的 MCP server 并桥接为 tupigcode Tool。
  * 单个 server 失败只降级跳过，从不 reject。
  */
 export async function connectMcpServers(workDir: string, onWarn?: (msg: string) => void): Promise<McpConnection> {
@@ -121,7 +121,7 @@ export async function connectMcpServers(workDir: string, onWarn?: (msg: string) 
     entries.map(async ([serverName, entry]) => {
       let client: Client | null = null;
       try {
-        client = new Client({ name: "wllm-pilot", version: "1.0.0" });
+        client = new Client({ name: "tupigcode-tupigcode", version: "1.0.0" });
         const merged = { ...process.env, ...entry.env };
         const env: Record<string, string> = {};
         for (const [k, v] of Object.entries(merged)) if (v !== undefined) env[k] = v;

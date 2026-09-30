@@ -12,8 +12,8 @@ import { MAX_CONTEXT_TOKENS } from "../engine/constants.js";
 export type CheckLevel = "ok" | "warn" | "error";
 export type CheckResult = { id: string; level: CheckLevel; label: string; detail?: string };
 
-const SKILLS_ROOT = (w: string) => join(w, ".wllm", "skills");
-const AGENTS_ROOT = (w: string) => join(w, ".wllm", "agents");
+const SKILLS_ROOT = (w: string) => join(w, ".tupigcode", "skills");
+const AGENTS_ROOT = (w: string) => join(w, ".tupigcode", "agents");
 
 function duplicateNames(pairs: Array<[string, string]>): string[] {
   const seen = new Map<string, number>();
@@ -23,7 +23,7 @@ function duplicateNames(pairs: Array<[string, string]>): string[] {
 
 function scanAgentNames(workDir: string): Array<[string, string]> {
   const out: Array<[string, string]> = [];
-  for (const root of [AGENTS_ROOT(workDir), join(process.env.HOME ?? "", ".wllm", "agents")]) {
+  for (const root of [AGENTS_ROOT(workDir), join(process.env.HOME ?? "", ".tupigcode", "agents")]) {
     if (!existsSync(root)) continue;
     try {
       for (const e of readdirSync(root)) {
@@ -52,24 +52,24 @@ export function runDoctor(workDir: string, env: NodeJS.ProcessEnv = process.env)
   // provider
   try {
     const kind = resolveProvider(env as NodeJS.ProcessEnv);
-    out.push({ id: "provider", level: "ok", label: "模型 Provider", detail: `${kind} / ${env.PILOT_MODEL || resolveModel(env as NodeJS.ProcessEnv)}` });
+    out.push({ id: "provider", level: "ok", label: "模型 Provider", detail: `${kind} / ${env.TUPIG_MODEL || resolveModel(env as NodeJS.ProcessEnv)}` });
   } catch (e) {
     out.push({ id: "provider", level: "error", label: "模型 Provider", detail: e instanceof Error ? e.message : String(e) });
   }
 
   // 配置项
   const cfgIssues: string[] = [];
-  if (env.PILOT_HARNESS && !["xml", "native", "off", "auto"].includes(env.PILOT_HARNESS)) {
-    cfgIssues.push(`PILOT_HARNESS 非法：${env.PILOT_HARNESS}`);
+  if (env.TUPIG_HARNESS && !["xml", "native", "off", "auto"].includes(env.TUPIG_HARNESS)) {
+    cfgIssues.push(`TUPIG_HARNESS 非法：${env.TUPIG_HARNESS}`);
   }
-  if (env.PILOT_MAX_CONTEXT_TOKENS && !/^\d+$/.test(env.PILOT_MAX_CONTEXT_TOKENS)) {
-    cfgIssues.push(`PILOT_MAX_CONTEXT_TOKENS 非数字：${env.PILOT_MAX_CONTEXT_TOKENS}`);
+  if (env.TUPIG_MAX_CONTEXT_TOKENS && !/^\d+$/.test(env.TUPIG_MAX_CONTEXT_TOKENS)) {
+    cfgIssues.push(`TUPIG_MAX_CONTEXT_TOKENS 非数字：${env.TUPIG_MAX_CONTEXT_TOKENS}`);
   }
   out.push({
     id: "config",
     level: cfgIssues.length ? "warn" : "ok",
     label: "环境配置",
-    detail: cfgIssues.length ? cfgIssues.join("；") : `harness=${env.PILOT_HARNESS || "auto"} 上下文=${MAX_CONTEXT_TOKENS}`,
+    detail: cfgIssues.length ? cfgIssues.join("；") : `harness=${env.TUPIG_HARNESS || "auto"} 上下文=${MAX_CONTEXT_TOKENS}`,
   });
 
   // 工具
@@ -111,9 +111,9 @@ export function runDoctor(workDir: string, env: NodeJS.ProcessEnv = process.env)
   });
 
   // hooks
-  const hooksFile = join(workDir, ".wllm", "hooks.json");
+  const hooksFile = join(workDir, ".tupigcode", "hooks.json");
   if (!existsSync(hooksFile)) {
-    out.push({ id: "hooks", level: "ok", label: "Hooks 配置", detail: "未配置（.wllm/hooks.json 不存在）" });
+    out.push({ id: "hooks", level: "ok", label: "Hooks 配置", detail: "未配置（.tupigcode/hooks.json 不存在）" });
   } else {
     try {
       JSON.parse(readFileSync(hooksFile, "utf-8"));
@@ -124,7 +124,7 @@ export function runDoctor(workDir: string, env: NodeJS.ProcessEnv = process.env)
   }
 
   // 缓存体积
-  const cacheFile = join(workDir, ".wllm", "cache", "repomap.json");
+  const cacheFile = join(workDir, ".tupigcode", "cache", "repomap.json");
   if (existsSync(cacheFile)) {
     try {
       const mb = statSync(cacheFile).size / (1024 * 1024);
@@ -132,7 +132,7 @@ export function runDoctor(workDir: string, env: NodeJS.ProcessEnv = process.env)
         id: "cache",
         level: mb > 5 ? "warn" : "ok",
         label: "repo 地图缓存",
-        detail: `${mb.toFixed(2)} MB${mb > 5 ? "（>5MB，建议删 .wllm/cache 重建）" : ""}`,
+        detail: `${mb.toFixed(2)} MB${mb > 5 ? "（>5MB，建议删 .tupigcode/cache 重建）" : ""}`,
       });
     } catch {
       out.push({ id: "cache", level: "ok", label: "repo 地图缓存", detail: "不可读" });
@@ -220,7 +220,7 @@ export function initAgentMd(
     "## 约定",
     "- 修改前先读取相邻代码，遵循现有风格",
     "- 不添加不必要的注释",
-    "- 项目状态与计划落 `.wllm/specs/`（`/spec new`），技能放 `.wllm/skills/`，子代理定义放 `.wllm/agents/`",
+    "- 项目状态与计划落 `.tupigcode/specs/`（`/spec new`），技能放 `.tupigcode/skills/`，子代理定义放 `.tupigcode/agents/`",
     "",
   ].join("\n");
 

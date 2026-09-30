@@ -26,7 +26,7 @@ const VERSION: string = (requirePkg("../package.json") as { version: string }).v
 function printBanner(): void {
   console.log(chalk.cyan.bold(`
 ╔══════════════════════════════════════════╗
-║     🤖 Pilot Agent v${VERSION}              ║
+║     🤖 TupigCode v${VERSION}              ║
 ║     AI 编程助手（Claude Code 架构）       ║
 ╚══════════════════════════════════════════╝
 `));
@@ -125,7 +125,7 @@ async function startREPL(): Promise<void> {
     }
     if (input === "/skills") {
       const skills = loadSkills(appStore.getState().workDir);
-      if (skills.length === 0) console.log(chalk.gray("暂无技能（.wllm/skills/<name>/SKILL.md）。\n"));
+      if (skills.length === 0) console.log(chalk.gray("暂无技能（.tupigcode/skills/<name>/SKILL.md）。\n"));
       else {
         for (const sk of skills) console.log(chalk.gray(`  ${sk.name}  —  ${sk.description}`));
         console.log(chalk.gray("\n加载：/skill <name>\n"));
@@ -237,7 +237,7 @@ async function startREPL(): Promise<void> {
         for await (const msg of query({
           prompt,
           initialMessages: sessionHistory,
-          options: { cwd: workDir, model: process.env.PILOT_MODEL, initialMode: "plan" },
+          options: { cwd: workDir, model: process.env.TUPIG_MODEL, initialMode: "plan" },
         })) {
           if (msg.type === "session") { sessionHistory = msg.messages; continue; }
           handleSDKMessage(msg);
@@ -271,7 +271,7 @@ async function startREPL(): Promise<void> {
         for await (const msg of query({
           prompt,
           initialMessages: sessionHistory,
-          options: { cwd: workDir, model: process.env.PILOT_MODEL, initialMode: "plan" },
+          options: { cwd: workDir, model: process.env.TUPIG_MODEL, initialMode: "plan" },
         })) {
           if (msg.type !== "assistant") continue;
           for (const b of (msg.message?.content ?? []) as any[]) {
@@ -384,7 +384,7 @@ async function startREPL(): Promise<void> {
       return;
     }
 
-    const styleDir = join(process.cwd(), ".wllm", "memory");
+    const styleDir = join(process.cwd(), ".tupigcode", "memory");
     let finalInput: string | undefined;
     const optCmd = parseOptimizeCommand(input);
     if (optCmd !== null) {
@@ -410,17 +410,17 @@ async function startREPL(): Promise<void> {
         rl.resume();
         return;
       }
-    } else if (process.env.PILOT_PROMPT_OPT === "1" && needsClarification(input)) {
+    } else if (process.env.TUPIG_PROMPT_OPT === "1" && needsClarification(input)) {
       const auto = optimizePrompt(input);
       if (auto !== input) {
-        console.log(chalk.gray("[auto-optimize] 已自动补结构（PILOT_PROMPT_OPT=1）"));
+        console.log(chalk.gray("[auto-optimize] 已自动补结构（TUPIG_PROMPT_OPT=1）"));
         appendPromptStyle(styleDir, { action: "accept", prompt: input, reason: "auto 模式" });
         finalInput = auto;
       }
     }
 
     try {
-      const opts = { cwd: process.cwd(), model: process.env.PILOT_MODEL };
+      const opts = { cwd: process.cwd(), model: process.env.TUPIG_MODEL };
       for await (const msg of query({
         prompt: finalInput ?? input,
         initialMessages: sessionHistory,
@@ -445,7 +445,7 @@ async function startREPL(): Promise<void> {
 async function runSingle(prompt: string): Promise<void> {
   for await (const msg of query({
     prompt,
-    options: { cwd: process.cwd(), model: process.env.PILOT_MODEL },
+    options: { cwd: process.cwd(), model: process.env.TUPIG_MODEL },
   })) {
     handleSDKMessage(msg);
   }
@@ -454,8 +454,8 @@ async function runSingle(prompt: string): Promise<void> {
 function main(): void {
   const program = new Command();
   program
-    .name("pilot")
-    .description("🤖 Pilot Agent — AI 编程助手（Claude Code 架构）")
+    .name("tupigcode")
+    .description("🤖 TupigCode — AI 编程助手（Claude Code 架构）")
     .version(VERSION);
 
   program
@@ -470,7 +470,7 @@ function main(): void {
 
   program.parse();
   const opts = program.opts();
-  if (opts.model) process.env.PILOT_MODEL = opts.model;
+  if (opts.model) process.env.TUPIG_MODEL = opts.model;
 
   const permMode = opts.yolo ? "bypassPermissions" : opts.plan ? "plan" : opts.permissionMode;
   if (permMode) {
@@ -485,8 +485,8 @@ function main(): void {
     }));
   }
 
-  if (!process.env.ANTHROPIC_API_KEY && !process.env.PILOT_MOCK && !process.env.OPENAI_BASE_URL) {
-    console.error(chalk.red("错误：请设置 ANTHROPIC_API_KEY、OPENAI_BASE_URL+OPENAI_API_KEY 或 PILOT_MOCK=1"));
+  if (!process.env.ANTHROPIC_API_KEY && !process.env.TUPIG_MOCK && !process.env.OPENAI_BASE_URL) {
+    console.error(chalk.red("错误：请设置 ANTHROPIC_API_KEY、OPENAI_BASE_URL+OPENAI_API_KEY 或 TUPIG_MOCK=1"));
     process.exit(1);
   }
 

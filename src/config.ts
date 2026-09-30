@@ -1,14 +1,14 @@
 /**
  * 配置文件管理
  *
- * 支持项目级配置文件 .pilot/config.json
- * 以及全局配置 ~/.pilot/config.json
+ * 支持项目级配置文件 .tupigcode/config.json
+ * 以及全局配置 ~/.tupigcode/config.json
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
-export interface PilotConfig {
+export interface TupigCodeConfig {
   /** 默认模型 */
   model?: string;
   /** 最大输出 Token */
@@ -44,14 +44,14 @@ export interface PilotConfig {
   [key: string]: unknown;
 }
 
-const GLOBAL_CONFIG_DIR = join(homedir(), ".pilot");
+const GLOBAL_CONFIG_DIR = join(homedir(), ".tupigcode");
 const GLOBAL_CONFIG_FILE = join(GLOBAL_CONFIG_DIR, "config.json");
 const PROJECT_CONFIG_FILE = "config.json";
 
 /**
  * 全局默认配置
  */
-const DEFAULT_CONFIG: PilotConfig = {
+const DEFAULT_CONFIG: TupigCodeConfig = {
   model: "claude-sonnet-4-20250514",
   maxTokens: 8192,
   maxTurns: 20,
@@ -63,15 +63,15 @@ const DEFAULT_CONFIG: PilotConfig = {
 /**
  * 加载全局配置
  */
-export function loadGlobalConfig(): PilotConfig {
+export function loadGlobalConfig(): TupigCodeConfig {
   return loadConfigFromFile(GLOBAL_CONFIG_FILE);
 }
 
 /**
  * 加载项目配置
  */
-export function loadProjectConfig(workDir: string): PilotConfig {
-  const projectConfigPath = join(workDir, ".pilot", PROJECT_CONFIG_FILE);
+export function loadProjectConfig(workDir: string): TupigCodeConfig {
+  const projectConfigPath = join(workDir, ".tupigcode", PROJECT_CONFIG_FILE);
   return loadConfigFromFile(projectConfigPath);
 }
 
@@ -79,9 +79,9 @@ export function loadProjectConfig(workDir: string): PilotConfig {
  * 合并配置（项目配置优先于全局配置）
  */
 export function mergeConfigs(
-  globalConfig: PilotConfig,
-  projectConfig: PilotConfig,
-): PilotConfig {
+  globalConfig: TupigCodeConfig,
+  projectConfig: TupigCodeConfig,
+): TupigCodeConfig {
   return {
     ...DEFAULT_CONFIG,
     ...globalConfig,
@@ -92,7 +92,7 @@ export function mergeConfigs(
 /**
  * 获取完整配置
  */
-export function getConfig(workDir: string): PilotConfig {
+export function getConfig(workDir: string): TupigCodeConfig {
   const globalConfig = loadGlobalConfig();
   const projectConfig = loadProjectConfig(workDir);
   return mergeConfigs(globalConfig, projectConfig);
@@ -101,8 +101,8 @@ export function getConfig(workDir: string): PilotConfig {
 /**
  * 保存项目配置
  */
-export function saveProjectConfig(workDir: string, config: PilotConfig): void {
-  const configDir = join(workDir, ".pilot");
+export function saveProjectConfig(workDir: string, config: TupigCodeConfig): void {
+  const configDir = join(workDir, ".tupigcode");
   if (!existsSync(configDir)) {
     mkdirSync(configDir, { recursive: true });
   }
@@ -113,7 +113,7 @@ export function saveProjectConfig(workDir: string, config: PilotConfig): void {
 /**
  * 保存全局配置
  */
-export function saveGlobalConfig(config: PilotConfig): void {
+export function saveGlobalConfig(config: TupigCodeConfig): void {
   if (!existsSync(GLOBAL_CONFIG_DIR)) {
     mkdirSync(GLOBAL_CONFIG_DIR, { recursive: true });
   }
@@ -123,11 +123,11 @@ export function saveGlobalConfig(config: PilotConfig): void {
 /**
  * 从文件加载配置
  */
-function loadConfigFromFile(filePath: string): PilotConfig {
+function loadConfigFromFile(filePath: string): TupigCodeConfig {
   if (!existsSync(filePath)) return {};
   try {
     const content = readFileSync(filePath, "utf-8");
-    return JSON.parse(content) as PilotConfig;
+    return JSON.parse(content) as TupigCodeConfig;
   } catch {
     return {};
   }
@@ -136,8 +136,8 @@ function loadConfigFromFile(filePath: string): PilotConfig {
 /**
  * 格式化配置为可读文本
  */
-export function formatConfig(config: PilotConfig): string {
-  const lines: string[] = ["Pilot 配置："];
+export function formatConfig(config: TupigCodeConfig): string {
+  const lines: string[] = ["TupigCode 配置："];
 
   if (config.model) lines.push(`  模型：${config.model}`);
   if (config.maxTokens) lines.push(`  最大 Token：${config.maxTokens}`);

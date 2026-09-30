@@ -19,8 +19,8 @@ function ctx(mode: ToolPermissionContext["mode"] = "default"): ToolPermissionCon
 }
 
 function writeMcpJson(workDir: string, servers: Record<string, any>) {
-  fs.mkdirSync(path.join(workDir, ".wllm"), { recursive: true });
-  fs.writeFileSync(path.join(workDir, ".wllm", "mcp.json"), JSON.stringify({ mcpServers: servers }));
+  fs.mkdirSync(path.join(workDir, ".tupigcode"), { recursive: true });
+  fs.writeFileSync(path.join(workDir, ".tupigcode", "mcp.json"), JSON.stringify({ mcpServers: servers }));
 }
 
 beforeEach(() => {
@@ -29,7 +29,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete process.env.PILOT_MCP_APPROVAL;
+  delete process.env.TUPIG_MCP_APPROVAL;
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -98,16 +98,16 @@ describe("canUseTool × MCP 审批", () => {
     expect((await canUseTool("mcp_bare_touch", {}, touch, ctx())).behavior).toBe("ask");
   });
 
-  it("PILOT_MCP_APPROVAL=off → 未配置的可写 MCP 工具放行", async () => {
-    process.env.PILOT_MCP_APPROVAL = "off";
+  it("TUPIG_MCP_APPROVAL=off → 未配置的可写 MCP 工具放行", async () => {
+    process.env.TUPIG_MCP_APPROVAL = "off";
     writeMcpJson(dir, { bare: { command: "node", args: [FIXTURE] } });
     conn = await connectMcpServers(dir);
     const touch = conn.tools.find((t) => t.name === "mcp_bare_touch")!;
     expect((await canUseTool("mcp_bare_touch", {}, touch, ctx())).behavior).toBe("allow");
   });
 
-  it("PILOT_MCP_APPROVAL=ask → 未配置的只读 MCP 工具也强制问", async () => {
-    process.env.PILOT_MCP_APPROVAL = "ask";
+  it("TUPIG_MCP_APPROVAL=ask → 未配置的只读 MCP 工具也强制问", async () => {
+    process.env.TUPIG_MCP_APPROVAL = "ask";
     writeMcpJson(dir, { bare: { command: "node", args: [FIXTURE] } });
     conn = await connectMcpServers(dir);
     const peek = conn.tools.find((t) => t.name === "mcp_bare_peek")!;
@@ -115,7 +115,7 @@ describe("canUseTool × MCP 审批", () => {
   });
 
   it("env 开关不误伤非 MCP 工具", async () => {
-    process.env.PILOT_MCP_APPROVAL = "off";
+    process.env.TUPIG_MCP_APPROVAL = "off";
     const bash = { name: "Bash", isReadOnly: (i: any) => String(i.command).startsWith("ls"), isDestructive: () => false } as any;
     expect((await canUseTool("Bash", { command: "rm -rf /" }, bash, ctx())).behavior).toBe("ask");
   });

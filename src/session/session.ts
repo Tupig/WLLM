@@ -12,7 +12,7 @@ export type SessionMeta = {
 };
 
 function sessionsDir(workDir: string): string {
-  return join(workDir, ".wllm", "sessions");
+  return join(workDir, ".tupigcode", "sessions");
 }
 
 export async function saveSessionMessages(

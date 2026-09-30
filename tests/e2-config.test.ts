@@ -1,5 +1,5 @@
 /**
- * E2 本地模型参数测试：30k 上下文 / 1800s 超时 / 默认模型 + PILOT_MODEL 覆盖
+ * E2 本地模型参数测试：30k 上下文 / 1800s 超时 / 默认模型 + TUPIG_MODEL 覆盖
  */
 import { describe, expect, it } from "vitest";
 import { MAX_CONTEXT_TOKENS, API_FETCH_TIMEOUT_MS, DEFAULT_MODEL } from "../src/engine/constants";
@@ -16,10 +16,10 @@ describe("E2 模型参数", () => {
     expect(DEFAULT_MODEL).toBe("14b");
     expect(DEFAULT_MODEL).not.toMatch(/^claude-/);
   });
-  it("PILOT_MODEL 覆盖默认", () => {
-    expect(resolveModel({ PILOT_MODEL: "8b" } as NodeJS.ProcessEnv)).toBe("8b");
+  it("TUPIG_MODEL 覆盖默认", () => {
+    expect(resolveModel({ TUPIG_MODEL: "8b" } as NodeJS.ProcessEnv)).toBe("8b");
   });
-  it("无 PILOT_MODEL 回落默认", () => {
+  it("无 TUPIG_MODEL 回落默认", () => {
     expect(resolveModel({} as NodeJS.ProcessEnv)).toBe(DEFAULT_MODEL);
   });
 });
