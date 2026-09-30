@@ -26,6 +26,8 @@ export interface HookContext {
   sessionId: string;
   /** 压缩事件触发方：manual | auto（issue #26） */
   source?: string;
+  /** 工具执行纯耗时 ms（不含权限询问与 PreToolUse，issue #31） */
+  durationMs?: number;
 }
 
 export type HookResult = {

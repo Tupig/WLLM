@@ -727,6 +727,7 @@ export class QueryEngine {
           toolName: buf.name, input, output: resultStr,
           turnNumber: loopState.turnCount,
           sessionId: appStore.getState().sessionId,
+          durationMs: toolDuration,
         });
 
         // 自动快照（issue #14）：写类工具成功后（防抖 5s；无改动/非 git 静默）
