@@ -60,7 +60,7 @@ function printHelp(): void {
   /cost     查看 Token 用量
   /model    查看当前模型
   /checkpoint [new|list|rollback <id>]  会话检查点/回滚
-  /rewind [chat|code|all] [id]         三档回卷（默认 all，缺省 id=最新）
+  /rewind [chat|code|all] [id|label]   三档回卷（默认 all，缺省=最新，支持名称匹配）
   /apply                              落盘 plan 模式暂存改动
   /hooks [clear]                      查看/清除 hook 信任（TOFU）
   /permissions [clear]                查看/清除「总是允许」持久规则

@@ -55,6 +55,18 @@ export async function listCheckpoints(workDir: string): Promise<CheckpointRecord
   }
 }
 
+/** 目标解析（issue #39）：id 精确优先；否则 label 精确（recs 为新→旧，首个即最新） */
+export function resolveCheckpointTarget(
+  recs: CheckpointRecord[],
+  arg: string,
+): { target: CheckpointRecord; matchedBy: "id" | "label" } | null {
+  const byId = recs.find((r) => r.id === arg);
+  if (byId) return { target: byId, matchedBy: "id" };
+  const byLabel = recs.find((r) => r.label === arg);
+  if (byLabel) return { target: byLabel, matchedBy: "label" };
+  return null;
+}
+
 export async function snapshot(workDir: string, label: string): Promise<CheckpointRecord | null> {
   if (!(await isGitRepo(workDir))) return null;
   const status = await git(workDir, ["status", "--porcelain"]);
@@ -82,10 +94,11 @@ export async function rollbackCheckpoint(
     return { ok: false, message: "不是 git 仓库，无法回滚" };
   }
   const recs = await listCheckpoints(workDir);
-  const target = recs.find((r) => r.id === id);
-  if (!target) {
+  const hit = resolveCheckpointTarget(recs, id);
+  if (!hit) {
     return { ok: false, message: `检查点不存在：${id}` };
   }
+  const { target, matchedBy } = hit;
 
   await snapshot(workDir, "safety before rollback");
 
@@ -93,7 +106,8 @@ export async function rollbackCheckpoint(
   // untracked 文件不受 reset --hard 影响；现场已被 safety 快照收录，clean 使工作区精确对齐目标点
   // -e .tupigcode：运行时数据（检查点索引/消息快照）必须在任何仓都幸存
   await git(workDir, ["clean", "-fd", "-e", ".tupigcode"]);
-  return { ok: true, message: `已回滚到检查点 ${id}（${target.label}）` };
+  const by = matchedBy === "label" ? "，按名称匹配" : "";
+  return { ok: true, message: `已回滚到检查点 ${target.id}（${target.label}${by}）` };
 }
 
 // ---------- issue #14：自动快照 + /rewind 三档 ----------
@@ -153,15 +167,16 @@ export async function rewind(
   mode: RewindMode,
 ): Promise<RewindResult> {
   const recs = await listCheckpoints(workDir);
-  const target = recs.find((r) => r.id === id);
-  if (!target) return { ok: false, message: `检查点不存在：${id}` };
+  const hit = resolveCheckpointTarget(recs, id);
+  if (!hit) return { ok: false, message: `检查点不存在：${id}` };
+  const target = hit.target;
 
   const parts: string[] = [];
   let messages: unknown[] | undefined;
 
   if (mode === "chat" || mode === "all") {
     try {
-      messages = JSON.parse(await readFile(msgSnapPath(workDir, id), "utf-8")) as unknown[];
+      messages = JSON.parse(await readFile(msgSnapPath(workDir, target.id), "utf-8")) as unknown[];
       parts.push(`对话回卷 ${Array.isArray(messages) ? messages.length : 0} 条`);
     } catch {
       parts.push("无消息快照");
@@ -169,7 +184,7 @@ export async function rewind(
   }
 
   if (mode === "code" || mode === "all") {
-    const rb = await rollbackCheckpoint(workDir, id);
+    const rb = await rollbackCheckpoint(workDir, target.id);
     if (!rb.ok) return { ok: false, message: rb.message };
     parts.push("代码已恢复");
   }
