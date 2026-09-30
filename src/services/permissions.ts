@@ -54,6 +54,31 @@ function evaluateRules(
   return null;
 }
 
+const WRITE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
+
+/** 命中自身护栏文件（skills/mcp/hooks/config）的写操作 → 强制复审（issue #12） */
+export function isSelfModifyWrite(toolName: string, input: Record<string, unknown>): boolean {
+  if (toolName === "Bash") {
+    const cmd = String(input.command ?? "");
+    return (
+      cmd.includes(".tupigcode/skills") ||
+      cmd.includes(".tupigcode/mcp.json") ||
+      cmd.includes(".tupigcode/config.json") ||
+      (!!process.env.TUPIG_HOOKS_FILE && cmd.includes(process.env.TUPIG_HOOKS_FILE))
+    );
+  }
+  if (!WRITE_TOOLS.has(toolName)) return false;
+
+  const raw = String((input as any).file_path ?? (input as any).path ?? (input as any).notebook_path ?? "");
+  if (!raw) return false;
+  const p = resolve(raw);
+  if (p.includes("/.tupigcode/skills/")) return true;
+  if (p.endsWith("/.tupigcode/mcp.json")) return true;
+  if (p.endsWith("/.tupigcode/config.json")) return true;
+  if (process.env.TUPIG_HOOKS_FILE && p === resolve(process.env.TUPIG_HOOKS_FILE)) return true;
+  return false;
+}
+
 export async function canUseTool(
   toolName: string,
   input: Record<string, unknown>,
@@ -81,6 +106,10 @@ export async function canUseTool(
   const ruleResult = evaluateRules(toolName, input, ctx);
   if (ruleResult === "deny") {
     return { behavior: "deny", message: `工具「${toolName}」已被规则禁止`, decisionReason: "deny 规则" };
+  }
+  // 自修改面（issue #12）：写自身护栏强制复审，绕过 alwaysAllow；deny/ask 规则仍在其前后生效
+  if (isSelfModifyWrite(toolName, input)) {
+    return { behavior: "ask", message: `自修改面（护栏/技能/配置文件）需要确认：${toolName}` };
   }
   if (ruleResult === "ask") {
     return { behavior: "ask", message: `工具「${toolName}」需要审批` };

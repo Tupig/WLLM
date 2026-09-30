@@ -86,3 +86,74 @@ describe("canUseTool 分级审批（A7）", () => {
     expect(r.behavior).toBe("deny");
   });
 });
+
+// ---------- issue #12：自修改面强制复审 ----------
+describe("自修改面强制复审（A7 补全）", () => {
+  const writeTool = {
+    name: "Write",
+    isReadOnly: () => false,
+    isDestructive: () => true,
+  } as any;
+  const editTool = {
+    name: "Edit",
+    isReadOnly: () => false,
+    isDestructive: () => true,
+  } as any;
+  const readTool = { name: "Read", isReadOnly: () => true } as any;
+
+  function allowCtx(): ToolPermissionContext {
+    const c = ctx("default");
+    c.alwaysAllowRules.set("w", [{ pattern: "Write(*)", source: "test" }]);
+    c.alwaysAllowRules.set("e", [{ pattern: "Edit(*)", source: "test" }]);
+    c.alwaysAllowRules.set("b", [{ pattern: "Bash(*)", source: "test" }]);
+    return c;
+  }
+
+  it("Write 技能文件：allow 规则也被强制 ask", async () => {
+    const r = await canUseTool("Write", { file_path: "/repo/.tupigcode/skills/x/SKILL.md", content: "y" }, writeTool, allowCtx());
+    expect(r.behavior).toBe("ask");
+  });
+  it("Edit mcp.json → 强制 ask", async () => {
+    const r = await canUseTool("Edit", { file_path: "/repo/.tupigcode/mcp.json" }, editTool, allowCtx());
+    expect(r.behavior).toBe("ask");
+  });
+  it("Write 全局 config.json → 强制 ask", async () => {
+    const r = await canUseTool("Write", { file_path: "/Users/u/.tupigcode/config.json", content: "{}" }, writeTool, allowCtx());
+    expect(r.behavior).toBe("ask");
+  });
+  it("Bash command 写自修改面 → 强制 ask", async () => {
+    const r = await canUseTool("Bash", { command: "echo k >> /repo/.tupigcode/skills/a.md" }, bashTool, allowCtx());
+    expect(r.behavior).toBe("ask");
+  });
+  it("hooks 文件（TUPIG_HOOKS_FILE 指向任意路径）→ 强制 ask", async () => {
+    process.env.TUPIG_HOOKS_FILE = "/tmp/my-hooks.json";
+    try {
+      const r = await canUseTool("Write", { file_path: "/tmp/my-hooks.json", content: "{}" }, writeTool, allowCtx());
+      expect(r.behavior).toBe("ask");
+    } finally {
+      delete process.env.TUPIG_HOOKS_FILE;
+    }
+  });
+  it("普通源文件 + allow 规则 → 不误伤", async () => {
+    const r = await canUseTool("Write", { file_path: "/repo/src/a.ts", content: "x" }, writeTool, allowCtx());
+    expect(r.behavior).toBe("allow");
+  });
+  it("只读 Read 自修改面 → allow（只读不经写检查）", async () => {
+    const r = await canUseTool("Read", { file_path: "/repo/.tupigcode/skills/x/SKILL.md" }, readTool, allowCtx());
+    expect(r.behavior).toBe("allow");
+  });
+  it("deny 规则优先于自修改面 ask", async () => {
+    const c = allowCtx();
+    c.alwaysDenyRules.set("d", [{ pattern: "Write", source: "test" }]);
+    const r = await canUseTool("Write", { file_path: "/repo/.tupigcode/skills/x/SKILL.md" }, writeTool, c);
+    expect(r.behavior).toBe("deny");
+  });
+  it("bypassPermissions 模式 → 仍放行", async () => {
+    const r = await canUseTool("Write", { file_path: "/repo/.tupigcode/skills/x/SKILL.md" }, writeTool, ctx("bypassPermissions"));
+    expect(r.behavior).toBe("allow");
+  });
+  it("plan 模式 specs 产物特例不回归", async () => {
+    const r = await canUseTool("Write", { file_path: "/repo/.tupigcode/specs/s1.md", content: "x" }, writeTool, ctx("plan"));
+    expect(r.behavior).toBe("allow");
+  });
+});
