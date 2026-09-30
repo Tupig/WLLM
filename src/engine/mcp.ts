@@ -9,8 +9,31 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { buildTool, type Tool, type ToolUseContext, type CanUseToolFn } from "./Tool.js";
 
-export type McpServerEntry = { command: string; args?: string[]; env?: Record<string, string> };
+export type McpApproval = "allow" | "ask" | "deny";
+export type McpServerEntry = {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  /** server 级审批：allow=白名单放行 / ask=强制问 / deny=阻断；未配置=沿用通用链 */
+  approval?: McpApproval;
+  /** per-tool 覆盖 server 级，key 为 MCP 原始工具名 */
+  tools?: Record<string, McpApproval>;
+};
 export type McpConfigFile = { mcpServers?: Record<string, McpServerEntry> };
+
+// ---------- 审批表（连接时填充；permissions.canUseTool 查询） ----------
+type ApprovalDecision = McpApproval | "default";
+const approvalTable = new Map<string, ApprovalDecision>();
+
+/** 查询 MCP 工具审批决策；非 MCP 工具返回 undefined */
+export function getMcpApproval(toolName: string): ApprovalDecision | undefined {
+  return approvalTable.get(toolName);
+}
+
+/** 清空审批表（重连/测试隔离用） */
+export function clearMcpApprovals(): void {
+  approvalTable.clear();
+}
 
 /** 读取 .wllm/mcp.json；不存在/非法 → null（不抛） */
 export function loadMcpConfig(workDir: string): McpConfigFile | null {
@@ -30,9 +53,11 @@ type McpToolDef = {
   annotations?: { readOnlyHint?: boolean };
 };
 
-function wrapMcpTool(serverName: string, def: McpToolDef, client: Client): Tool {
+function wrapMcpTool(serverName: string, def: McpToolDef, client: Client, entry: McpServerEntry): Tool {
   const toolName = `mcp_${serverName}_${def.name}`;
   const readOnly = def.annotations?.readOnlyHint === true;
+  // 审批登记：per-tool 覆盖 server 级，均未配置 = default（走通用权限链）
+  approvalTable.set(toolName, entry.tools?.[def.name] ?? entry.approval ?? "default");
   const jsonSchema = def.inputSchema ?? { type: "object", properties: {} };
   const desc = def.description || "MCP 工具（无描述）";
 
@@ -48,6 +73,10 @@ function wrapMcpTool(serverName: string, def: McpToolDef, client: Client): Tool 
     isConcurrencySafe: () => false,
     isEnabled: () => true,
     async checkPermissions() {
+      // 与审批表对齐（主链路判定在 permissions.canUseTool；此处为防御一致性）
+      const d = getMcpApproval(toolName);
+      if (d === "deny") return { behavior: "deny" as const, message: `MCP 工具「${toolName}」已被 mcp.json 审批禁止` };
+      if (d === "ask") return { behavior: "ask" as const, message: `MCP 工具「${toolName}」需要用户确认（mcp.json 审批）` };
       return { behavior: "allow" as const };
     },
     async call(input, _ctx: ToolUseContext, _canUseTool: CanUseToolFn) {
@@ -105,7 +134,7 @@ export async function connectMcpServers(workDir: string, onWarn?: (msg: string) 
         await client.connect(transport);
         const listed = await client.listTools();
         for (const t of (listed.tools ?? []) as McpToolDef[]) {
-          tools.push(wrapMcpTool(serverName, t, client));
+          tools.push(wrapMcpTool(serverName, t, client, entry));
         }
         closers.push(async () => {
           try { await client!.close(); } catch { /* 已断开 */ }

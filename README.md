@@ -98,7 +98,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 | 执行 | `Bash`（沙箱 + 安全护栏）`PackageManager` `lint` `Refactor` `Analysis` |
 | 规划 | `todo`（任务清单）`Question`（向用户澄清）`parallel`（并行子任务）`Agent`（子代理派发） |
 | 状态 | `rollback`（回滚）`state`（状态机）`Web`（联网抓取） |
-| 扩展 | **MCP 客户端**：`.wllm/mcp.json`（Claude Code 兼容 `{ mcpServers: { name: { command, args, env } } }`）接入外部 MCP server，工具自动桥接为 `mcp_<server>_<tool>`（`readOnlyHint`→只读标记、inputSchema 透传、单 server 失败降级） |
+| 扩展 | **MCP 客户端**：`.wllm/mcp.json`（Claude Code 兼容 `{ mcpServers: { name: { command, args, env } } }`）接入外部 MCP server，工具自动桥接为 `mcp_<server>_<tool>`（`readOnlyHint`→只读标记、inputSchema 透传、单 server 失败降级、**双重审批**：`approval`（server 级）+ `tools`（单工具）白名单 allow/ask/deny，`PILOT_MCP_APPROVAL=off|ask` 全局开关） |
 
 ### 内核特性
 
@@ -106,7 +106,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **多 Provider 容错**：Anthropic / OpenAI / 本地代理统一接入，`PILOT_FAILOVER` 链式降级；错误标准分类（`services/errors.ts`：rate_limit / auth / context_too_long / overloaded / server / network / invalid_request，429/529/5xx/断连触发切换，401 与业务错误不切换），`PILOT_ROLE_MODELS` 分角色选模型
 - **会话与恢复**：session / checkpoint / 一键回滚，跨进程续跑
 - **知识沉淀**：memory（长期记忆）+ skills（技能库，`.wllm/skills/` 先审后存）+ reflexion（反思入库）
-- **MCP 接入**：`.wllm/mcp.json`（Claude Code 兼容）接入外部 MCP server，工具自动桥接为 `mcp_<server>_<tool>`，单 server 失败降级不阻塞
+- **MCP 接入**：`.wllm/mcp.json`（Claude Code 兼容）接入外部 MCP server，工具自动桥接为 `mcp_<server>_<tool>`，单 server 失败降级不阻塞；**双重审批**：server/tool 级 `approval` 白名单 + `PILOT_MCP_APPROVAL=off|ask` 全局开关，未配置沿用只读放行/可写询问
 - **工作模式**：plan / act 双模式 + spec 规格驱动开发（`n8-spec`）
 - **工程护栏**：写路径沙箱（`PILOT_SANDBOX_WRITE/DENY`）、权限分级、hooks（`PILOT_HOOKS_FILE`）、`/doctor` 自诊断、`/init` 项目初始化、`/review` 代码评审
 
@@ -258,6 +258,7 @@ WLLM/
 | `PILOT_MAX_CONTEXT_TOKENS` | 上下文窗口 30_000 ~ 10_000_000，自适应压缩迭代 |
 | `PILOT_FAILOVER` | Provider 链式降级 |
 | `PILOT_SANDBOX_WRITE` / `PILOT_SANDBOX_DENY` | 写沙箱白名单 / 黑名单 |
+| `PILOT_MCP_APPROVAL` | MCP 审批全局开关：`off`=全部放行 / `ask`=全部强制询问（未设置=按 mcp.json 白名单与 readOnlyHint 分级） |
 | `PILOT_HOOKS_FILE` / `PILOT_HOOKS_FAIL_OPEN` | hooks 配置 / 失败是否放行 |
 | `PILOT_HARNESS` / `PILOT_DEBUG` / `PILOT_MOCK` / `PILOT_PROMPT_OPT` / `PILOT_EXTRA_TOOLS` | harness、调试、Mock、prompt 优化、额外工具 |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` | 云端 Provider 凭证（可选） |
