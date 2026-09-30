@@ -65,3 +65,14 @@ export async function runClearSequence(
   reset();
   await fireLifecycle(hs, "PostClear", ctx);
 }
+
+/** /rewind 回滚成功后（issue #34）：失败不触发 */
+export async function fireRewindPost(
+  hs: HookSystem,
+  result: { ok: boolean },
+  meta: { checkpointId: string; mode: string },
+  ctx: HookContext,
+): Promise<void> {
+  if (!result.ok) return;
+  await fireLifecycle(hs, "PostRewind", { ...ctx, input: { ...meta } });
+}

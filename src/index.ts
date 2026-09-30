@@ -14,7 +14,7 @@ import {
 } from "./engine/diffReview.js";
 import { applyStaged, listStaged } from "./engine/staging.js";
 import { listTrust, clearTrust } from "./engine/hookTrust.js";
-import { fireCompactPre, fireCompactPost, runClearSequence } from "./engine/hookEvents.js";
+import { fireCompactPre, fireCompactPost, runClearSequence, fireRewindPost } from "./engine/hookEvents.js";
 import { hookSystem } from "./engine/hooks.js";
 import { ContextCompactor, estimateTokens } from "./context/compact/index.js";
 import { contextBreakdown } from "./context/breakdown.js";
@@ -484,6 +484,9 @@ async function startREPL(): Promise<void> {
         if (!r.ok) {
           console.log(chalk.red(r.message + "\n"));
         } else {
+          await fireRewindPost(hookSystem, r, { checkpointId: id, mode }, {
+            turnNumber: 0, sessionId: appStore.getState().sessionId,
+          });
           console.log(chalk.gray(r.message + "\n"));
           if (r.messages) {
             sessionHistory = r.messages as typeof sessionHistory;

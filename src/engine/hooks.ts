@@ -14,6 +14,7 @@ export type HookEvent =
   | "PostCompact"
   | "PreClear"
   | "PostClear"
+  | "PostRewind"
   | "Stop"
   | "SessionStart"
   | "SessionEnd";
