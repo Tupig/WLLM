@@ -5,7 +5,7 @@
  */
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { mkdir, readFile, appendFile } from "fs/promises";
+import { mkdir, readFile, appendFile, writeFile, rm } from "fs/promises";
 import { join } from "path";
 
 const execFileAsync = promisify(execFile);
@@ -90,5 +90,112 @@ export async function rollbackCheckpoint(
   await snapshot(workDir, "safety before rollback");
 
   await git(workDir, ["reset", "--hard", target.sha]);
+  // untracked 文件不受 reset --hard 影响；现场已被 safety 快照收录，clean 使工作区精确对齐目标点
+  // -e .tupigcode：运行时数据（检查点索引/消息快照）必须在任何仓都幸存
+  await git(workDir, ["clean", "-fd", "-e", ".tupigcode"]);
   return { ok: true, message: `已回滚到检查点 ${id}（${target.label}）` };
+}
+
+// ---------- issue #14：自动快照 + /rewind 三档 ----------
+
+/** 消息快照文件路径（/rewind chat/all 档回卷用） */
+function msgSnapPath(workDir: string, id: string): string {
+  return join(workDir, ".tupigcode", "msg-snap", `${id}.json`);
+}
+
+/** git 快照 + 同时保存对话消息副本（供 rewind 档位回卷） */
+export async function snapshotWithMessages(
+  workDir: string,
+  label: string,
+  messages: unknown[],
+): Promise<CheckpointRecord | null> {
+  const rec = await snapshot(workDir, label);
+  if (!rec) return null;
+  if (messages.length > 0) {
+    await mkdir(join(workDir, ".tupigcode", "msg-snap"), { recursive: true });
+    await writeFile(msgSnapPath(workDir, rec.id), JSON.stringify(messages), "utf-8");
+  }
+  return rec;
+}
+
+// 防抖：同一 workDir 在窗口期内只建一个自动快照
+const lastAutoAt = new Map<string, number>();
+const AUTO_DEBOUNCE_MS = 5_000;
+
+/** 自动快照（工具写后/每轮后调用）：无改动、非 git、防抖窗口内 → null 静默 */
+export async function autoSnapshot(
+  workDir: string,
+  label: string,
+  messages: unknown[] = [],
+  debounceMs = AUTO_DEBOUNCE_MS,
+): Promise<CheckpointRecord | null> {
+  const now = Date.now();
+  const last = lastAutoAt.get(workDir) ?? 0;
+  if (now - last < debounceMs) return null;
+  const rec = await snapshotWithMessages(workDir, label, messages);
+  if (rec) lastAutoAt.set(workDir, now);
+  return rec;
+}
+
+export type RewindMode = "chat" | "code" | "all";
+
+export type RewindResult = {
+  ok: boolean;
+  message: string;
+  /** chat/all 档：回卷到的消息（无消息快照时 undefined） */
+  messages?: unknown[];
+};
+
+/** 三档回卷：chat=只回对话 / code=只回代码 / all=两者都回 */
+export async function rewind(
+  workDir: string,
+  id: string,
+  mode: RewindMode,
+): Promise<RewindResult> {
+  const recs = await listCheckpoints(workDir);
+  const target = recs.find((r) => r.id === id);
+  if (!target) return { ok: false, message: `检查点不存在：${id}` };
+
+  const parts: string[] = [];
+  let messages: unknown[] | undefined;
+
+  if (mode === "chat" || mode === "all") {
+    try {
+      messages = JSON.parse(await readFile(msgSnapPath(workDir, id), "utf-8")) as unknown[];
+      parts.push(`对话回卷 ${Array.isArray(messages) ? messages.length : 0} 条`);
+    } catch {
+      parts.push("无消息快照");
+    }
+  }
+
+  if (mode === "code" || mode === "all") {
+    const rb = await rollbackCheckpoint(workDir, id);
+    if (!rb.ok) return { ok: false, message: rb.message };
+    parts.push("代码已恢复");
+  }
+
+  const label: Record<RewindMode, string> = { chat: "仅对话", code: "仅代码", all: "对话+代码" };
+  return { ok: true, message: `已回滚（${label[mode]}）到 ${id}：${parts.join("、")}`, messages };
+}
+
+/** 滚动清理：只保留最新 keep 条（jsonl + git ref + 消息文件同步删除） */
+export async function pruneCheckpoints(workDir: string, keep: number): Promise<number> {
+  const recs = await listCheckpoints(workDir); // 倒序：新→旧
+  if (recs.length <= keep) return 0;
+  const kept = recs.slice(0, keep);
+  const removed = recs.slice(keep);
+
+  const lines = [...kept].reverse().map((r) => JSON.stringify(r)).join("\n") + "\n";
+  await mkdir(join(workDir, ".tupigcode"), { recursive: true });
+  await writeFile(jsonlPath(workDir), lines, "utf-8");
+
+  for (const r of removed) {
+    try {
+      await git(workDir, ["update-ref", "-d", CKPT_REF_PREFIX + r.id]);
+    } catch { /* ref 可能已不存在 */ }
+    try {
+      await rm(msgSnapPath(workDir, r.id), { force: true });
+    } catch { /* 忽略 */ }
+  }
+  return removed.length;
 }

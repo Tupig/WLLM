@@ -7,7 +7,7 @@ import chalk from "chalk";
 import { parseOptimizeCommand, optimizePrompt, needsClarification, appendPromptStyle } from "./engine/promptOptimize.js";
 import { join } from "path";
 import { createInterface, Interface } from "readline";
-import { snapshot, listCheckpoints, rollbackCheckpoint } from "./session/checkpoint.js";
+import { snapshot, listCheckpoints, rollbackCheckpoint, rewind, autoSnapshot, pruneCheckpoints } from "./session/checkpoint.js";
 import { saveSessionMessages, loadSessionMessages, listSessions, forkMessages } from "./session/session.js";
 import { stageMemory, commitMemory, loadMemories, formatMemoriesForPrompt } from "./knowledge/memory.js";
 import { loadSkills, resolveSkill } from "./knowledge/skills.js";
@@ -41,6 +41,7 @@ function printHelp(): void {
   /cost     查看 Token 用量
   /model    查看当前模型
   /checkpoint [new|list|rollback <id>]  会话检查点/回滚
+  /rewind [chat|code|all] [id]         三档回卷（默认 all，缺省 id=最新）
   /skills  技能目录
   /skill <name>  加载技能全文
   /remember [内容]  查看/存入记忆（存入需确认）
@@ -352,6 +353,40 @@ async function startREPL(): Promise<void> {
       rl.prompt();
       return;
     }
+    if (input === "/rewind" || input.startsWith("/rewind ")) {
+      const workDir = appStore.getState().workDir;
+      const parts = input.split(/\s+/).slice(1);
+      const first = parts[0];
+      const mode: "chat" | "code" | "all" =
+        first === "chat" || first === "code" || first === "all" ? first : "all";
+      const idArg = first === mode ? parts[1] : first;
+      try {
+        const list = await listCheckpoints(workDir);
+        if (list.length === 0) {
+          console.log(chalk.gray("暂无检查点（/checkpoint new 手动创建，或写操作后自动生成）。\n"));
+          rl.prompt();
+          return;
+        }
+        const id = idArg ?? list[0].id;
+        const r = await rewind(workDir, id, mode);
+        if (!r.ok) {
+          console.log(chalk.red(r.message + "\n"));
+        } else {
+          console.log(chalk.gray(r.message + "\n"));
+          if (r.messages) {
+            sessionHistory = r.messages as typeof sessionHistory;
+            await saveSessionMessages(workDir, sessionId, sessionHistory).catch(() => {});
+            console.log(chalk.gray(`对话已回卷至 ${r.messages.length} 条。\n`));
+          }
+        }
+        await pruneCheckpoints(workDir, 20).catch(() => {});
+      } catch (e: any) {
+        console.log(chalk.red(`rewind 错误：${e.message}\n`));
+      }
+      rl.prompt();
+      return;
+    }
+
     if (input === "/checkpoint" || input.startsWith("/checkpoint ")) {
       const workDir = appStore.getState().workDir;
       const parts = input.split(/\s+/).slice(1);
@@ -429,6 +464,9 @@ async function startREPL(): Promise<void> {
         if (msg.type === "session") {
           sessionHistory = msg.messages;
           await saveSessionMessages(appStore.getState().workDir, sessionId, sessionHistory).catch(() => {});
+          if (process.env.TUPIG_AUTOSNAPSHOT !== "0") {
+            autoSnapshot(appStore.getState().workDir, "auto:turn", sessionHistory).catch(() => {});
+          }
           continue;
         }
         handleSDKMessage(msg);

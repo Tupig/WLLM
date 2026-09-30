@@ -33,6 +33,9 @@ import { renderTodoState } from "../tools/todo.js";
 import { createToolState, recordToolExecution, formatToolStateForPrompt, type ToolExecutionState } from "../tools/state.js";
 import { ModeManager, type AgentMode } from "../modes/modes.js";
 import { createTrajectoryRecorder, type TrajectoryRecorder } from "../session/trajectory.js";
+import { autoSnapshot } from "../session/checkpoint.js";
+
+const WRITE_SNAP_TOOLS = new Set(["Write", "Edit", "NotebookEdit", "Bash"]);
 import { getConfig, type TupigCodeConfig } from "../config.js";
 import { ToolCache, isCacheable, createDefaultCache } from "../context/cache.js";
 import {
@@ -659,6 +662,11 @@ export class QueryEngine {
           turnNumber: loopState.turnCount,
           sessionId: appStore.getState().sessionId,
         });
+
+        // 自动快照（issue #14）：写类工具成功后（防抖 5s；无改动/非 git 静默）
+        if (process.env.TUPIG_AUTOSNAPSHOT !== "0" && WRITE_SNAP_TOOLS.has(buf.name)) {
+          void autoSnapshot(toolContext.workDir, `auto:tool:${buf.name}`).catch(() => {});
+        }
       } else {
         const errMsg = `未知工具：${buf.name}`;
         toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
