@@ -97,6 +97,14 @@ function mockResponse(messages: Anthropic.MessageParam[]): Anthropic.Message {
 
   const t = ut.toLowerCase(), n = Date.now();
 
+  if (t.includes("压缩")) {
+    const fm = ut.match(/压缩\s*(?:焦点|focus)[：:]?\s*(.+)/);
+    return {
+      id: `msg_${n}`, type: "message", role: "assistant",
+      content: [{ type: "tool_use", id: `toolu_${n}`, name: "CompactContext", input: { focus: fm?.[1] } }],
+      model: "mock", stop_reason: "tool_use", stop_sequence: null, usage: mockUsage(),
+    } as any;
+  }
   if (t.includes("读") || t.includes("read") || t.includes("看看")) {
     const fp = ut.match(/(?:读|read|看看)\s+(.+)/)?.[1] || "src/index.ts";
     return {

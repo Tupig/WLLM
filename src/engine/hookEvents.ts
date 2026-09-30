@@ -31,7 +31,7 @@ export async function fireStop(hs: HookSystem = hookSystem, ctx: HookContext): P
 export async function fireCompactPre(
   hs: HookSystem = hookSystem,
   ctx: HookContext,
-  source: "manual" | "auto",
+  source: "manual" | "auto" | "model",
 ): Promise<void> {
   await fireLifecycle(hs, "PreCompact", { ...ctx, source });
 }
@@ -40,7 +40,7 @@ export async function fireCompactPre(
 export async function fireCompactPost(
   hs: HookSystem = hookSystem,
   ctx: HookContext,
-  source: "manual" | "auto",
+  source: "manual" | "auto" | "model",
 ): Promise<void> {
   await fireLifecycle(hs, "PostCompact", { ...ctx, source });
 }
@@ -49,7 +49,7 @@ export async function fireCompactPost(
 export async function fireCompact(
   hs: HookSystem = hookSystem,
   ctx: HookContext,
-  source: "manual" | "auto",
+  source: "manual" | "auto" | "model",
 ): Promise<void> {
   await fireCompactPre(hs, ctx, source);
   await fireCompactPost(hs, ctx, source);

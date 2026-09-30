@@ -135,6 +135,8 @@ function appendRouteLog(prompt: string, route: ReturnType<typeof routeTask>, cwd
 export class QueryEngine {
   private config: QueryEngineConfig;
   private tools: Tool[];
+  /** 模型主动压缩信号（issue #41）：置位后下一轮循环前执行 */
+  private pendingCompaction: { focus?: string } | null = null;
   private client: ApiClient;
   private compactor: ContextCompactor;
   private lineageText = ""; // repo-map 变更史摘要（issue #22）
@@ -322,6 +324,27 @@ export class QueryEngine {
     for (let turn = 0; turn < this.config.maxTurns; turn++) {
       if (this.abortController.signal.aborted) break;
       loopState.turnCount = turn + 1;
+
+      // 模型主动压缩（issue #41）：上一轮 CompactContext 置信号 → 此处执行
+      if (this.pendingCompaction) {
+        const focus = this.pendingCompaction.focus;
+        this.pendingCompaction = null;
+        const hctx = { turnNumber: loopState.turnCount, sessionId: this.sessionState?.sessionId ?? "" };
+        await fireCompactPre(undefined, hctx, "model");
+        const out = await this.compactor.autoCompact(
+          this.client, this.config.model, loopState.messages, focus, "model",
+        );
+        if (out !== loopState.messages) {
+          loopState.messages = out;
+          loopState.compacted = true;
+          appStore.setState((st) => ({ ...st, compactionCount: st.compactionCount + 1 }));
+          const mLine = formatCompactionLine();
+          if (mLine) {
+            process.stdout.write(chalk.gray(`\n♻️  已压缩（模型请求${focus ? `，焦点：${focus}` : ""}）：${mLine}\n`));
+          }
+        }
+        await fireCompactPost(undefined, hctx, "model");
+      }
 
       const estimatedTokens = this.estimateTokens(loopState.messages);
       if (
@@ -765,6 +788,11 @@ export class QueryEngine {
       getMessages: () => this.currentMessages as any,
       workDir: this.config.cwd,
       sessionId: appStore.getState().sessionId,
+      requestCompaction: (focus?: string) => {
+        if (!this.pendingCompaction) {
+          this.pendingCompaction = { focus: focus?.trim() || undefined };
+        }
+      },
     };
   }
 

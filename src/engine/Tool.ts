@@ -86,6 +86,8 @@ export type ToolUseContext = {
   workDir: string;
   sessionId: string;
   agentId?: string;
+  /** 模型主动请求压缩（issue #41）：置信号，下一轮循环前执行 */
+  requestCompaction?: (focus?: string) => void;
 };
 
 export type CanUseToolFn = (
