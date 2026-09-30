@@ -61,7 +61,7 @@ export const BashTool = buildTool<string>({
     }
     const timeout = input.timeout || TOOL_TIMEOUT_MS;
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       let settled = false;
       const child = spawn("bash", ["-c", input.command], {
         cwd: workdir,
@@ -82,9 +82,12 @@ export const BashTool = buildTool<string>({
         resolve(result);
       };
 
+      // 超时 = 执行失败（reject → 上层 PostToolUseFailure / is_error tool_result，issue #36）
       const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
         try { child.kill("SIGTERM"); } catch {}
-        finish({ data: `错误：命令执行超时（${timeout}ms）` });
+        reject(new Error(`命令执行超时（${timeout}ms）`));
       }, timeout);
 
       child.on("close", (code) => {

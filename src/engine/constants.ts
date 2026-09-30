@@ -20,7 +20,13 @@ export const MAX_RESULT_CHARS = 100_000;
 export const MAX_GLOB_RESULTS = 100;
 export const MAX_GREP_RESULTS = 250;
 export const MAX_BASH_OUTPUT_CHARS = 50_000;
-export const TOOL_TIMEOUT_MS = 30_000;
+function resolveToolTimeoutMs(): number {
+  const raw = process.env.TUPIG_TOOL_TIMEOUT_MS;
+  const n = raw ? Number(raw) : NaN;
+  if (!Number.isFinite(n) || n < 100) return 30_000;
+  return n;
+}
+export const TOOL_TIMEOUT_MS = resolveToolTimeoutMs();
 export const GREP_FALLBACK_TIMEOUT_MS = 15_000;
 export const HOOK_TIMEOUT_MS = 5_000;
 export const API_FETCH_TIMEOUT_MS = 1_800_000;

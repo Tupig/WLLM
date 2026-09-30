@@ -23,7 +23,7 @@ import { mapWithConcurrency, partitionRuns } from "../tools/parallel.js";
 import { canUseTool, promptUserDecision } from "../services/permissions.js";
 import { deriveAlwaysPattern } from "../services/approvalStore.js";
 import { hookSystem, loadShellHooks } from "./hooks.js";
-import { firePermissionResult } from "./hookEvents.js";
+import { firePermissionResult, firePostToolUseFailure } from "./hookEvents.js";
 import { ensureHookTrust, answerHookTrust, promptHookTrust } from "./hookTrust.js";
 import { getLineage } from "./lineage.js";
 import { OverflowRecovery, MAX_OVERFLOW_RETRIES } from "./overflowRecovery.js";
@@ -712,6 +712,10 @@ export class QueryEngine {
           );
         } catch (e) {
           const errMsg = e instanceof Error ? e.message : String(e);
+          void firePostToolUseFailure(hookSystem, {
+            toolName: buf.name, input, output: errMsg,
+            durationMs: Date.now() - toolStartTime,
+          }, { turnNumber: loopState.turnCount, sessionId: appStore.getState().sessionId });
           process.stdout.write(chalk.red(`\n❌ ${errMsg}\n`));
           toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
           events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });

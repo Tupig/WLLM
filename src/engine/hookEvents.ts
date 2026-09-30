@@ -96,3 +96,23 @@ export async function firePermissionResult(
     durationMs: meta.durationMs,
   });
 }
+
+/** 工具执行失败/超时（issue #36）：仅执行阶段错误触发 */
+export async function firePostToolUseFailure(
+  hs: HookSystem,
+  meta: {
+    toolName: string;
+    input?: Record<string, unknown>;
+    output: string;
+    durationMs?: number;
+  },
+  ctx: HookContext,
+): Promise<void> {
+  await fireLifecycle(hs, "PostToolUseFailure", {
+    ...ctx,
+    toolName: meta.toolName,
+    input: meta.input,
+    output: meta.output,
+    durationMs: meta.durationMs,
+  });
+}
