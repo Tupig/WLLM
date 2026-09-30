@@ -3,6 +3,7 @@
  * 单端口三协议：/v1/chat/completions、/v1/responses、/v1/messages → 后端 mlx_lm.server
  */
 import http from "http";
+import { appendWire } from "../utils/wire.js";
 import readline from "readline";
 import { randomUUID } from "crypto";
 import { anthropicToOpenAI, openaiToAnthropic, responsesToChat, chatToResponses, textOf, BACKEND_MODEL, STOP_MAP } from "./convert.js";
@@ -242,6 +243,12 @@ export function createProxyServer(opts: ProxyOptions = {}): http.Server {
   };
 
   const relay = async (res: http.ServerResponse, payload: any, originalBody: any, protocol: "chat" | "anthropic" | "responses", wantStream: boolean) => {
+    const wireReqId = appendWire({
+      kind: "proxy.request",
+      provider: "proxy",
+      model: payload?.model,
+      data: { protocol, inbound: originalBody, outbound: payload },
+    });
     try {
       if (wantStream) {
         payload.stream = true;
@@ -254,6 +261,7 @@ export function createProxyServer(opts: ProxyOptions = {}): http.Server {
         if (protocol === "anthropic") await relayStreamAnthropic(backendResp, res, originalBody);
         else if (protocol === "responses") await relayStreamResponses(backendResp, res);
         else await relayStreamChat(backendResp, res);
+        appendWire({ kind: "proxy.response", provider: "proxy", data: { protocol, stream: true }, req_id: wireReqId ?? undefined });
         return;
       }
 
@@ -261,7 +269,9 @@ export function createProxyServer(opts: ProxyOptions = {}): http.Server {
       if (protocol === "anthropic") sendJson(res, 200, openaiToAnthropic(data, originalBody));
       else if (protocol === "responses") sendJson(res, 200, chatToResponses(data, originalBody));
       else sendJson(res, 200, data);
+      appendWire({ kind: "proxy.response", provider: "proxy", data: { protocol, stream: false, body: data }, req_id: wireReqId ?? undefined });
     } catch (e: any) {
+      appendWire({ kind: "proxy.response", provider: "proxy", data: { protocol, error: String(e?.message ?? e) }, req_id: wireReqId ?? undefined });
       const cause = e?.cause ?? {};
       if (e?.name === "TimeoutError") safeErr(res, 502, "backend timeout");
       else if (e?.name === "AbortError" || e?.code === "ECONNREFUSED" || cause.code === "ECONNREFUSED" || String(e?.message ?? e) === "fetch failed")

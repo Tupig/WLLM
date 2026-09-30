@@ -4,6 +4,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { MAX_RETRIES, API_FETCH_TIMEOUT_MS, DEFAULT_MODEL } from "../engine/constants.js";
+import { wireEnabled, appendWire } from "../utils/wire.js";
 
 export type StreamEvent =
   | { type: "text_delta"; text: string }
@@ -134,7 +135,7 @@ function mockResponse(messages: Anthropic.MessageParam[]): Anthropic.Message {
   } as any;
 }
 
-export async function* streamMessage(
+async function* streamMessageInner(
   client: ApiClient, model: string, maxTokens: number, system: string,
   messages: Anthropic.MessageParam[], tools: Anthropic.Tool[],
 ): AsyncGenerator<StreamEvent> {
@@ -195,6 +196,46 @@ export async function* streamMessage(
 
   if (client.type === "openai") { yield* streamOpenAI(model, maxTokens, system, messages, tools); }
 }
+
+/**
+ * 对外入口：TUPIG_WIRE=1 时旁路记录原始报文（request + 流式合并后 response），
+ * 共享 req_id 配对；开关关直接透传，零开销。
+ */
+export async function* streamMessage(
+  client: ApiClient, model: string, maxTokens: number, system: string,
+  messages: Anthropic.MessageParam[], tools: Anthropic.Tool[],
+): AsyncGenerator<StreamEvent> {
+  if (!wireEnabled()) {
+    yield* streamMessageInner(client, model, maxTokens, system, messages, tools);
+    return;
+  }
+  const reqId = appendWire({
+    kind: "llm.request",
+    provider: client.type,
+    model,
+    data: { maxTokens, system, messages, tools },
+  })!;
+  const acc = { text: "", toolUses: [] as { id: string; name: string; inputJson: string }[], stopReason: undefined as string | null | undefined };
+  const toolIdx = new Map<string, number>();
+  try {
+    for await (const ev of streamMessageInner(client, model, maxTokens, system, messages, tools)) {
+      if (ev.type === "text_delta") acc.text += ev.text;
+      else if (ev.type === "tool_use_start") {
+        toolIdx.set(ev.id, acc.toolUses.length);
+        acc.toolUses.push({ id: ev.id, name: ev.name, inputJson: "" });
+      } else if (ev.type === "tool_use_delta") {
+        const i = toolIdx.get(ev.id);
+        if (i !== undefined) acc.toolUses[i].inputJson += ev.inputJsonDelta;
+      } else if (ev.type === "message_delta") acc.stopReason = ev.stopReason;
+      yield ev;
+    }
+    appendWire({ kind: "llm.response", provider: client.type, model, data: { ...acc, done: true }, req_id: reqId });
+  } catch (e) {
+    appendWire({ kind: "llm.response", provider: client.type, model, data: { ...acc, done: false, error: String(e) }, req_id: reqId });
+    throw e;
+  }
+}
+
 
 /**
  * Anthropic 消息 → OpenAI chat 格式。

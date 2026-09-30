@@ -104,6 +104,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 
 - **上下文工程**：预算制压缩（`compact`）含阈值梯子与熔断，**force 档 LLM 摘要三链路可用**（openai 本地非流式 sideQuery 短超时 / anthropic / mock，失败回退预算削减且 keep_first）；`TUPIG_MAX_CONTEXT_TOKENS` 自适应（30k ~ 10M 窗口）、轨迹（trajectory）记录与复盘
 - **多 Provider 容错**：Anthropic / OpenAI / 本地代理统一接入，`TUPIG_FAILOVER` 链式降级；错误标准分类（`services/errors.ts`：rate_limit / auth / context_too_long / overloaded / server / network / invalid_request，429/529/5xx/断连触发切换，401 与业务错误不切换），`TUPIG_ROLE_MODELS` 分角色选模型
+- **wire.jsonl 原始报文**：`TUPIG_WIRE=1` 开启（默认关零开销）——pilot 侧 `streamMessage` 记录请求与流式合并后正文、proxy 侧透传观测，JSONL 落 `.tupigcode/wire.jsonl`（`TUPIG_WIRE_FILE`/`TUPIG_WIRE_MAX_BYTES` 可调，默认 5MB 滚动裁剪），request/response 共享 `req_id`
 - **auto-test 自验证**：`RunTests` 工具（默认集，只读）——探测 `TUPIG_TEST_CMD` / npm test（跳过占位）/ pytest / cargo / go，失败输出回喂修复复跑；超时可调 `TUPIG_TEST_TIMEOUT_MS`，输出尾部截断 4000 字符
 - **会话与恢复**：session / checkpoint 一键回滚；**自动快照**（每轮 + 写类工具成功后，防抖 5s、上限 20 滚动，`TUPIG_AUTOSNAPSHOT=0` 关）与 **`/rewind [chat|code|all] [id]` 三档回卷**（回对话 / 回代码 / 全回），跨进程续跑
 - **知识沉淀**：memory（长期记忆）+ skills（技能库，`.tupigcode/skills/` 先审后存）+ reflexion（反思入库）
