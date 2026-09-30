@@ -34,7 +34,7 @@ describe("classifyProviderError", () => {
     const r = classifyProviderError(new Error("context length exceeded maximum of 200000 tokens"));
     expect(r.kind).toBe("context_too_long");
     expect(r.failoverEligible).toBe(false);
-    expect(r.retryable).toBe(false);
+    expect(r.retryable).toBe(true); // issue #24：本端压缩后重试
   });
 
   it("5xx 其他 → server，可 failover", () => {

@@ -24,6 +24,7 @@ import { canUseTool, promptUser } from "../services/permissions.js";
 import { hookSystem, loadShellHooks } from "./hooks.js";
 import { ensureHookTrust, answerHookTrust, promptHookTrust } from "./hookTrust.js";
 import { getLineage } from "./lineage.js";
+import { OverflowRecovery, MAX_OVERFLOW_RETRIES } from "./overflowRecovery.js";
 import { ContextCompactor, LADDER_MICRO } from "../context/compact/index.js";
 import { appStore } from "../state/AppState.js";
 import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS } from "./constants.js";
@@ -144,6 +145,7 @@ export class QueryEngine {
   private client: ApiClient;
   private compactor: ContextCompactor;
   private lineageText = ""; // repo-map 变更史摘要（issue #22）
+  private overflowRecovery = new OverflowRecovery(); // 上下文溢出恢复（issue #24）
   private abortController: AbortController;
   private readFileState: Map<string, { mtime: number }> = new Map();
   private currentMessages: Anthropic.MessageParam[] = [];
@@ -482,6 +484,24 @@ export class QueryEngine {
           loopState.maxOutputTokensOverride = MAX_OUTPUT_TOKEN_ESCALATION[attempt + 1];
           process.stdout.write(chalk.yellow(`\n⚠️  输出 Token 超限，正在以 ${loopState.maxOutputTokensOverride} 重试...\n`));
           continue;
+        }
+
+        // 上下文溢出自动恢复（issue #24）：压缩重建 messages 后重试本轮，限 2 次
+        if (this.overflowRecovery.shouldRetry(err)) {
+          const hctx = { turnNumber: loopState.turnCount, sessionId: this.sessionState?.sessionId ?? "" };
+          await hookSystem.trigger("PreCompact", hctx).catch(() => {});
+          const recovered = await this.overflowRecovery.recover(
+            this.compactor, this.client, this.config.model, loopState.messages,
+          );
+          if (recovered !== loopState.messages) {
+            loopState.messages = recovered;
+            appStore.setState((st) => ({ ...st, compactionCount: st.compactionCount + 1 }));
+            this.trajectory?.recordError(`上下文溢出，自动压缩恢复（第 ${this.overflowRecovery.attempts} 次）`);
+            await hookSystem.trigger("PostCompact", hctx).catch(() => {});
+            process.stdout.write(chalk.yellow(`\n⚠️  上下文超限，已自动压缩并重试（${this.overflowRecovery.attempts}/${MAX_OVERFLOW_RETRIES}）...\n`));
+            attempt--; // 溢出恢复不消耗 max_tokens 升级额度（互不干扰）
+            continue;
+          }
         }
 
         process.stdout.write(chalk.red(`\n❌ API 错误：${err?.message || err}\n`));

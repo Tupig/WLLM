@@ -58,7 +58,8 @@ export function classifyProviderError(err: unknown): ClassifiedProviderError {
     status === 413 ||
     /context (length|window)|maximum context|prompt is too long|input is too long|context length exceeded/i.test(msg)
   ) {
-    return { kind: "context_too_long", status, ...deny };
+    // 可重试=本端压缩后重建请求（issue #24）；不 failover，切 provider 解决不了上下文超限
+    return { kind: "context_too_long", status, retryable: true, failoverEligible: false };
   }
   if (NETWORK_PATTERNS.some((p) => p.test(msg))) {
     return { kind: "network", status, retryable: true, failoverEligible: true };
