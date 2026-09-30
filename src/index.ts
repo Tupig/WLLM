@@ -21,7 +21,10 @@ import { createClient, resolveModel } from "./services/api.js";
 import { getDefaultTools } from "./engine/toolRegistry.js";
 import { renderSystemPrompt } from "./engine/prompt.js";
 import { loadMemoriesSync } from "./knowledge/memory.js";
-import { saveSessionMessages, loadSessionMessages, listSessions, forkMessages } from "./session/session.js";
+import {
+  saveSessionMessages, loadSessionMessages, listSessions, forkMessages,
+  rescueSessionSync, listInterruptedSessions, formatInterruptedNotice,
+} from "./session/session.js";
 import { stageMemory, commitMemory, loadMemories, formatMemoriesForPrompt } from "./knowledge/memory.js";
 import { loadSkills, resolveSkill } from "./knowledge/skills.js";
 import { createSpec, listSpecs, loadSpec, buildWaves, parseTasks, approveSpec } from "./modes/spec.js";
@@ -101,11 +104,23 @@ async function startREPL(): Promise<void> {
   let sessionHistory: Anthropic.MessageParam[] = [];
   let sessionId = `s-${Date.now().toString(36)}`;
 
+  // 启动检测 Ctrl+C 打断的孤儿会话（issue #27）
+  const notice = formatInterruptedNotice(listInterruptedSessions(appStore.getState().workDir));
+  if (notice) console.log(chalk.yellow(`\n⚡ ${notice}\n`));
+
   const rl: Interface = createInterface({
     input: process.stdin,
     output: process.stdout,
     prompt: chalk.green("❯ "),
   });
+
+  // SIGINT 同步抢救（issue #27）：不等 Promise，直接落盘 interrupted 标记
+  const onSignal = () => {
+    rescueSessionSync(appStore.getState().workDir, sessionId, sessionHistory as unknown[]);
+    process.exit(130);
+  };
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
 
   rl.prompt();
 

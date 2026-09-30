@@ -2,6 +2,7 @@
  * session.ts — 会话持久化：save/load/list/fork（A5 resume/fork）
  */
 import { mkdir, readFile, writeFile, readdir, stat } from "fs/promises";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from "fs";
 import { join } from "path";
 
 export type SessionMeta = {
@@ -19,13 +20,83 @@ export async function saveSessionMessages(
   workDir: string,
   sessionId: string,
   messages: unknown[],
+  opts?: { interrupted?: boolean },
 ): Promise<void> {
   await mkdir(sessionsDir(workDir), { recursive: true });
   await writeFile(
     join(sessionsDir(workDir), `${sessionId}.json`),
-    JSON.stringify({ updatedAt: new Date().toISOString(), messages }),
+    JSON.stringify({
+      updatedAt: new Date().toISOString(),
+      messages,
+      ...(opts?.interrupted ? { interrupted: true } : {}),
+    }),
     "utf-8",
   );
+}
+
+/** SIGINT/SIGTERM 同步抢救（issue #27）：不等 Promise，直接同步落盘；空会话不写 */
+export function rescueSessionSync(workDir: string, sessionId: string, messages: unknown[]): void {
+  try {
+    if (!messages || messages.length === 0) return;
+    const dir = sessionsDir(workDir);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, `${sessionId}.json`),
+      JSON.stringify({ updatedAt: new Date().toISOString(), messages, interrupted: true }),
+      "utf-8",
+    );
+  } catch {
+    /* 抢救失败也不能在信号处理里抛 */
+  }
+}
+
+export type InterruptedSession = { id: string; messageCount: number; updatedAt: string };
+
+/** 扫描带 interrupted 标记的孤儿会话（正常 turn 结束的保存不带标记，自然冲掉） */
+export function listInterruptedSessions(workDir: string): InterruptedSession[] {
+  try {
+    const dir = sessionsDir(workDir);
+    if (!existsSync(dir)) return [];
+    const out: InterruptedSession[] = [];
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith(".json")) continue;
+      try {
+        const data = JSON.parse(readFileSync(join(dir, f), "utf-8"));
+        if (data?.interrupted === true && Array.isArray(data.messages)) {
+          out.push({
+            id: f.replace(/\.json$/, ""),
+            messageCount: data.messages.length,
+            updatedAt: String(data.updatedAt ?? ""),
+          });
+        }
+      } catch {
+        continue; // 损坏文件跳过
+      }
+    }
+    return out.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  } catch {
+    return [];
+  }
+}
+
+/** 手动清除 interrupted 标记（保留消息） */
+export function clearInterruptedFlag(workDir: string, sessionId: string): void {
+  try {
+    const p = join(sessionsDir(workDir), `${sessionId}.json`);
+    if (!existsSync(p)) return;
+    const data = JSON.parse(readFileSync(p, "utf-8"));
+    delete data.interrupted;
+    writeFileSync(p, JSON.stringify(data), "utf-8");
+  } catch {
+    /* 忽略 */
+  }
+}
+
+/** 启动检测提示文案；无孤儿返回空串 */
+export function formatInterruptedNotice(list: InterruptedSession[]): string {
+  if (list.length === 0) return "";
+  const lines = list.map((s) => `  - ${s.id}（${s.messageCount} 条，${s.updatedAt}）`);
+  return `发现 ${list.length} 个未完成会话（Ctrl+C 打断）：\n${lines.join("\n")}\n恢复：/resume <id>`;
 }
 
 export async function loadSessionMessages<T = unknown>(
