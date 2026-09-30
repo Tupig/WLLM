@@ -15,6 +15,7 @@ export type HookEvent =
   | "PreClear"
   | "PostClear"
   | "PostRewind"
+  | "PermissionResult"
   | "Stop"
   | "SessionStart"
   | "SessionEnd";
@@ -31,6 +32,10 @@ export interface HookContext {
   source?: string;
   /** 工具执行纯耗时 ms（不含权限询问与 PreToolUse，issue #31） */
   durationMs?: number;
+  /** 权限最终决策（issue #35） */
+  decision?: "allow" | "deny" | "always";
+  /** 决策来源：规则/持久 allow/交互/敏感 deny 等描述 */
+  ruleSource?: string;
 }
 
 export type HookResult = {
@@ -105,7 +110,7 @@ export function loadShellHooks(workDir: string): ShellHookConfig[] {
 
 export type HookMatcher = {
   event: HookEvent;
-  matcher?: { tool_name?: string; source?: string };
+  matcher?: { tool_name?: string; source?: string; decision?: "allow" | "deny" | "always" };
   handler: HookHandler;
   type?: HookType;
   timeout?: number;
@@ -128,6 +133,7 @@ export class HookSystem {
       if (m.event !== event) return false;
       if (m.matcher?.tool_name && m.matcher.tool_name !== ctx.toolName) return false;
       if (m.matcher?.source && m.matcher.source !== ctx.source) return false;
+      if (m.matcher?.decision && m.matcher.decision !== ctx.decision) return false;
       return true;
     });
 

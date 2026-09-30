@@ -23,6 +23,7 @@ import { mapWithConcurrency, partitionRuns } from "../tools/parallel.js";
 import { canUseTool, promptUserDecision } from "../services/permissions.js";
 import { deriveAlwaysPattern } from "../services/approvalStore.js";
 import { hookSystem, loadShellHooks } from "./hooks.js";
+import { firePermissionResult } from "./hookEvents.js";
 import { ensureHookTrust, answerHookTrust, promptHookTrust } from "./hookTrust.js";
 import { getLineage } from "./lineage.js";
 import { OverflowRecovery, MAX_OVERFLOW_RETRIES } from "./overflowRecovery.js";
@@ -618,6 +619,13 @@ export class QueryEngine {
         behavior: permission.behavior,
         reason: (permission as any).decisionReason ?? (permission as any).message ?? "",
       });
+      const permSource =
+        (permission as any).decisionReason ?? (permission as any).message ?? undefined;
+      const firePerm = (decision: "allow" | "deny" | "always", source?: string) => {
+        void firePermissionResult(hookSystem, {
+          toolName: buf.name, decision, ruleSource: source ?? permSource,
+        }, { turnNumber: loopState.turnCount, sessionId: appStore.getState().sessionId });
+      };
 
       // 应用权限层改写（plan 模式 staging 暂存等，issue #18）
       if (permission.behavior !== "deny" && (permission as any).updatedInput) {
@@ -626,6 +634,7 @@ export class QueryEngine {
 
       if (permission.behavior === "deny") {
         const msg = permission.message || "已拒绝";
+        firePerm("deny", permSource);
         process.stdout.write(chalk.red(`\n🚫 ${msg}\n`));
         toolResults.push({ tool_use_id: buf.id, content: msg, is_error: true });
         events.push({ type: "tool_result", toolUseId: buf.id, content: msg, isError: true });
@@ -635,13 +644,17 @@ export class QueryEngine {
       if (permission.behavior === "ask") {
         const decision = await promptUserDecision(buf.name, input);
         if (decision === "deny") {
+          firePerm("deny", "交互拒绝");
           toolResults.push({ tool_use_id: buf.id, content: "用户已拒绝", is_error: true });
           events.push({ type: "tool_result", toolUseId: buf.id, content: "用户已拒绝", isError: true });
           return;
         }
+        firePerm(decision === "always" ? "always" : "allow", decision === "always" ? "交互:总是允许" : "交互:单次允许");
         if (decision === "always") {
           process.stdout.write(chalk.green(`\n✓ 已持久化「总是允许」：${deriveAlwaysPattern(buf.name, input)}（/permissions clear 清除）\n`));
         }
+      } else {
+        firePerm("allow", permSource);
       }
 
       const hookResult = await hookSystem.trigger("PreToolUse", {

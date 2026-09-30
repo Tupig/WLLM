@@ -106,6 +106,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **多 Provider 容错**：Anthropic / OpenAI / 本地代理统一接入，`TUPIG_FAILOVER` 链式降级；错误标准分类（`services/errors.ts`：rate_limit / auth / context_too_long / overloaded / server / network / invalid_request，429/529/5xx/断连触发切换，401 与业务错误不切换），`TUPIG_ROLE_MODELS` 分角色选模型
 - **hook 信任 TOFU**：shell hook 首次触发询问、确认后写 `.tupigcode/hook-trust.json`（规则 hash：event/matcher/command/timeout 任一变更即重询），拒绝不持久化、异常/超时仍 fail-closed；非 TTY 与 `TUPIG_HOOK_TRUST=0` 不打断；`/hooks` 查看、`/hooks clear` 清除、`/doctor` 有信任清单
 - **会话列表可辨识**：`/resume`（无 id）与 `/sessions` 统一行格式 `id + 相对时间 + 条数 + 首条用户 prompt 预览`（截断 60 字，空会话显示「无预览」占位），按 updatedAt 倒序
+- **权限落定触发 PermissionResult**：allow/deny/always 决策后携带 `decision + ruleSource` 触发供审计，matcher 可按 decision 过滤
 - **/rewind 触发 PostRewind**：回滚成功后携带 `checkpointId + mode` 触发，失败不触发，hook 异常吞掉
 - **/clear 触发 PreClear/PostClear**：清空序列为 Pre hook → 重置状态 → Post hook，hook 异常吞掉、重置失败原样上抛
 - **PostToolUse 带执行耗时**：hook 上下文新增 `durationMs`（纯工具执行时间，不含权限询问与 PreToolUse），shell hook 经 stdin JSON 同步可见

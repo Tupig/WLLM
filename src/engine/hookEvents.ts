@@ -76,3 +76,23 @@ export async function fireRewindPost(
   if (!result.ok) return;
   await fireLifecycle(hs, "PostRewind", { ...ctx, input: { ...meta } });
 }
+
+/** 权限落定（issue #35）：allow/deny/always 决策后触发供审计 */
+export async function firePermissionResult(
+  hs: HookSystem,
+  meta: {
+    toolName: string;
+    decision: "allow" | "deny" | "always";
+    ruleSource?: string;
+    durationMs?: number;
+  },
+  ctx: HookContext,
+): Promise<void> {
+  await fireLifecycle(hs, "PermissionResult", {
+    ...ctx,
+    toolName: meta.toolName,
+    decision: meta.decision,
+    ruleSource: meta.ruleSource,
+    durationMs: meta.durationMs,
+  });
+}
