@@ -3,7 +3,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/Tupig/WLLM/ci.yml?branch=main&label=CI)](https://github.com/Tupig/WLLM/actions/workflows/ci.yml)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A520-black?logo=nodedotjs&logoColor=white)](#-快速开始)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue?logo=typescript&logoColor=white)](#-项目结构)
-[![vitest](https://img.shields.io/badge/vitest-464%20%E7%BB%BF-brightgreen?logo=vitest&logoColor=white)](#-测试与-ci)
+[![vitest](https://img.shields.io/badge/vitest-531%20%E7%BB%BF-brightgreen?logo=vitest&logoColor=white)](#-测试与-ci)
 [![gameqa](https://img.shields.io/badge/gameqa-Unity%20%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0-orange?logo=unity&logoColor=white)](#-gameqa--unity-%E8%87%AA%E5%8A%A8%E5%8C%96%E6%B5%8B%E8%AF%95%E5%B9%B3%E5%8F%B0)
 
 > 全 TypeScript 的**本地 AI 工作站**：Claude Code 式编码代理（pilot）+ Unity 游戏自动化测试平台（gameqa）+ Apple MLX 本地推理层（llm）+ 单端口三协议代理，全部自托管、零云依赖、一份 README 即全部文档。
@@ -48,7 +48,7 @@
 git clone https://github.com/Tupig/WLLM.git && cd WLLM
 npm ci                # 安装依赖（Node ≥ 20，构建需 Node 22+）
 npm run build         # tsc 编译 + 拷贝 gameqa 看板静态资源 + 入口 chmod
-npm test              # 38 文件 / 464 用例全绿（tsc + vitest 是 CI 双门槛）
+npm test              # 45 文件 / 531 用例全绿（tsc + vitest 是 CI 双门槛）
 ```
 
 构建后 `dist/cli/*.js` 即 7 个可执行入口。常用一分钟上手：
@@ -65,6 +65,7 @@ pilot "把 src/utils 里的重复逻辑抽出来"
 gameqa serve -p 9111 -d data
 PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
   AGENT_SKILLS=PlayMode PLATFORM_INSECURE_TLS=1 gameqa agent
+# 报告出口：https://localhost:9111/report（轻量+趋势） /allure（Allure 风格富报告）
 ```
 
 > [!IMPORTANT]
@@ -105,6 +106,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **多 Provider 容错**：Anthropic / OpenAI / 本地代理统一接入，`PILOT_FAILOVER` 链式降级；错误标准分类（`services/errors.ts`：rate_limit / auth / context_too_long / overloaded / server / network / invalid_request，429/529/5xx/断连触发切换，401 与业务错误不切换），`PILOT_ROLE_MODELS` 分角色选模型
 - **会话与恢复**：session / checkpoint / 一键回滚，跨进程续跑
 - **知识沉淀**：memory（长期记忆）+ skills（技能库，`.wllm/skills/` 先审后存）+ reflexion（反思入库）
+- **MCP 接入**：`.wllm/mcp.json`（Claude Code 兼容）接入外部 MCP server，工具自动桥接为 `mcp_<server>_<tool>`，单 server 失败降级不阻塞
 - **工作模式**：plan / act 双模式 + spec 规格驱动开发（`n8-spec`）
 - **工程护栏**：写路径沙箱（`PILOT_SANDBOX_WRITE/DENY`）、权限分级、hooks（`PILOT_HOOKS_FILE`）、`/doctor` 自诊断、`/init` 项目初始化、`/review` 代码评审
 
@@ -224,9 +226,9 @@ WLLM/
 │
 ├── src/
 │   ├── index.ts / config.ts   # CLI 入口 + 全局配置
-│   ├── engine/                # 主链路：QueryEngine prompt Tool toolRegistry router harness
+│   ├── engine/                # 主链路：QueryEngine prompt Tool toolRegistry router harness mcp
 │   ├── tools/                 # 20+ 工具实现
-│   ├── services/              # api bashSafety permissions sandbox failover
+│   ├── services/              # api bashSafety permissions sandbox failover errors
 │   ├── session/               # session sessionState checkpoint trajectory
 │   ├── context/               # compact/ budget cache rules repomap
 │   ├── knowledge/             # memory skills reflexion（知识沉淀）
@@ -235,11 +237,11 @@ WLLM/
 │   ├── commands/              # /doctor /init /review + REPL
 │   ├── proxy/                 # 统一协议代理（convert 三协议转换 + server SSE relay）
 │   ├── gameqa/                # Unity 测试平台（store/server/builtin/agent/unity/
-│   │                          #   airtest/gameperf/ai/tls + static 看板）
+│   │                          #   airtest/gameperf/ai/tls + report/allure 报告 + static 看板）
 │   ├── cli/                   # 7 个入口（pilot llm gameqa *-local mlx-local mlxcmd）
 │   └── git/ state/ utils/
 │
-├── tests/                     # vitest 38 文件 / 464 用例
+├── tests/                     # vitest 45 文件 / 531 用例
 ├── mlx/                       # 推理服务层（models/venv/logs/state 运行时 + models.json）
 ├── .wllm/                     # 运行时技能库（先审后存）
 └── .github/workflows/ci.yml   # 门槛：tsc + vitest + build
@@ -302,15 +304,15 @@ gameqa 环境变量见上文 [gameqa 节](#-gameqa--unity-自动化测试平台)
 ## 🧪 测试与 CI
 
 ```bash
-npm test              # = npx vitest run，38 文件 / 464 用例
-npx tsc --noEmit      # 类型门槛
-npm run build         # 构建门槛（含 gameqa 静态资源拷贝 + 入口 chmod）
-```
+ npm test              # = npx vitest run，45 文件 / 531 用例
+ npx tsc --noEmit      # 类型门槛
+ npm run build         # 构建门槛（含 gameqa 静态资源拷贝 + 入口 chmod）
+ ```
 
-用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e10`
-（Provider/配置/护栏/容错/工具/并行/路由/优化）、`f*`（压缩/权限）、`i1~i4`
-（记忆/技能/hooks/反思）、`g1~g5`（gameqa store/服务/内置执行器/Unity 真执行全链路/
-airtest·性能·AI 集成/TLS·CLI）、`proxy-*`（三协议转换/SSE）、`smoke`、`cli`、`ctx10m`。
+用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e17`
+（Provider/配置/护栏/容错/工具/并行/路由/优化/图像输入/模糊编辑/错误分类/MCP）、`f*`（压缩/权限）、`i1~i4`
+（记忆/技能/hooks/反思）、`g1~g7`（gameqa store/服务/内置执行器/Unity 真执行全链路/
+airtest·性能·AI 集成/TLS·CLI/轻量报告/Allure 报告）、`proxy-*`（三协议转换/SSE/流式 usage）、`smoke`、`cli`、`ctx10m`。
 
 **CI**（`.github/workflows/ci.yml`，ubuntu-latest + Node 22 + ripgrep）三连：
 `tsc --noEmit` → `vitest run` → `npm run build`。本地全绿但 CI 红 → 先建 issue 再修。
