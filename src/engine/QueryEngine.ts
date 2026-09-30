@@ -20,7 +20,8 @@ import { routeTask, formatRouteLog, profileTask, appendRouteFeedback } from "./r
 import { appendFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { mapWithConcurrency, partitionRuns } from "../tools/parallel.js";
-import { canUseTool, promptUser } from "../services/permissions.js";
+import { canUseTool, promptUserDecision } from "../services/permissions.js";
+import { deriveAlwaysPattern } from "../services/approvalStore.js";
 import { hookSystem, loadShellHooks } from "./hooks.js";
 import { ensureHookTrust, answerHookTrust, promptHookTrust } from "./hookTrust.js";
 import { getLineage } from "./lineage.js";
@@ -632,11 +633,14 @@ export class QueryEngine {
       }
 
       if (permission.behavior === "ask") {
-        const confirmed = await promptUser(buf.name, input);
-        if (!confirmed) {
+        const decision = await promptUserDecision(buf.name, input);
+        if (decision === "deny") {
           toolResults.push({ tool_use_id: buf.id, content: "用户已拒绝", is_error: true });
           events.push({ type: "tool_result", toolUseId: buf.id, content: "用户已拒绝", isError: true });
           return;
+        }
+        if (decision === "always") {
+          process.stdout.write(chalk.green(`\n✓ 已持久化「总是允许」：${deriveAlwaysPattern(buf.name, input)}（/permissions clear 清除）\n`));
         }
       }
 

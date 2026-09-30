@@ -30,7 +30,8 @@ import { loadSkills, resolveSkill } from "./knowledge/skills.js";
 import { createSpec, listSpecs, loadSpec, buildWaves, parseTasks, approveSpec } from "./modes/spec.js";
 import { runDoctor, renderDoctor, initAgentMd, buildReviewPrompt, isValidRef } from "./commands/diag.js";
 import { buildRetroPrompt, parseReviewDecision, applyReviewDecision, extractFailures } from "./knowledge/reflexion.js";
-import { promptUser } from "./services/permissions.js";
+import { promptUserDecision } from "./services/permissions.js";
+import { loadAlwaysAllow, clearAlwaysAllow } from "./services/approvalStore.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { query, type SDKMessage } from "./engine/QueryEngine.js";
 import { appStore } from "./state/AppState.js";
@@ -60,6 +61,7 @@ function printHelp(): void {
   /rewind [chat|code|all] [id]         三档回卷（默认 all，缺省 id=最新）
   /apply                              落盘 plan 模式暂存改动
   /hooks [clear]                      查看/清除 hook 信任（TOFU）
+  /permissions [clear]                查看/清除「总是允许」持久规则
   /compact [focusing on X]            手动压缩上下文（可带焦点指令）
   /context                            上下文占用分段明细（system/消息/工具结果/schema/记忆）
   /skills  技能目录
@@ -153,6 +155,23 @@ async function startREPL(): Promise<void> {
     if (input === "/model") {
       const s = appStore.getState();
       console.log(chalk.gray(`模型：${s.mainLoopModel} | 模式：${s.toolPermissionContext.mode}\n`));
+      rl.prompt();
+      return;
+    }
+    if (input === "/permissions" || input === "/permissions clear") {
+      const workDir = appStore.getState().workDir;
+      if (input === "/permissions clear") {
+        const n = clearAlwaysAllow(workDir);
+        console.log(chalk.green(`✓ 已清除 ${n} 条「总是允许」规则\n`));
+      } else {
+        const list = loadAlwaysAllow(workDir);
+        if (list.length === 0) console.log(chalk.gray("暂无「总是允许」规则（审批时按 a 写入 .tupigcode/permissions.json）\n"));
+        else {
+          console.log(chalk.cyan(`项目级「总是允许」${list.length} 条：`));
+          for (const e of list) console.log(chalk.gray(`  ${e.pattern}（${e.source}，${e.addedAt}）`));
+          console.log(chalk.gray("清除：/permissions clear\n"));
+        }
+      }
       rl.prompt();
       return;
     }
@@ -385,7 +404,7 @@ async function startREPL(): Promise<void> {
       const staged = stageMemory({ content });
       console.log(chalk.yellow("\n将存入记忆："));
       console.log(chalk.gray(`  [${staged.category}] ${staged.content}\n`));
-      const ok = await promptUser("remember", { content: staged.content });
+      const ok = (await promptUserDecision("remember", { content: staged.content }, { allowAlways: false })) !== "deny";
       if (ok) {
         await commitMemory(appStore.getState().workDir, staged, true);
         console.log(chalk.gray("已存入记忆。\n"));

@@ -9,6 +9,7 @@ import { resolve } from "path";
 import { appStore } from "../state/AppState.js";
 import { planRerouteTarget, ensureStagedSeed } from "../engine/staging.js";
 import chalk from "chalk";
+import { evaluatePersistentAllow, deriveAlwaysPattern, addAlwaysAllow } from "./approvalStore.js";
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -22,10 +23,16 @@ function matchesRule(toolName: string, input: Record<string, unknown>, pattern: 
   if (toolName !== patternName) return false;
 
   if (argPattern) {
-    const inputStr = JSON.stringify(input);
     const escaped = escapeRegExp(argPattern).replace(/\\\*/g, ".*").replace(/\\\?/g, ".");
     try {
-      return new RegExp("^" + escaped + "$").test(inputStr);
+      const re = new RegExp("^" + escaped + "$");
+      // 候选值：命令串 / 文件路径 / 完整 JSON（任一命中即匹配，issue #28）
+      const candidates = [
+        String(input.command ?? ""),
+        String((input as any).file_path ?? (input as any).path ?? (input as any).notebook_path ?? ""),
+        JSON.stringify(input),
+      ].filter(Boolean);
+      return candidates.some((c) => re.test(c));
     } catch {
       return false;
     }
@@ -129,6 +136,14 @@ export async function canUseTool(
     return { behavior: "deny", message: "plan 模式下不允许写操作", decisionReason: "plan 模式" };
   }
 
+  // 敏感路径写 deny 前移（issue #28）：任何 allow 规则（含持久 always）都不得绕过
+  if (WRITE_TOOLS.has(toolName)) {
+    const rawP = String((input as any).file_path ?? (input as any).path ?? (input as any).notebook_path ?? "");
+    if (rawP && touchesSensitivePath(rawP)) {
+      return { behavior: "deny", message: `目标为系统敏感路径，已拒绝：${rawP}` };
+    }
+  }
+
   const ruleResult = evaluateRules(toolName, input, ctx);
   if (ruleResult === "deny") {
     return { behavior: "deny", message: `工具「${toolName}」已被规则禁止`, decisionReason: "deny 规则" };
@@ -142,6 +157,10 @@ export async function canUseTool(
   }
   if (ruleResult === "allow") {
     return { behavior: "allow", decisionReason: "allow 规则" };
+  }
+  // 项目级持久「总是允许」（issue #28）：与 allow 规则同强度，位于 deny/ask/自修改面之后
+  if (evaluatePersistentAllow(appStore.getState().workDir, toolName, input)) {
+    return { behavior: "allow", decisionReason: "持久总是允许（permissions.json）" };
   }
 
   // MCP 双重审批（issue #10）：通用规则（deny/ask/allow）已判，plan/bypass 已前置拦截
@@ -198,14 +217,6 @@ export async function canUseTool(
     // safe → 落到下方只读放行
   }
 
-  if (WRITE_TOOLS.has(toolName)) {
-    const p = String((input as any).file_path ?? (input as any).path ?? (input as any).notebook_path ?? "");
-    if (p && touchesSensitivePath(p)) {
-      return { behavior: "deny", message: `目标为系统敏感路径，已拒绝：${p}` };
-    }
-    // 非敏感写 → 落到下方 ask（仓内写入由 allow 规则 / acceptEdits 模式放行）
-  }
-
   if (tool?.isReadOnly(input)) {
     return { behavior: "allow", decisionReason: "默认：只读/安全命令" };
   }
@@ -213,8 +224,19 @@ export async function canUseTool(
   return { behavior: "ask", message: `工具「${toolName}」需要用户确认` };
 }
 
-export async function promptUser(toolName: string, input: Record<string, unknown>): Promise<boolean> {
-  if (!process.stdin.isTTY) return false;
+export type ApprovalDecision = "allow" | "deny" | "always";
+
+/**
+ * 三态审批（issue #28）：y=本次放行 / a=总是允许（推导模式写入
+ * .tupigcode/permissions.json）/ 其他或超时=拒绝。
+ */
+export async function promptUserDecision(
+  toolName: string,
+  input: Record<string, unknown>,
+  opts?: { allowAlways?: boolean },
+): Promise<ApprovalDecision> {
+  if (!process.stdin.isTTY) return "deny";
+  const allowAlways = opts?.allowAlways !== false;
   const inputStr = JSON.stringify(input, null, 2);
   const truncated = inputStr.length > 500 ? inputStr.slice(0, 500) + "\n..." : inputStr;
 
@@ -223,7 +245,7 @@ export async function promptUser(toolName: string, input: Record<string, unknown
 
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (result: boolean) => {
+    const finish = (result: ApprovalDecision) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
@@ -231,19 +253,30 @@ export async function promptUser(toolName: string, input: Record<string, unknown
       resolve(result);
     };
 
-    process.stdout.write(chalk.cyan("允许执行？(y/N) "));
+    process.stdout.write(chalk.cyan(allowAlways ? "允许执行？(y/N/a=总是允许) " : "允许执行？(y/N) "));
     process.stdin.setEncoding("utf-8");
     process.stdin.resume();
 
     process.stdin.once("data", (data: string) => {
       const answer = data.trim().toLowerCase();
-      finish(answer === "y" || answer === "yes");
+      if (answer === "y" || answer === "yes") return finish("allow");
+      if (allowAlways && (answer === "a" || answer === "always")) {
+        addAlwaysAllow(appStore.getState().workDir, deriveAlwaysPattern(toolName, input));
+        return finish("always");
+      }
+      finish("deny");
     });
 
-    process.stdin.once("close", () => finish(false));
-    process.stdin.once("end", () => finish(false));
+    process.stdin.once("close", () => finish("deny"));
+    process.stdin.once("end", () => finish("deny"));
 
     // 30 秒超时
-    const timeout = setTimeout(() => finish(false), 30_000);
+    const timeout = setTimeout(() => finish("deny"), 30_000);
   });
+}
+
+/** 兼容旧接口：总是允许视作放行（已在 promptUserDecision 内落盘） */
+export async function promptUser(toolName: string, input: Record<string, unknown>): Promise<boolean> {
+  const d = await promptUserDecision(toolName, input);
+  return d !== "deny";
 }
