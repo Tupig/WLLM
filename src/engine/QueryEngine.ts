@@ -2,6 +2,7 @@
  * QueryEngine.ts — 核心 Agent 循环
  * 对齐 Claude Code 的 AsyncGenerator 流式架构
  */
+import { withTimeout } from "./time.js";
 import Anthropic from "@anthropic-ai/sdk";
 import chalk from "chalk";
 import { z } from "zod";
@@ -120,19 +121,7 @@ export function createDoomDetector(threshold = 3) {
   };
 }
 
-export async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      p,
-      new Promise<never>((_, rej) => {
-        timer = setTimeout(() => rej(new Error(`${label} 执行超时（${ms}ms）`)), ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
+export { withTimeout } from "./time.js";
 
 function appendRouteLog(prompt: string, route: ReturnType<typeof routeTask>, cwd: string): void {
   try {

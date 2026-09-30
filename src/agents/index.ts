@@ -17,6 +17,8 @@ import {
   type AgentDef,
 } from "./agents.js";
 import { ContextCompactor, estimateTokens, LADDER_MICRO } from "../context/compact/index.js";
+import { withTimeout } from "../engine/time.js";
+import { TOOL_TIMEOUT_MS } from "../engine/constants.js";
 import { MAX_CONTEXT_TOKENS } from "../engine/constants.js";
 
 export type { AgentDef };
@@ -289,15 +291,22 @@ export class SubAgentExecutor {
         }
 
         try {
-          const r = await tool.call(input, context, canUseTool ?? (async () => ({ behavior: "deny" as const, message: "子代理不允许再委派" })));
+          const r = await withTimeout(
+            tool.call(input, context, canUseTool ?? (async () => ({ behavior: "deny" as const, message: "子代理不允许再委派" }))),
+            TOOL_TIMEOUT_MS, `子代理工具 ${buf.name}`,
+          );
           toolResults.push({
             type: "tool_result", tool_use_id: buf.id,
             content: r.resultForAssistant || JSON.stringify(r.data),
           });
         } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const isTimeout = msg.includes("执行超时");
           toolResults.push({
             type: "tool_result", tool_use_id: buf.id,
-            content: `工具执行错误：${err instanceof Error ? err.message : String(err)}`,
+            content: isTimeout
+              ? `子代理工具超时：${buf.name}（${TOOL_TIMEOUT_MS}ms）`
+              : `工具执行错误：${msg}`,
             is_error: true,
           });
         }
