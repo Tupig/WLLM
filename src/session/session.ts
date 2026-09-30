@@ -161,7 +161,8 @@ export function forkMessages<T extends { role: string; content?: unknown }>(
 
 /** 预览截断（issue #32）：最多 60 字 */
 export function truncatePreview(text: string, max = 60): string {
-  const t = String(text ?? "");
+  // 折叠所有空白为单空格（issue #38：含换行的 prompt 会破列表行）
+  const t = String(text ?? "").replace(/\s+/g, " ").trim();
   return t.length > max ? t.slice(0, max) : t;
 }
 

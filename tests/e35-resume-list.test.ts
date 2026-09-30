@@ -70,6 +70,20 @@ describe("truncatePreview", () => {
     expect(truncatePreview("短文本")).toBe("短文本");
     expect(truncatePreview("")).toBe("");
   });
+
+  it("换行/制表/连续空格折叠为单空格（列表不破行，issue #38）", () => {
+    expect(truncatePreview("第一行\n第二行")).toBe("第一行 第二行");
+    expect(truncatePreview("a\t\tb   c")).toBe("a b c");
+    expect(truncatePreview("多\n\n\n空行")).toBe("多 空行");
+    expect(truncatePreview("  首尾空白\n")).toBe("首尾空白");
+  });
+
+  it("折叠后再截断 60 字", () => {
+    const raw = ("长内容\n".repeat(30));
+    const out = truncatePreview(raw);
+    expect(out).toHaveLength(60);
+    expect(out).not.toContain("\n");
+  });
 });
 
 describe("relativeTime", () => {
@@ -96,5 +110,16 @@ describe("formatSessionRow", () => {
     const list = await listSessions(dir);
     const row = formatSessionRow(list.find((s) => s.id === "empty")!);
     expect(row).toContain("无预览");
+  });
+
+  it("预览含换行的会话：行仍单行", async () => {
+    writeSession("multi", "2026-05-15T00:00:00.000Z", [
+      { role: "user", content: "帮我改\n这个文件\n谢谢" },
+    ]);
+    const list = await listSessions(dir);
+    const row = formatSessionRow(list.find((s) => s.id === "multi")!);
+    expect(row).not.toContain("\n");
+    expect(row).toContain("帮我改 这个文件 谢谢");
+    expect(list.find((s) => s.id === "multi")!.preview).not.toContain("\n");
   });
 });
