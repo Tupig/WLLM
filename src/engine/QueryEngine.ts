@@ -24,7 +24,7 @@ import { mapWithConcurrency, partitionRuns } from "../tools/parallel.js";
 import { canUseTool, promptUserDecision } from "../services/permissions.js";
 import { deriveAlwaysPattern } from "../services/approvalStore.js";
 import { hookSystem, loadShellHooks } from "./hooks.js";
-import { firePermissionResult, firePostToolUseFailure } from "./hookEvents.js";
+import { firePermissionResult, firePostToolUseFailure, fireModeChange } from "./hookEvents.js";
 import { formatCompactionLine } from "./compactionMeta.js";
 import { ensureHookTrust, answerHookTrust, promptHookTrust } from "./hookTrust.js";
 import { getLineage } from "./lineage.js";
@@ -274,7 +274,11 @@ export class QueryEngine {
 
     // 检查模式切换命令
     if (prompt === "/plan") {
+      const from = this.modeManager.mode;
       this.modeManager.enterPlan("用户切换到 Plan 模式");
+      await fireModeChange(hookSystem, from, this.modeManager.mode, {
+        turnNumber: 0, sessionId: appStore.getState().sessionId,
+      });
       yield {
         type: "text",
         text: "已切换到 Plan 模式（只读）",
@@ -282,7 +286,11 @@ export class QueryEngine {
       return;
     }
     if (prompt === "/act") {
+      const from = this.modeManager.mode;
       this.modeManager.enterAct("用户切换到 Act 模式");
+      await fireModeChange(hookSystem, from, this.modeManager.mode, {
+        turnNumber: 0, sessionId: appStore.getState().sessionId,
+      });
       yield {
         type: "text",
         text: "已切换到 Act 模式（完整执行）",

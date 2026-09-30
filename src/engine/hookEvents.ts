@@ -116,3 +116,14 @@ export async function firePostToolUseFailure(
     durationMs: meta.durationMs,
   });
 }
+
+/** 模式切换（issue #42）：from=to 视作未切换不触发 */
+export async function fireModeChange(
+  hs: HookSystem,
+  from: string,
+  to: string,
+  ctx: HookContext,
+): Promise<void> {
+  if (from === to) return;
+  await fireLifecycle(hs, "ModeChange", { ...ctx, modeFrom: from, modeTo: to });
+}
