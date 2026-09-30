@@ -136,6 +136,67 @@ describe("NUnit3 XML 解析", () => {
     expect(parseNUnitXml("")).toBeNull();
     expect(parseNUnitXml("<root/>")).toBeNull();
   });
+
+  const RICH_XML = `<?xml version="1.0"?>
+<test-run id="1" testcasecount="3" result="Failed" total="3" passed="1" failed="1" skipped="1" inconclusive="0">
+  <test-suite type="Assembly" name="Tests">
+    <test-case fullname="LoginTest.ShouldLogin" name="ShouldLogin" classname="LoginTest" result="Passed" duration="0.25"/>
+    <test-case fullname="LoginTest.ShouldFail" name="ShouldFail" classname="LoginTest" result="Failed" duration="1.5">
+      <output><![CDATA[debug log line]]></output>
+      <failure>
+        <message><![CDATA[Expected: true But was: false]]></message>
+        <stack-trace><![CDATA[at LoginTest.ShouldFail () [0x000010]]></stack-trace>
+      </failure>
+    </test-case>
+    <test-case fullname="LoginTest.SkippedOne" name="SkippedOne" classname="LoginTest" result="Skipped" duration="0"/>
+  </test-suite>
+</test-run>`;
+
+  it("cases 提取全部用例（Passed/Failed/Skipped）：fullname/classname/result/duration", () => {
+    const s = parseNUnitXml(RICH_XML);
+    expect(s!.cases).toHaveLength(3);
+    expect(s!.cases[0]).toMatchObject({
+      fullname: "LoginTest.ShouldLogin",
+      classname: "LoginTest",
+      result: "Passed",
+      duration: 0.25,
+    });
+    expect(s!.cases[2].result).toBe("Skipped");
+    // failures 数组保持只含失败用例（现状回归）
+    expect(s!.failures).toHaveLength(1);
+    expect(s!.failures[0].name).toBe("LoginTest.ShouldFail");
+  });
+
+  it("cases 含失败用例的 message/stack 与 stdout", () => {
+    const s = parseNUnitXml(RICH_XML);
+    const failed = s!.cases.find((c) => c.result === "Failed")!;
+    expect(failed.message).toContain("Expected: true");
+    expect(failed.stack).toContain("at LoginTest.ShouldFail");
+    expect(failed.stdout).toContain("debug log line");
+  });
+
+  it("cases 上限 2000 条截断，单字段 4KB 截断", () => {
+    const many = Array.from({ length: 2005 }, (_, i) =>
+      `<test-case fullname="Big.Suite.Case${i}" name="Case${i}" classname="Big.Suite" result="Passed" duration="0.01"/>`,
+    ).join("\n");
+    const xml = `<test-run total="2005" passed="2005" failed="0" result="Passed">${many}</test-run>`;
+    const s = parseNUnitXml(xml);
+    expect(s!.cases).toHaveLength(2000);
+
+    const longMsg = "x".repeat(10_000);
+    const xml2 = `<test-run total="1" failed="1" result="Failed">
+      <test-case fullname="A.B" name="B" classname="A" result="Failed" duration="1">
+        <failure><message><![CDATA[${longMsg}]]></message></failure>
+      </test-case>
+    </test-run>`;
+    const s2 = parseNUnitXml(xml2);
+    expect(s2!.cases[0].message!.length).toBeLessThanOrEqual(4096);
+  });
+
+  it("无 test-case → cases 空数组", () => {
+    const s = parseNUnitXml(`<test-run total="0" passed="0" failed="0" result="Passed"></test-run>`);
+    expect(s!.cases).toEqual([]);
+  });
 });
 
 describe("tailUtf8", () => {

@@ -9,6 +9,7 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { Json } from "./store.js";
 
 export const ARTIFACT_MAX_BYTES = 64 * 1024;
 
@@ -135,6 +136,18 @@ export interface NUnitFailure {
   message: string;
 }
 
+export interface NUnitCase {
+  fullname: string;
+  name: string;
+  classname: string;
+  result: string;
+  duration: number;
+  message: string | null;
+  stack: string | null;
+  stdout: string | null;
+  [k: string]: Json;
+}
+
 export interface NUnitSummary {
   result: string;
   total: number;
@@ -142,10 +155,21 @@ export interface NUnitSummary {
   failed: number;
   skipped: number;
   failures: NUnitFailure[];
+  cases: NUnitCase[];
+}
+
+const CASES_MAX = 2000;
+const FIELD_MAX = 4096;
+
+function clip(s: string): string {
+  if (s.length <= FIELD_MAX) return s;
+  const suffix = "…（截断）";
+  return s.slice(0, FIELD_MAX - suffix.length) + suffix;
 }
 
 function attr(tag: string, name: string): string {
-  const m = tag.match(new RegExp(`${name}="([^"]*)"`));
+  // 负向后顾防撞名：name= 不得匹配到 fullname= / methodname= 等
+  const m = tag.match(new RegExp(`(?<![\\w-])${name}="([^"]*)"`));
   return m ? m[1] : "";
 }
 
@@ -160,18 +184,44 @@ export function parseNUnitXml(xml: string): NUnitSummary | null {
     return Number.isNaN(n) ? 0 : n;
   };
   const failures: NUnitFailure[] = [];
-  const caseRe = /<test-case\b[^>]*\bresult="Failed"[^>]*>/g;
+  const cases: NUnitCase[] = [];
+  // 匹配全部 test-case（不限 Failed），并截取各自块内提取 message/stack/output
+  const caseRe = /<test-case\b[^>]*>/g;
   let cm: RegExpExecArray | null;
-  while ((cm = caseRe.exec(xml)) !== null) {
+  while ((cm = caseRe.exec(xml)) !== null && cases.length < CASES_MAX) {
     const caseTag = cm[0];
     const name = attr(caseTag, "fullname") || attr(caseTag, "name") || "(unknown)";
-    // 截取该 test-case 块到 </test-case>
+    const selfClosing = caseTag.endsWith("/>");
     const startIdx = cm.index + caseTag.length;
-    const endIdx = xml.indexOf("</test-case>", startIdx);
-    const block = endIdx > 0 ? xml.slice(startIdx, endIdx) : xml.slice(startIdx, startIdx + 4000);
+    const endIdx = selfClosing ? -1 : xml.indexOf("</test-case>", startIdx);
+    const block = endIdx > 0 ? xml.slice(startIdx, endIdx) : selfClosing ? "" : xml.slice(startIdx, startIdx + 4000);
+
+    const result = attr(caseTag, "result") || "Unknown";
+    const durRaw = parseFloat(attr(caseTag, "duration"));
+    const duration = Number.isFinite(durRaw) ? durRaw : 0;
+
+    const c: NUnitCase = {
+      fullname: name,
+      name: attr(caseTag, "name") || name,
+      classname: attr(caseTag, "classname") || "",
+      result,
+      duration,
+      message: null,
+      stack: null,
+      stdout: null,
+    };
+
     const msgM = block.match(/<message>\s*(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?\s*<\/message>/);
-    const message = msgM ? msgM[1].trim().slice(0, 500) : "";
-    failures.push({ name, message });
+    if (msgM) c.message = clip(msgM[1].trim());
+    const stM = block.match(/<stack-trace>\s*(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?\s*<\/stack-trace>/);
+    if (stM) c.stack = clip(stM[1].trim());
+    const outM = block.match(/<output>\s*(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?\s*<\/output>/);
+    if (outM) c.stdout = clip(outM[1].trim());
+
+    cases.push(c);
+    if (result === "Failed") {
+      failures.push({ name, message: c.message ?? "" });
+    }
   }
   return {
     result: attr(tag, "result") || "Unknown",
@@ -180,6 +230,7 @@ export function parseNUnitXml(xml: string): NUnitSummary | null {
     failed: num("failed"),
     skipped: num("skipped"),
     failures,
+    cases,
   };
 }
 

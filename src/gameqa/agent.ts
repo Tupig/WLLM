@@ -236,6 +236,7 @@ async function runUnityTestJob(job: Job, workdir: string): Promise<Outcome> {
           passed: parsed.passed,
           failed: parsed.failed,
           skipped: parsed.skipped,
+          cases: parsed.cases,
         },
         artifacts,
       };
@@ -251,6 +252,7 @@ async function runUnityTestJob(job: Job, workdir: string): Promise<Outcome> {
           passed: parsed.passed,
           failed: parsed.failed,
           failures: parsed.failures.map((f) => ({ name: f.name, message: f.message })),
+          cases: parsed.cases,
         },
         artifacts,
       };
