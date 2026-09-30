@@ -24,6 +24,8 @@ export interface HookContext {
   output?: string;
   turnNumber: number;
   sessionId: string;
+  /** 压缩事件触发方：manual | auto（issue #26） */
+  source?: string;
 }
 
 export type HookResult = {
@@ -67,7 +69,7 @@ export function interpretShellExit(
 
 export type ShellHookConfig = {
   event: HookEvent;
-  matcher?: { tool_name?: string };
+  matcher?: { tool_name?: string; source?: string };
   command: string;
   timeout?: number;
 };
@@ -82,7 +84,12 @@ export function loadShellHooks(workDir: string): ShellHookConfig[] {
       .filter((h: any) => typeof h?.command === "string" && typeof h?.event === "string")
       .map((h: any) => ({
         event: h.event as HookEvent,
-        matcher: h.matcher && typeof h.matcher === "object" ? h.matcher : undefined,
+        matcher: h.matcher && typeof h.matcher === "object"
+          ? {
+              ...(typeof h.matcher.tool_name === "string" ? { tool_name: h.matcher.tool_name } : {}),
+              ...(typeof h.matcher.source === "string" ? { source: h.matcher.source } : {}),
+            }
+          : undefined,
         command: h.command,
         timeout: typeof h.timeout === "number" ? h.timeout : undefined,
       }));
@@ -93,7 +100,7 @@ export function loadShellHooks(workDir: string): ShellHookConfig[] {
 
 export type HookMatcher = {
   event: HookEvent;
-  matcher?: { tool_name?: string };
+  matcher?: { tool_name?: string; source?: string };
   handler: HookHandler;
   type?: HookType;
   timeout?: number;
@@ -106,10 +113,16 @@ export class HookSystem {
     this.matchers.push(matcher);
   }
 
+  /** 清空全部匹配器（测试隔离 / 热重载） */
+  clear(): void {
+    this.matchers = [];
+  }
+
   async trigger(event: HookEvent, ctx: HookContext): Promise<HookResult> {
     const matching = this.matchers.filter((m) => {
       if (m.event !== event) return false;
       if (m.matcher?.tool_name && m.matcher.tool_name !== ctx.toolName) return false;
+      if (m.matcher?.source && m.matcher.source !== ctx.source) return false;
       return true;
     });
 

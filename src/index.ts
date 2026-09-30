@@ -14,6 +14,7 @@ import {
 } from "./engine/diffReview.js";
 import { applyStaged, listStaged } from "./engine/staging.js";
 import { listTrust, clearTrust } from "./engine/hookTrust.js";
+import { fireCompactPre, fireCompactPost } from "./engine/hookEvents.js";
 import { ContextCompactor, estimateTokens } from "./context/compact/index.js";
 import { contextBreakdown } from "./context/breakdown.js";
 import { createClient, resolveModel } from "./services/api.js";
@@ -149,8 +150,11 @@ async function startREPL(): Promise<void> {
       }
       const before = estimateTokens(sessionHistory);
       try {
+        const hctx = { turnNumber: 0, sessionId };
+        await fireCompactPre(undefined, hctx, "manual");
         const r = await new ContextCompactor().compact(createClient(), resolveModel(), sessionHistory, focus);
         sessionHistory = r.messages;
+        await fireCompactPost(undefined, hctx, "manual");
         await saveSessionMessages(appStore.getState().workDir, sessionId, sessionHistory);
         const after = estimateTokens(sessionHistory);
         console.log(chalk.green(`✓ 已压缩（${r.strategy}${focus ? `，焦点：${focus}` : ""}）：${before} → ${after} tokens，${r.messages.length} 条\n`));

@@ -25,6 +25,7 @@ import { hookSystem, loadShellHooks } from "./hooks.js";
 import { ensureHookTrust, answerHookTrust, promptHookTrust } from "./hookTrust.js";
 import { getLineage } from "./lineage.js";
 import { OverflowRecovery, MAX_OVERFLOW_RETRIES } from "./overflowRecovery.js";
+import { fireSessionStart, fireStop, fireCompactPre, fireCompactPost } from "./hookEvents.js";
 import { ContextCompactor, LADDER_MICRO } from "../context/compact/index.js";
 import { appStore } from "../state/AppState.js";
 import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS } from "./constants.js";
@@ -305,6 +306,11 @@ export class QueryEngine {
       tools: activeTools.map((t) => t.name),
     };
 
+    await fireSessionStart(undefined, {
+      turnNumber: 0,
+      sessionId: this.sessionState?.sessionId ?? "",
+    });
+
     const toolContext = this.buildToolContext();
     const canUseToolFn = this.buildCanUseToolFn();
 
@@ -333,6 +339,8 @@ export class QueryEngine {
         const r = this.compactor.compactByLadder(loopState.messages, estimatedTokens, MAX_CONTEXT_TOKENS);
         loopState.hasAttemptedReactiveCompact = true;
         if (r.strategy !== "none" && r.strategy !== "circuit-open") {
+          const hctx = { turnNumber: loopState.turnCount, sessionId: this.sessionState?.sessionId ?? "" };
+          await fireCompactPre(undefined, hctx, "auto");
           // force 档（>95%）：LLM 摘要（openai/anthropic/mock 三链路，失败自动回退预算削减）
           let out = r.messages;
           if (r.strategy === "force") {
@@ -342,6 +350,7 @@ export class QueryEngine {
           loopState.messages = out;
           loopState.compacted = true;
           appStore.setState((s) => ({ ...s, compactionCount: s.compactionCount + 1 }));
+          await fireCompactPost(undefined, hctx, "auto");
         }
       }
 
@@ -382,6 +391,11 @@ export class QueryEngine {
         num_turns: loopState.turnCount,
       };
     } else {
+      await fireStop(undefined, {
+        turnNumber: loopState.turnCount,
+        sessionId: this.sessionState?.sessionId ?? "",
+        output: "任务已完成",
+      });
       yield {
         type: "result",
         subtype: "success",
@@ -489,7 +503,7 @@ export class QueryEngine {
         // 上下文溢出自动恢复（issue #24）：压缩重建 messages 后重试本轮，限 2 次
         if (this.overflowRecovery.shouldRetry(err)) {
           const hctx = { turnNumber: loopState.turnCount, sessionId: this.sessionState?.sessionId ?? "" };
-          await hookSystem.trigger("PreCompact", hctx).catch(() => {});
+          await fireCompactPre(undefined, hctx, "auto");
           const recovered = await this.overflowRecovery.recover(
             this.compactor, this.client, this.config.model, loopState.messages,
           );
@@ -497,7 +511,7 @@ export class QueryEngine {
             loopState.messages = recovered;
             appStore.setState((st) => ({ ...st, compactionCount: st.compactionCount + 1 }));
             this.trajectory?.recordError(`上下文溢出，自动压缩恢复（第 ${this.overflowRecovery.attempts} 次）`);
-            await hookSystem.trigger("PostCompact", hctx).catch(() => {});
+            await fireCompactPost(undefined, hctx, "auto");
             process.stdout.write(chalk.yellow(`\n⚠️  上下文超限，已自动压缩并重试（${this.overflowRecovery.attempts}/${MAX_OVERFLOW_RETRIES}）...\n`));
             attempt--; // 溢出恢复不消耗 max_tokens 升级额度（互不干扰）
             continue;
