@@ -12,6 +12,8 @@ export type HookEvent =
   | "UserPromptSubmit"
   | "PreCompact"
   | "PostCompact"
+  | "PreClear"
+  | "PostClear"
   | "Stop"
   | "SessionStart"
   | "SessionEnd";

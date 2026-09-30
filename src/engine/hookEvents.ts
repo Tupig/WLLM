@@ -54,3 +54,14 @@ export async function fireCompact(
   await fireCompactPre(hs, ctx, source);
   await fireCompactPost(hs, ctx, source);
 }
+
+/** /clear 序列（issue #33）：Pre → 清空 → Post；hook 异常吞掉，reset 异常上抛 */
+export async function runClearSequence(
+  hs: HookSystem,
+  ctx: HookContext,
+  reset: () => void,
+): Promise<void> {
+  await fireLifecycle(hs, "PreClear", ctx);
+  reset();
+  await fireLifecycle(hs, "PostClear", ctx);
+}

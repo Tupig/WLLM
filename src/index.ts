@@ -14,7 +14,8 @@ import {
 } from "./engine/diffReview.js";
 import { applyStaged, listStaged } from "./engine/staging.js";
 import { listTrust, clearTrust } from "./engine/hookTrust.js";
-import { fireCompactPre, fireCompactPost } from "./engine/hookEvents.js";
+import { fireCompactPre, fireCompactPost, runClearSequence } from "./engine/hookEvents.js";
+import { hookSystem } from "./engine/hooks.js";
 import { ContextCompactor, estimateTokens } from "./context/compact/index.js";
 import { contextBreakdown } from "./context/breakdown.js";
 import { createClient, resolveModel } from "./services/api.js";
@@ -137,12 +138,16 @@ async function startREPL(): Promise<void> {
     }
     if (input === "/help") { printHelp(); rl.prompt(); return; }
     if (input === "/clear") {
-      appStore.setState((s) => ({
-        ...s,
-        tokenUsage: { input: 0, output: 0 },
-        compactionCount: 0,
-        turnCount: 0,
-      }));
+      await runClearSequence(
+        hookSystem,
+        { turnNumber: 0, sessionId: appStore.getState().sessionId },
+        () => appStore.setState((s) => ({
+          ...s,
+          tokenUsage: { input: 0, output: 0 },
+          compactionCount: 0,
+          turnCount: 0,
+        })),
+      );
       console.log(chalk.gray("对话历史已清空。\n"));
       rl.prompt();
       return;
