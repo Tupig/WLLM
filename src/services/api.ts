@@ -23,6 +23,48 @@ export type ApiClient = {
 
 export type ProviderKind = "anthropic" | "openai" | "mock";
 
+/** system 可为纯字符串或带 cache_control 的分层 blocks（issue #45 prompt cache） */
+export type SystemInput = string | Anthropic.TextBlockParam[];
+
+/** system 展平为字符串（OpenAI/mock 用；blocks 不外泄 cache_control） */
+export function systemText(system: SystemInput): string {
+  if (typeof system === "string") return system;
+  return system.map((b) => b.text ?? "").join("\n\n");
+}
+
+/**
+ * tools 末项打 cache_control 断点（仅 anthropic 请求用，issue #45）。
+ * 每次请求重新构造 toolDefs，断点不会跨轮累积（Anthropic 上限 4 个）。
+ */
+export function withToolsCacheBreakpoint(tools: Anthropic.Tool[]): Anthropic.Tool[] {
+  if (tools.length === 0) return tools;
+  return tools.map((t, i) =>
+    i === tools.length - 1 ? { ...t, cache_control: { type: "ephemeral" as const } } : { ...t },
+  );
+}
+
+/**
+ * 末条消息打 cache_control 断点，并清理历史残留断点（防止跨轮累积超限）。
+ * 返回新数组，不改原 messages（issue #45）。
+ */
+export function withMessageCacheBreakpoint(
+  messages: Anthropic.MessageParam[],
+): Anthropic.MessageParam[] {
+  if (messages.length === 0) return messages;
+  const cleaned = messages.map((m) => {
+    const { cache_control: _stale, ...rest } = m as Anthropic.MessageParam & {
+      cache_control?: unknown;
+    };
+    return rest as Anthropic.MessageParam;
+  });
+  const last = cleaned[cleaned.length - 1];
+  cleaned[cleaned.length - 1] = {
+    ...last,
+    cache_control: { type: "ephemeral" },
+  } as Anthropic.MessageParam;
+  return cleaned;
+}
+
 /**
  * 解析 provider 优先级：TUPIG_MOCK > TUPIG_PROVIDER(显式) > OpenAI env > Anthropic env
  * 配置缺失时抛中文错误（由调用方决定 exit 或传递）
@@ -144,7 +186,7 @@ function mockResponse(messages: Anthropic.MessageParam[]): Anthropic.Message {
 }
 
 async function* streamMessageInner(
-  client: ApiClient, model: string, maxTokens: number, system: string,
+  client: ApiClient, model: string, maxTokens: number, system: SystemInput,
   messages: Anthropic.MessageParam[], tools: Anthropic.Tool[],
 ): AsyncGenerator<StreamEvent> {
   if (client.type === "mock") {
@@ -169,9 +211,11 @@ async function* streamMessageInner(
   }
 
   if (client.type === "anthropic" && client.anthropic) {
+    // 三断点（issue #45）：system 稳定层由调用方带 cache_control；tools 末项 + 末条消息在此打点
     const stream = client.anthropic.messages.stream({
-      model, max_tokens: maxTokens, system, messages,
-      tools: tools.length > 0 ? tools : undefined,
+      model, max_tokens: maxTokens, system,
+      messages: withMessageCacheBreakpoint(messages),
+      tools: tools.length > 0 ? withToolsCacheBreakpoint(tools) : undefined,
     });
     let curToolId = "";
     for await (const ev of stream) {
@@ -202,7 +246,7 @@ async function* streamMessageInner(
     return;
   }
 
-  if (client.type === "openai") { yield* streamOpenAI(model, maxTokens, system, messages, tools); }
+  if (client.type === "openai") { yield* streamOpenAI(model, maxTokens, systemText(system), messages, tools); }
 }
 
 /**
@@ -210,7 +254,7 @@ async function* streamMessageInner(
  * 共享 req_id 配对；开关关直接透传，零开销。
  */
 export async function* streamMessage(
-  client: ApiClient, model: string, maxTokens: number, system: string,
+  client: ApiClient, model: string, maxTokens: number, system: SystemInput,
   messages: Anthropic.MessageParam[], tools: Anthropic.Tool[],
 ): AsyncGenerator<StreamEvent> {
   if (!wireEnabled()) {

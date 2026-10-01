@@ -481,6 +481,13 @@ export class QueryEngine {
     let inputTokens = 0;
     let outputTokens = 0;
 
+    // system 分层断点（issue #45）：稳定层带 cache_control，易变层排其后（断点后内容不参与缓存键前缀）
+    const sysLayers = this.buildSystemLayers(toolDefs);
+    const systemInput: Anthropic.TextBlockParam[] = [
+      { type: "text", text: sysLayers.stable, cache_control: { type: "ephemeral" } },
+      ...(sysLayers.volatile ? [{ type: "text" as const, text: sysLayers.volatile }] : []),
+    ];
+
     for (let attempt = 0; attempt < MAX_OUTPUT_TOKEN_ESCALATION.length; attempt++) {
       toolBuffers.clear();
       fullText = "";
@@ -490,12 +497,12 @@ export class QueryEngine {
       try {
         const stream = () => streamMessage(
           this.client, this.config.model, loopState.maxOutputTokensOverride,
-          this.buildSystemPrompt(toolDefs), loopState.messages, toolDefs,
+          systemInput, loopState.messages, toolDefs,
         );
         const fbStream = this.fallbackClient
           ? () => streamMessage(
               this.fallbackClient!, this.config.model, loopState.maxOutputTokensOverride,
-              this.buildSystemPrompt(toolDefs), loopState.messages, toolDefs,
+              systemInput, loopState.messages, toolDefs,
             )
           : null;
         for await (const event of streamWithFailover(stream, fbStream, this.fallbackLabel, (l) => {
@@ -848,24 +855,34 @@ export class QueryEngine {
     };
   }
 
-  private buildSystemPrompt(toolDefs: Anthropic.Tool[] = []): string {
+  /** system 分层（issue #45 prompt cache）：稳定层供缓存断点，易变层（状态/变更史）排断点之后不破坏前缀 */
+  private buildSystemLayers(toolDefs: Anthropic.Tool[] = []): { stable: string; volatile: string } {
     void toolDefs;
     let planSpec: string | undefined;
     if (this.modeManager.mode === "plan") {
       const specs = listSpecs(this.config.cwd);
       planSpec = (specs.find((s) => s.status === "approved") ?? specs[0])?.name;
     }
-    const lineage = this.lineageText ? `## 近期变更\n${this.lineageText}` : undefined;
-    const append = [lineage, this.config.appendSystemPrompt].filter(Boolean).join("\n\n") || undefined;
-    return renderSystemPrompt(promptTools(this.tools), {
+    const stateText =
+      (formatToolStateForPrompt(this.toolState) + renderTodoState(appStore.getState().todoState ?? null)) || undefined;
+    const stable = renderSystemPrompt(promptTools(this.tools), {
       planSpec,
       rulesText: this.ruleLayers.length ? formatLayersForPrompt(this.ruleLayers) : undefined,
       memoryText: this.memoryEntries.length ? formatMemoriesForPrompt(this.memoryEntries) : undefined,
       skillCatalog: this.skillCatalog || undefined,
-      stateText:
-        (formatToolStateForPrompt(this.toolState) + renderTodoState(appStore.getState().todoState ?? null)) || undefined,
-      append,
+      append: this.config.appendSystemPrompt || undefined,
     });
+    const volatile = [
+      stateText ? `## 当前状态\n${stateText}` : "",
+      this.lineageText ? `## 近期变更\n${this.lineageText}` : "",
+    ].filter(Boolean).join("\n\n");
+    return { stable, volatile };
+  }
+
+  /** 稳定层 + 易变层拼接的完整 system（估算与兼容口径，issue #44/#45） */
+  private buildSystemPrompt(toolDefs: Anthropic.Tool[] = []): string {
+    const { stable, volatile } = this.buildSystemLayers(toolDefs);
+    return volatile ? `${stable}\n\n${volatile}` : stable;
   }
 
   /** 预取变更史摘要（issue #22）：失败/超时静默为空，不阻塞主流程 */
