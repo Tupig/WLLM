@@ -5,6 +5,16 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
+import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
+import type { OAuthClientMetadata, OAuthTokens, OAuthClientInformationMixed } from "@modelcontextprotocol/sdk/shared/auth.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { createServer as createHttpServer, type Server as HttpServer } from "http";
+import { spawn } from "child_process";
+import { mkdirSync, writeFileSync } from "fs";
+import { homedir } from "os";
 import { z } from "zod";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -21,6 +31,14 @@ export type McpServerEntry = {
   includeTools?: string[];
   /** 工具黑名单（MCP 原始名，issue #61）；优先于 includeTools */
   excludeTools?: string[];
+  /** 远程 server URL（issue #62）；存在则走 http/SSE 传输而非 stdio */
+  url?: string;
+  /** 远程传输类型：默认 "http"（Streamable HTTP），"sse" 走 SSE */
+  transport?: "stdio" | "http" | "sse";
+  /** 远程传输附加请求头 */
+  headers?: Record<string, string>;
+  /** 远程 server OAuth 授权（默认开启；false 则不挂 authProvider） */
+  oauth?: boolean;
   /** server 级审批：allow=白名单放行 / ask=强制问 / deny=阻断；未配置=沿用通用链 */
   approval?: McpApproval;
   /** per-tool 覆盖 server 级，key 为 MCP 原始工具名 */
@@ -40,6 +58,131 @@ export function getMcpApproval(toolName: string): ApprovalDecision | undefined {
 /** 清空审批表（重连/测试隔离用） */
 export function clearMcpApprovals(): void {
   approvalTable.clear();
+}
+
+// ---------- 远程传输 / OAuth（issue #62） ----------
+export type McpServerState = "connected" | "failed" | "needs_auth";
+
+/** 连接失败归类：UnauthorizedError → needs_auth（需用户授权），其他 → failed */
+export function resolveMcpFailureState(err: unknown): McpServerState {
+  return err instanceof UnauthorizedError ? "needs_auth" : "failed";
+}
+
+function defaultOpen(url: string): void {
+  try {
+    const cmd = process.platform === "darwin" ? "open" : "xdg-open";
+    spawn(cmd, [url], { stdio: "ignore", detached: true }).unref();
+  } catch {
+    /* 打不开浏览器时由告警文案给出 URL */
+  }
+}
+
+type OAuthStored = { tokens?: OAuthTokens; clientInformation?: OAuthClientInformationMixed; codeVerifier?: string };
+
+/**
+ * 文件持久化 OAuthClientProvider（issue #62）：
+ * tokens/clientInformation/codeVerifier 落 `<dir>/<server>.json`；
+ * 一次性本地 HTTP listener 承接 redirectUrl 回调，收到 code 交给 onCode（finishAuth 接线）。
+ */
+export class FileOAuthProvider implements OAuthClientProvider {
+  onCode?: (code: string) => void;
+  private readonly file: string;
+  private readonly open?: (url: string) => void;
+  private readonly warn?: (msg: string) => void;
+  private server: HttpServer | null = null;
+  private port = 0;
+  /** 回调 listener 端口就绪后 resolve（redirectUrl/clientMetadata 读取前须 await） */
+  readonly whenReady: Promise<void>;
+
+  constructor(serverUrl: string, opts: { dir?: string; open?: (url: string) => void; onWarn?: (msg: string) => void } = {}) {
+    const base = opts.dir ?? join(homedir(), ".tupigcode", "mcp-auth");
+    try { mkdirSync(base, { recursive: true }); } catch { /* 目录不可写时保存步骤会再报错 */ }
+    this.file = join(base, serverUrl.replace(/[^a-zA-Z0-9.-]/g, "_") + ".json");
+    this.open = opts.open ?? defaultOpen;
+    this.warn = opts.onWarn;
+    this.whenReady = new Promise<void>((resolve) => this.ensureListener(resolve));
+  }
+
+  private read(): OAuthStored {
+    try { return JSON.parse(readFileSync(this.file, "utf-8")) as OAuthStored; } catch { return {}; }
+  }
+  private write(next: OAuthStored): void { writeFileSync(this.file, JSON.stringify(next)); }
+
+  get redirectUrl(): string | URL {
+    this.ensureListener();
+    return `http://127.0.0.1:${this.port}/callback`;
+  }
+
+  get clientMetadata(): OAuthClientMetadata {
+    return {
+      client_name: "tupigcode",
+      redirect_uris: [String(this.redirectUrl)],
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+    } as OAuthClientMetadata;
+  }
+
+  clientInformation(): OAuthClientInformationMixed | undefined { return this.read().clientInformation; }
+  saveClientInformation(info: OAuthClientInformationMixed): void { this.write({ ...this.read(), clientInformation: info }); }
+  tokens(): OAuthTokens | undefined { return this.read().tokens; }
+  saveTokens(tokens: OAuthTokens): void { this.write({ ...this.read(), tokens }); }
+  saveCodeVerifier(v: string): void { this.write({ ...this.read(), codeVerifier: v }); }
+  codeVerifier(): string { return this.read().codeVerifier ?? ""; }
+
+  redirectToAuthorization(authorizationUrl: URL): void {
+    this.warn?.(`MCP OAuth 授权：请在浏览器完成授权 ${authorizationUrl.href}`);
+    try { this.open?.(authorizationUrl.href); } catch { /* 依赖告警文案展示 URL */ }
+  }
+
+  private ensureListener(onReady?: () => void): void {
+    if (this.server) return;
+    this.server = createHttpServer((req, res) => {
+      const u = new URL(req.url ?? "/", "http://127.0.0.1");
+      const code = u.searchParams.get("code");
+      res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+      res.end(code ? "授权成功，可关闭本页。" : `授权失败：${u.searchParams.get("error") ?? "缺少 code"}`);
+      if (code) {
+        const cb = this.onCode;
+        this.dispose();
+        cb?.(code);
+      }
+    });
+    this.server.listen(0, "127.0.0.1", () => {
+      const addr = this.server?.address();
+      if (addr && typeof addr === "object") this.port = addr.port;
+      onReady?.();
+    });
+  }
+
+  dispose(): void {
+    this.server?.close();
+    this.server = null;
+  }
+}
+
+export type BuiltTransport = { transport: Transport; provider?: FileOAuthProvider };
+
+/** 按 entry 分派传输（issue #62）：无 url→stdio、url→StreamableHTTP、url+sse→SSE；远程默认挂 OAuth provider */
+export function buildMcpTransport(
+  entry: McpServerEntry,
+  opts: { oauthDir?: string; open?: (url: string) => void; onWarn?: (msg: string) => void } = {},
+): BuiltTransport {
+  if (!entry.url) {
+    const merged = { ...process.env, ...entry.env };
+    const env: Record<string, string> = {};
+    for (const [k, v] of Object.entries(merged)) if (v !== undefined) env[k] = v;
+    return { transport: new StdioClientTransport({ command: entry.command, args: entry.args ?? [], env, stderr: "pipe" }) };
+  }
+  const url = new URL(entry.url);
+  const provider =
+    entry.oauth === false
+      ? undefined
+      : new FileOAuthProvider(entry.url, { dir: opts.oauthDir, open: opts.open, onWarn: opts.onWarn });
+  const requestInit: RequestInit | undefined = entry.headers ? { headers: entry.headers } : undefined;
+  if (entry.transport === "sse") {
+    return { transport: new SSEClientTransport(url, { requestInit, authProvider: provider }), provider };
+  }
+  return { transport: new StreamableHTTPClientTransport(url, { requestInit, authProvider: provider }), provider };
 }
 
 /** 读取 .tupigcode/mcp.json；不存在/非法 → null（不抛） */
@@ -190,6 +333,8 @@ export type McpConnection = {
   tools: Tool[];
   /** 全量重拉所有 server 的 tools/list 并 diff 同步（issue #59） */
   refresh: () => Promise<{ added: string[]; removed: string[] }>;
+  /** 各 server 状态：connected/failed/needs_auth（issue #62） */
+  states: Map<string, McpServerState>;
   close: () => Promise<void>;
 };
 
@@ -260,11 +405,12 @@ export async function connectMcpServers(
 ): Promise<McpConnection> {
   const cfg = loadMcpConfig(workDir);
   const entries = Object.entries(cfg?.mcpServers ?? {});
-  if (entries.length === 0) return { tools: [], refresh: async () => ({ added: [], removed: [] }), close: async () => {} };
+  if (entries.length === 0) return { tools: [], refresh: async () => ({ added: [], removed: [] }), states: new Map(), close: async () => {} };
 
   const serverTools = new Map<string, Tool[]>();
   const refresherMap = new Map<string, () => Promise<{ added: string[]; removed: string[] }>>();
   const closers: Array<() => Promise<void>> = [];
+  const serverStates = new Map<string, McpServerState>(); // connected/failed/needs_auth（issue #62）
   const fireChanged = () => onToolsChanged?.([...serverTools.values()].flat());
 
   let closed = false; // connection close 后不再重连（issue #60）
@@ -272,58 +418,88 @@ export async function connectMcpServers(
   await Promise.all(
     entries.map(async ([serverName, entry]) => {
       let curClient: Client | null = null;
-      let curTransport: StdioClientTransport | null = null;
+      let curTransport: Transport | null = null;
+      let curProvider: FileOAuthProvider | undefined;
 
-      // 首连与退避重连复用（issue #60）：新 client/transport 就位后重 wrap 全量工具
-      const connectOnce = async (): Promise<void> => {
-        const client = new Client({ name: "tupigcode-tupigcode", version: "1.0.0" });
-        curClient = client;
-        const merged = { ...process.env, ...entry.env };
-        const env: Record<string, string> = {};
-        for (const [k, v] of Object.entries(merged)) if (v !== undefined) env[k] = v;
-        const transport = new StdioClientTransport({
-          command: entry.command,
-          args: entry.args ?? [],
-          env,
-          stderr: "pipe",
-        });
-        curTransport = transport;
-        await client.connect(transport);
-        const listed = await client.listTools();
-        serverTools.set(
-          serverName,
-          filterMcpToolDefs((listed.tools ?? []) as McpToolDef[], entry).map((t) => wrapMcpTool(serverName, t, client, entry)),
-        );
-        const refreshOne = makeServerRefresher({ serverName, entry, client, serverTools, fireChanged, onWarn });
-        refresherMap.set(serverName, refreshOne);
-        registerListChanged(client, refreshOne);
-        // stdio 断开 → 立即摘除死工具 + 退避重连（issue #60）
-        transport.onclose = () => {
-          if (closed) return;
-          handleServerDrop(serverName, serverTools, fireChanged, onWarn);
-          void reconnectLoop({
-            tryConnect: async () => {
-              if (closed) return true;
-              await connectOnce();
-              onWarn?.(`MCP server "${serverName}" 已重连，工具恢复`);
+      // needs_auth：等本地回调拿到 code → finishAuth → 自动重连（issue #62）
+      const armOAuth = (provider: FileOAuthProvider, transport: Transport): void => {
+        provider.onCode = async (code) => {
+          try {
+            const finish = (transport as { finishAuth?: (c: string) => Promise<void> }).finishAuth;
+            if (finish) await finish.call(transport, code);
+            await connectOnce();
+            if (serverStates.get(serverName) === "connected") {
+              onWarn?.(`MCP server "${serverName}" 授权完成，已重连`);
               fireChanged();
-              return true;
-            },
-            onGaveUp: () => onWarn?.(`MCP server "${serverName}" 重连放弃（最多 5 次退避重试）`),
-          });
+            }
+          } catch (e) {
+            serverStates.set(serverName, resolveMcpFailureState(e));
+            onWarn?.(`MCP server "${serverName}" 授权后重连失败：${e instanceof Error ? e.message : String(e)}`);
+          }
         };
-        // 进程退出兜底：stdio 子进程随父进程清理
-        const pid = transport.pid;
-        if (pid) {
-          process.once("exit", () => {
-            try { process.kill(pid, "SIGTERM"); } catch { /* 已退出 */ }
-          });
+      };
+
+      // 首连、退避重连与授权后重连复用（issue #60/#62）
+      const connectOnce = async (): Promise<void> => {
+        try {
+          const client = new Client({ name: "tupigcode-tupigcode", version: "1.0.0" });
+          curClient = client;
+          const built = buildMcpTransport(entry, { onWarn });
+          curProvider?.dispose();
+          curProvider = built.provider;
+          const transport = built.transport;
+          curTransport = transport;
+          await built.provider?.whenReady; // 回调端口就绪后才能读 redirectUrl（issue #62）
+          await client.connect(transport);
+          const listed = await client.listTools();
+          serverTools.set(
+            serverName,
+            filterMcpToolDefs((listed.tools ?? []) as McpToolDef[], entry).map((t) => wrapMcpTool(serverName, t, client, entry)),
+          );
+          const refreshOne = makeServerRefresher({ serverName, entry, client, serverTools, fireChanged, onWarn });
+          refresherMap.set(serverName, refreshOne);
+          registerListChanged(client, refreshOne);
+          // 断开 → 立即摘除死工具 + 退避重连（issue #60）
+          transport.onclose = () => {
+            if (closed) return;
+            handleServerDrop(serverName, serverTools, fireChanged, onWarn);
+            void reconnectLoop({
+              tryConnect: async () => {
+                if (closed) return true;
+                await connectOnce();
+                if (serverStates.get(serverName) !== "connected") return true; // needs_auth → 停循环等授权回调
+                onWarn?.(`MCP server "${serverName}" 已重连，工具恢复`);
+                fireChanged();
+                return true;
+              },
+              onGaveUp: () => onWarn?.(`MCP server "${serverName}" 重连放弃（最多 5 次退避重试）`),
+            });
+          };
+          // 进程退出兜底：stdio 子进程随父进程清理
+          if (transport instanceof StdioClientTransport) {
+            const pid = transport.pid;
+            if (pid) {
+              process.once("exit", () => {
+                try { process.kill(pid, "SIGTERM"); } catch { /* 已退出 */ }
+              });
+            }
+          }
+          serverStates.set(serverName, "connected");
+        } catch (e) {
+          if (resolveMcpFailureState(e) === "needs_auth" && curProvider) {
+            serverStates.set(serverName, "needs_auth");
+            armOAuth(curProvider, curTransport!); // provider.warn 已输出授权 URL/浏览器提示
+            return;
+          }
+          serverStates.set(serverName, "failed");
+          throw e;
         }
       };
 
       closers.push(async () => {
         try { await curClient?.close(); } catch { /* 已断开 */ }
         try { await curTransport?.close(); } catch { /* 已关闭 */ }
+        curProvider?.dispose();
       });
 
       try {
@@ -341,6 +517,7 @@ export async function connectMcpServers(
 
   return {
     tools: [...serverTools.values()].flat(),
+    states: serverStates,
     refresh: async () => {
       const results = await Promise.all([...refresherMap.values()].map((r) => r()));
       const added = results.flatMap((r) => r.added);
