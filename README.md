@@ -115,6 +115,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **并行批 fail-soft**：同批只读工具并发执行不再被全局 `streaming` 互斥误伤（写/不安全项由 `partitionRuns` 独立成批 + 批间顺序执行天然互斥）；`mapWithConcurrency` 改 settled 语义，批内单任务异常只产生自己的 error tool_result 并触发 PostToolUseFailure，兄弟结果保留
 - **token 口径校准**：`estimateTokens` 计入 system prompt + tool schema（chars/4 同口径，压缩阶梯与溢出恢复触发更准）；usage 末帧优先（`message_start` 首帧记 input，`input + cache_read + cache_creation` 全量入账）；OpenAI 直连接入 `stream_options.include_usage` 并解析末帧 usage-only chunk（与 proxy 注入口径一致）
 - **prompt cache 稳定前缀**：system 分层——稳定层带 `cache_control` 断点，lineage/工具状态/todo 等易变层排断点之后（前缀字节不变不致缓存失效）；Anthropic 请求 tools 末项 + 末条消息同打断点（每轮重建、历史断点先清理，不超 4 个上限）；OpenAI/mock 路径 blocks 展平为字符串不外泄字段
+- **流式空闲看门狗**：`withIdleWatchdog` 包装流式消费，距上一个内容事件超过阈值（默认 120s，`TUPIG_STREAM_IDLE_MS` 覆盖，0 关闭）即抛「流式响应空闲超时」并回收内层迭代器；字节级 keepalive 不产生事件不重置计时；错误归类 network（可重试 + failoverEligible），复用既有 retry/failover 通道
 - **权限落定触发 PermissionResult**：allow/deny/always 决策后携带 `decision + ruleSource` 触发供审计，matcher 可按 decision 过滤
 - **/rewind 触发 PostRewind**：回滚成功后携带 `checkpointId + mode` 触发，失败不触发，hook 异常吞掉
 - **/clear 触发 PreClear/PostClear**：清空序列为 Pre hook → 重置状态 → Post hook，hook 异常吞掉、重置失败原样上抛

@@ -23,6 +23,7 @@ const NETWORK_PATTERNS = [
   /ECONNREFUSED/i, /ETIMEDOUT/i, /EPIPE/i, /ENOTFOUND/i,
   /fetch failed/i, /socket hang up/i,
   /out of memory/i, /\bOOM\b/i, /server crashed/i,
+  /流式响应空闲超时/i, /stream idle/i, // 流式看门狗（issue #46）→ network 语义
 ];
 
 /** 带上下文词的 status 提取——避免裸数字误伤（如「价格 500 元」） */

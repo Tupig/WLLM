@@ -3,7 +3,7 @@
  * 支持三种模式：Anthropic / OpenAI 兼容 / Mock
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { MAX_RETRIES, API_FETCH_TIMEOUT_MS, DEFAULT_MODEL } from "../engine/constants.js";
+import { MAX_RETRIES, API_FETCH_TIMEOUT_MS, DEFAULT_MODEL, resolveStreamIdleTimeoutMs } from "../engine/constants.js";
 import { wireEnabled, appendWire } from "../utils/wire.js";
 
 export type StreamEvent =
@@ -185,6 +185,42 @@ function mockResponse(messages: Anthropic.MessageParam[]): Anthropic.Message {
   } as any;
 }
 
+/**
+ * 流式内容进度看门狗（issue #46）：距上一个事件超过 timeoutMs 无新事件即中断，
+ * 复用既有 retry/failover 通道。仅事件重置计时——字节级 keepalive 不产生事件不重置；
+ * timeoutMs<=0 关闭。中断时 best-effort 回收内层迭代器（挂死中的 pending read 无法同步取消，
+ * 连接由服务端超时/进程退出兜底）。
+ */
+export async function* withIdleWatchdog(
+  inner: AsyncGenerator<StreamEvent>,
+  timeoutMs: number,
+): AsyncGenerator<StreamEvent> {
+  if (timeoutMs <= 0) { yield* inner; return; }
+  const it = inner[Symbol.asyncIterator]();
+  try {
+    while (true) {
+      let timer: NodeJS.Timeout | undefined;
+      const idle = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`流式响应空闲超时（${timeoutMs}ms 无内容进度），已中断`)),
+          timeoutMs,
+        );
+      });
+      let res: IteratorResult<StreamEvent>;
+      try {
+        res = await Promise.race([it.next(), idle]);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (res.done) return;
+      yield res.value;
+    }
+  } finally {
+    // 不 await：async generator 的 return() 排在 pending next() 之后，await 会跟挂
+    void Promise.resolve(it.return?.(undefined as never)).catch(() => {});
+  }
+}
+
 async function* streamMessageInner(
   client: ApiClient, model: string, maxTokens: number, system: SystemInput,
   messages: Anthropic.MessageParam[], tools: Anthropic.Tool[],
@@ -257,8 +293,14 @@ export async function* streamMessage(
   client: ApiClient, model: string, maxTokens: number, system: SystemInput,
   messages: Anthropic.MessageParam[], tools: Anthropic.Tool[],
 ): AsyncGenerator<StreamEvent> {
+  // 空闲看门狗（issue #46）：内容进度超时即中断，交给 retry/failover
+  const guarded = () =>
+    withIdleWatchdog(
+      streamMessageInner(client, model, maxTokens, system, messages, tools),
+      resolveStreamIdleTimeoutMs(),
+    );
   if (!wireEnabled()) {
-    yield* streamMessageInner(client, model, maxTokens, system, messages, tools);
+    yield* guarded();
     return;
   }
   const reqId = appendWire({
@@ -270,7 +312,7 @@ export async function* streamMessage(
   const acc = { text: "", toolUses: [] as { id: string; name: string; inputJson: string }[], stopReason: undefined as string | null | undefined };
   const toolIdx = new Map<string, number>();
   try {
-    for await (const ev of streamMessageInner(client, model, maxTokens, system, messages, tools)) {
+    for await (const ev of guarded()) {
       if (ev.type === "text_delta") acc.text += ev.text;
       else if (ev.type === "tool_use_start") {
         toolIdx.set(ev.id, acc.toolUses.length);
