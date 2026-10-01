@@ -291,6 +291,19 @@ export function renderFileDiff(f: FileReview): string {
   return out.join("\n");
 }
 
+/** 审批 mini 预览（issue #54）：ops → 逐文件渲染；空/异常 null 由调用方回退 JSON */
+export function renderOpsPreview(ops: FileOp[]): string | null {
+  if (ops.length === 0) return null;
+  try {
+    const plan = buildReview(ops);
+    if (plan.files.length === 0) return null;
+    const rendered = plan.files.map(renderFileDiff).join("\n\n");
+    return rendered || null;
+  } catch {
+    return null;
+  }
+}
+
 /** 块级决定落地：按 keep 结果写回文件（全拒且新建 → 删除） */
 export async function applyHunkDecision(op: { path: string; before: string | null }, hunks: Hunk[], keep: boolean[]): Promise<void> {
   const next = selectHunks(op.before, hunks, keep);

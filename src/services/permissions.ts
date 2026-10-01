@@ -11,6 +11,10 @@ import { planRerouteTarget, ensureStagedSeed } from "../engine/staging.js";
 import chalk from "chalk";
 import { evaluatePersistentAllow, deriveAlwaysPattern, addAlwaysAllow } from "./approvalStore.js";
 import { fireNotification } from "../engine/hookEvents.js";
+import { readFile } from "fs/promises";
+import { resolve as resolvePath } from "path";
+import { previewEdit } from "../tools/FileEdit.js";
+import { renderOpsPreview } from "../engine/diffReview.js";
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -227,6 +231,60 @@ export async function canUseTool(
 
 export type ApprovalDecision = "allow" | "deny" | "always";
 
+async function readIfExists(path: string): Promise<string | null> {
+  try { return await readFile(path, "utf-8"); } catch { return null; }
+}
+
+/**
+ * 审批 diff 预览（issue #54）：Edit/Write 渲染真实变更（含新建/覆盖）；
+ * 其他工具、定位失败、内容无变化 → null（调用方回退 JSON 截断）。
+ */
+export async function buildApprovalPreview(
+  toolName: string,
+  input: Record<string, unknown>,
+): Promise<string | null> {
+  try {
+    const fp = String(input.file_path ?? "");
+    if (!fp) return null;
+    const path = resolvePath(appStore.getState().workDir, fp);
+
+    if (toolName === "Edit") {
+      const before = await readIfExists(path);
+      if (before === null) return null;
+      const after = previewEdit(before, {
+        old_string: String(input.old_string ?? ""),
+        new_string: String(input.new_string ?? ""),
+        replace_all: input.replace_all === true,
+      });
+      if (after === null || after === before) return null;
+      return renderOpsPreview([{ path, before, after }]);
+    }
+    if (toolName === "Write") {
+      const after = String(input.content ?? "");
+      const before = await readIfExists(path);
+      if (before === after) return null;
+      return renderOpsPreview([{ path, before, after }]);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function printPreview(preview: string): void {
+  for (const line of preview.split("\n")) {
+    if (line.startsWith("---") || line.startsWith("+++") || line.startsWith("@@")) {
+      console.log(chalk.cyan(line));
+    } else if (line.startsWith("+")) {
+      console.log(chalk.green(line));
+    } else if (line.startsWith("-")) {
+      console.log(chalk.red(line));
+    } else {
+      console.log(chalk.gray(line));
+    }
+  }
+}
+
 /**
  * 三态审批（issue #28）：y=本次放行 / a=总是允许（推导模式写入
  * .tupigcode/permissions.json）/ 其他或超时=拒绝。
@@ -249,7 +307,10 @@ export async function promptUserDecision(
   const truncated = inputStr.length > 500 ? inputStr.slice(0, 500) + "\n..." : inputStr;
 
   console.log(chalk.yellow(`\n⚠️  ${toolName}`));
-  console.log(chalk.gray(truncated));
+  // 审批 diff 预览（issue #54）：写工具渲染真实变更，其余回退 JSON 截断
+  const preview = await buildApprovalPreview(toolName, input);
+  if (preview) printPreview(preview);
+  else console.log(chalk.gray(truncated));
 
   return new Promise((resolve) => {
     let settled = false;

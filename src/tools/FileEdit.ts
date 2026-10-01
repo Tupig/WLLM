@@ -25,6 +25,29 @@ function findActualString(content: string, oldString: string): number {
   return normalize(content).indexOf(normalize(oldString));
 }
 
+/**
+ * 审批 diff 预览（issue #54）：与 call 同源的定位逻辑（精确 → 模糊单命中 →
+ * replace_all）。多处匹配/不匹配等会被执行拒绝的场景返回 null，调用方回退 JSON。
+ */
+export function previewEdit(
+  content: string,
+  input: { old_string: string; new_string: string; replace_all?: boolean },
+): string | null {
+  const idx = findActualString(content, input.old_string);
+  if (idx === -1) {
+    const fuzzy = fuzzyLocate(content, input.old_string);
+    if (fuzzy.length === 1 && !input.replace_all) {
+      const { start, end } = fuzzy[0];
+      return content.slice(0, start) + input.new_string + content.slice(end);
+    }
+    return null;
+  }
+  if (input.replace_all) return content.split(input.old_string).join(input.new_string);
+  const secondIdx = findActualString(content.slice(idx + input.old_string.length), input.old_string);
+  if (secondIdx !== -1) return null;
+  return content.slice(0, idx) + input.new_string + content.slice(idx + input.old_string.length);
+}
+
 export const FileEditTool = buildTool<string>({
   name: "Edit",
   inputSchema: FileEditInput,

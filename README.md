@@ -124,6 +124,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **压缩保留工具调用史**：摘要 prompt 强制三要素（文件路径/关键命令/结果结论）；压缩时抽取 `tool_use` 线索列表附在摘要尾部（上限 10 条去重）；二次压缩检测首条为旧摘要 → 旧摘要并入新摘要且回收旧线索区段，不再覆盖
 - **子代理自动压缩**：子代理循环每轮前估算上下文，超预算（`MAX_CONTEXT_TOKENS×0.6`）走既有压缩流水线重建后继续，失败回退 budgetReduction 不崩；`SubAgentResult.compactions` 计数对父代理/轨迹可见
 - **审批「总是允许」持久化**：审批 prompt `y/N/a`，选 `a` 推导模式（Bash 首词前缀 `Bash(npm *)`、写工具工具级）写入项目级 `.tupigcode/permissions.json`，后续同前缀自动放行；deny 规则/敏感路径/自修改面仍优先（敏感路径检查已前移到规则链之前）；`/permissions [clear]` 查看清除
+- **审批 diff 预览**：ask 弹问时 Edit/Write 渲染真实变更（复用 LCS 三级审查的 mini 渲染，含新建/覆盖、diff 行着色），定位失败/内容无变化/其他工具回退 JSON 截断 500 字符
 - **SIGINT 会话抢救**：Ctrl+C/SIGTERM 同步落盘当前历史并打 `interrupted` 标记（空会话不写）；下次启动扫描孤儿会话打印「恢复：/resume \<id\>」提示；正常 turn 结束的保存不带标记自然冲掉，也可手动 `clearInterruptedFlag`
 - **生命周期 hook 事件**：`Stop`（自然结束）/`SessionStart`（submitMessage 入口）/`PreCompact`+`PostCompact`（阈值梯度、溢出恢复、手动 /compact 三处压缩点）全部落地；压缩事件带 `source: manual|auto` 供 matcher 过滤，shell hooks.json 支持 `matcher.source`；一切 hook 异常吞掉不阻塞
 - **UserPromptSubmit hook**：prompt 进模型前触发（mode 命令之后、init 之前）；`block`（exit 2/JSON block）拒绝本轮不发请求并输出原因，`additionalContext`（平铺 JSON 或 Claude Code `hookSpecificOutput` 嵌套）以独立 user 消息注入本轮上下文，多 hook 拼接合并不覆盖
