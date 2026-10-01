@@ -113,6 +113,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **子代理工具超时**：子代理内 tool.call 与主循环同享 `TOOL_TIMEOUT_MS`（含 `TUPIG_TOOL_TIMEOUT_MS` 覆盖），挂死工具超时返回 is_error tool_result 后任务继续；withTimeout 抽到 `engine/time.ts` 供两侧共用
 - **PostToolUseFailure 补触发**：工具执行错误与超时（含 Bash 超时改为 reject 的真实失败语义）触发，携带 `output + durationMs`；校验失败/doom 拒绝不触发
 - **并行批 fail-soft**：同批只读工具并发执行不再被全局 `streaming` 互斥误伤（写/不安全项由 `partitionRuns` 独立成批 + 批间顺序执行天然互斥）；`mapWithConcurrency` 改 settled 语义，批内单任务异常只产生自己的 error tool_result 并触发 PostToolUseFailure，兄弟结果保留
+- **token 口径校准**：`estimateTokens` 计入 system prompt + tool schema（chars/4 同口径，压缩阶梯与溢出恢复触发更准）；usage 末帧优先（`message_start` 首帧记 input，`input + cache_read + cache_creation` 全量入账）；OpenAI 直连接入 `stream_options.include_usage` 并解析末帧 usage-only chunk（与 proxy 注入口径一致）
 - **权限落定触发 PermissionResult**：allow/deny/always 决策后携带 `decision + ruleSource` 触发供审计，matcher 可按 decision 过滤
 - **/rewind 触发 PostRewind**：回滚成功后携带 `checkpointId + mode` 触发，失败不触发，hook 异常吞掉
 - **/clear 触发 PreClear/PostClear**：清空序列为 Pre hook → 重置状态 → Post hook，hook 异常吞掉、重置失败原样上抛

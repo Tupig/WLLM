@@ -330,6 +330,8 @@ async function* streamOpenAI(
       model, messages: oaiMsgs,
       tools: oaiTools.length > 0 ? oaiTools : undefined,
       max_tokens: maxTokens, stream: true,
+      // 末帧 usage（issue #44）：直连也拿 prompt_tokens，与 proxy 注入口径一致
+      stream_options: { include_usage: true },
     }),
     signal: controller.signal,
   }).finally(() => clearTimeout(timeout));
@@ -352,6 +354,8 @@ export async function* parseOpenAISSE(
   let buf = "";
   const tcs = new Map<number, { id: string; name: string; args: string }>();
   const msgId = `msg_${Date.now()}`;
+  const usage = new UsageTracker();
+  let stopReason: string | null = null;
 
   yield {
     type: "message_start",
@@ -370,6 +374,11 @@ export async function* parseOpenAISSE(
       if (data === "[DONE]") break;
       try {
         const p = JSON.parse(data);
+        // usage 可能在 finish 之后的 usage-only chunk（include_usage，issue #44）→ 统一先入账
+        if (p.usage) usage.record({
+          input_tokens: p.usage.prompt_tokens,
+          output_tokens: p.usage.completion_tokens,
+        });
         const ch = p.choices?.[0];
         if (!ch) continue;
         const d = ch.delta;
@@ -392,16 +401,44 @@ export async function* parseOpenAISSE(
         }
         if (ch.finish_reason) {
           for (const [, tc] of tcs) yield { type: "tool_use_stop", id: tc.id };
-          yield {
-            type: "message_delta",
-            stopReason: ch.finish_reason === "tool_calls" ? "tool_use" : "end_turn",
-            usage: { input_tokens: 0, output_tokens: p.usage?.completion_tokens || 0 } as Anthropic.Usage,
-          };
+          stopReason = ch.finish_reason === "tool_calls" ? "tool_use" : "end_turn";
         }
       } catch { /* SSE 解析失败时跳过 */ }
     }
   }
+  // message_delta 延后到流末发（issue #44）：末帧 usage chunk 可能晚于 finish_reason
+  if (stopReason !== null) {
+    yield {
+      type: "message_delta",
+      stopReason,
+      usage: { input_tokens: usage.inputTokens, output_tokens: usage.outputTokens } as Anthropic.Usage,
+    };
+  }
   yield { type: "message_stop" };
+}
+
+/**
+ * 帧级 usage 累计（issue #44）：非零后写覆盖——首帧（message_start）记入，
+ * 末帧（非首帧）优先；input 口径 = input_tokens + cache_read + cache_creation 全量入账。
+ */
+export class UsageTracker {
+  private _input = 0;
+  private _output = 0;
+  record(u?: {
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+    cache_read_input_tokens?: number | null;
+    cache_creation_input_tokens?: number | null;
+  } | null): void {
+    if (!u) return;
+    const input =
+      (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+    if (input > 0) this._input = input;
+    const out = u.output_tokens || 0;
+    if (out > 0) this._output = out;
+  }
+  get inputTokens(): number { return this._input; }
+  get outputTokens(): number { return this._output; }
 }
 
 /** full-jitter 退避（issue #25）：rand(0, min(cap, base*2^attempt)） */

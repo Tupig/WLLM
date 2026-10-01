@@ -13,7 +13,7 @@ import { connectMcpServers, type McpConnection } from "./mcp.js";
 import { getDefaultTools, getToolByName, resolveExtraTools } from "./toolRegistry.js";
 import { promptTools, setExplicitExtras, setSearchPool, markLoaded } from "./lazyTools.js";
 import { resetTurnOps } from "./diffReview.js";
-import { createClient, streamMessage, type StreamEvent, type ApiClient } from "../services/api.js";
+import { createClient, streamMessage, UsageTracker, type StreamEvent, type ApiClient } from "../services/api.js";
 import { resolveHarness, parseXmlToolCalls, buildXmlToolSection } from "./harness.js";
 import { resolveFallback, streamWithFailover, isInfraError } from "../services/failover.js";
 import { renderSystemPrompt } from "./prompt.js";
@@ -353,7 +353,10 @@ export class QueryEngine {
         await fireCompactPost(undefined, hctx, "model");
       }
 
-      const estimatedTokens = this.estimateTokens(loopState.messages);
+      const estToolDefs = this.buildToolDefs();
+      const estimatedTokens = this.estimateTokens(
+        loopState.messages, this.buildSystemPrompt(estToolDefs), estToolDefs,
+      );
       if (
         !loopState.hasAttemptedReactiveCompact &&
         estimatedTokens > MAX_CONTEXT_TOKENS * LADDER_MICRO
@@ -444,6 +447,21 @@ export class QueryEngine {
     });
   }
 
+  /** 常驻工具的 Anthropic tool schema（issue #44：估算与请求共用同一构造） */
+  private buildToolDefs(): Anthropic.Tool[] {
+    const residentTools = promptTools(this.tools);
+    return residentTools.map((t) => {
+      const raw = (t.jsonSchema as any) ?? zodToJsonSchema(t.inputSchema);
+      // 清理 zod-to-json-schema 添加的多余字段
+      const { $schema, additionalProperties, ...schema } = raw as any;
+      return {
+        name: t.name,
+        description: t.description(t as any),
+        input_schema: schema as Anthropic.Tool["input_schema"],
+      };
+    });
+  }
+
   private async executeTurn(
     loopState: LoopState,
     toolContext: ToolUseContext,
@@ -454,17 +472,7 @@ export class QueryEngine {
     events: SDKMessage[];
   }> {
     const events: SDKMessage[] = [];
-    const residentTools = promptTools(this.tools);
-    const toolDefs: Anthropic.Tool[] = residentTools.map((t) => {
-      const raw = (t.jsonSchema as any) ?? zodToJsonSchema(t.inputSchema);
-      // 清理 zod-to-json-schema 添加的多余字段
-      const { $schema, additionalProperties, ...schema } = raw as any;
-      return {
-        name: t.name,
-        description: t.description(t as any),
-        input_schema: schema as Anthropic.Tool["input_schema"],
-      };
-    });
+    const toolDefs: Anthropic.Tool[] = this.buildToolDefs();
 
     const toolBuffers = new Map<string, { id: string; name: string; inputJson: string }>();
     const toolResults: Array<{ tool_use_id: string; content: string; is_error?: boolean }> = [];
@@ -477,6 +485,7 @@ export class QueryEngine {
       toolBuffers.clear();
       fullText = "";
       stopReason = null;
+      const usage = new UsageTracker(); // 每次尝试独立记账（issue #44）
 
       try {
         const stream = () => streamMessage(
@@ -508,14 +517,20 @@ export class QueryEngine {
               break;
             }
             case "tool_use_stop": break;
+            case "message_start":
+              // 首帧 usage 记入（Anthropic 的 input_tokens 在 message_start，issue #44）
+              usage.record((event.message as any)?.usage);
+              break;
             case "message_delta":
               stopReason = event.stopReason;
-              inputTokens += (event.usage as any)?.input_tokens || 0;
-              outputTokens += event.usage?.output_tokens || 0;
+              // 末帧（非首帧）非零 usage 优先，input 含 cache 字段全量
+              usage.record(event.usage);
               break;
             case "message_stop": break;
           }
         }
+        inputTokens = usage.inputTokens;
+        outputTokens = usage.outputTokens;
         break;
       } catch (err: any) {
         if (err?.message?.includes("max_tokens") && attempt < MAX_OUTPUT_TOKEN_ESCALATION.length - 1) {
@@ -862,9 +877,17 @@ export class QueryEngine {
     }
   }
 
-  private estimateTokens(messages: Anthropic.MessageParam[]): number {
+  /** 估算上下文 token（issue #44）：messages + system prompt + tool schema 同按 chars/4 口径 */
+  private estimateTokens(
+    messages: Anthropic.MessageParam[],
+    system?: string,
+    toolDefs?: Anthropic.Tool[],
+  ): number {
     try {
-      return Math.ceil(JSON.stringify(messages).length / 4);
+      const msgChars = JSON.stringify(messages)?.length ?? 0;
+      const sysChars = system?.length ?? 0;
+      const toolChars = toolDefs ? (JSON.stringify(toolDefs)?.length ?? 0) : 0;
+      return Math.ceil((msgChars + sysChars + toolChars) / 4);
     } catch {
       return 0;
     }
