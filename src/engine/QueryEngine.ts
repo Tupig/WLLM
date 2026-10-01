@@ -29,7 +29,7 @@ import { formatCompactionLine } from "./compactionMeta.js";
 import { ensureHookTrust, answerHookTrust, promptHookTrust } from "./hookTrust.js";
 import { getLineage } from "./lineage.js";
 import { OverflowRecovery, MAX_OVERFLOW_RETRIES } from "./overflowRecovery.js";
-import { fireSessionStart, fireStop, fireCompactPre, fireCompactPost } from "./hookEvents.js";
+import { fireSessionStart, fireStop, fireCompactPre, fireCompactPost, fireUserPromptSubmit } from "./hookEvents.js";
 import { ContextCompactor, LADDER_MICRO } from "../context/compact/index.js";
 import { appStore } from "../state/AppState.js";
 import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS } from "./constants.js";
@@ -297,6 +297,21 @@ export class QueryEngine {
       return;
     }
 
+    // UserPromptSubmit（issue #48）：prompt 进模型前触发；block 拒绝本轮（不发请求），
+    // additionalContext 注入到本轮消息（prompt 之后）
+    const submitResult = await fireUserPromptSubmit(hookSystem, {
+      turnNumber: 0,
+      sessionId: this.sessionState?.sessionId ?? "",
+      input: { prompt },
+    });
+    if (submitResult.block) {
+      yield {
+        type: "text",
+        text: submitResult.message?.trim() || "用户输入已被 UserPromptSubmit hook 拦截",
+      };
+      return;
+    }
+
     // 根据模式过滤工具
     const activeTools = this.modeManager.filterTools(this.tools);
 
@@ -318,6 +333,13 @@ export class QueryEngine {
     const baseMessages = this.config.initialMessages?.length
       ? [...this.config.initialMessages, { role: "user" as const, content: prompt }]
       : [{ role: "user" as const, content: prompt }];
+    const injectedCtx = submitResult.additionalContext?.trim();
+    if (injectedCtx) {
+      baseMessages.push({
+        role: "user" as const,
+        content: `<user-prompt-submit-hook additionalContext>\n${injectedCtx}\n</user-prompt-submit-hook>`,
+      });
+    }
     const loopState: LoopState = {
       messages: baseMessages,
       turnCount: 0,

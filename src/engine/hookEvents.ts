@@ -5,7 +5,9 @@
  * 触发点；统一出口：吞掉一切异常（hook 失败不阻塞主流程），
  * 压缩事件透传 source（manual/auto）供 matcher 过滤。
  */
-import { hookSystem, type HookSystem, type HookContext, type HookEvent } from "./hooks.js";
+import {
+  hookSystem, type HookSystem, type HookContext, type HookEvent, type HookResult,
+} from "./hooks.js";
 
 export async function fireLifecycle(
   hs: HookSystem,
@@ -126,4 +128,20 @@ export async function fireModeChange(
 ): Promise<void> {
   if (from === to) return;
   await fireLifecycle(hs, "ModeChange", { ...ctx, modeFrom: from, modeTo: to });
+}
+
+/**
+ * UserPromptSubmit（issue #48）：prompt 进模型前触发。
+ * 返回 HookResult 供入口消费（block=拒绝本轮、additionalContext=注入上下文）；
+ * 与其他 fire* 不同需要透出结果，异常吞成空结果（hook 失败不阻塞）。
+ */
+export async function fireUserPromptSubmit(
+  hs: HookSystem = hookSystem,
+  ctx: HookContext,
+): Promise<HookResult> {
+  try {
+    return await hs.trigger("UserPromptSubmit", ctx);
+  } catch {
+    return {};
+  }
 }

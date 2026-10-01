@@ -46,6 +46,8 @@ export type HookResult = {
   block?: boolean;
   replacement?: string;
   message?: string;
+  /** UserPromptSubmit 注入的附加上下文（issue #48），多 hook 合并时拼接 */
+  additionalContext?: string;
 };
 
 export type HookHandler = (
@@ -63,10 +65,12 @@ export function interpretShellExit(
   if (code === 0) {
     try {
       const parsed = JSON.parse(stdout);
+      const ac = parsed?.hookSpecificOutput?.additionalContext ?? parsed?.additionalContext;
       return {
         block: parsed.block === true,
         replacement: parsed.replacement,
         message: parsed.message,
+        additionalContext: typeof ac === "string" && ac.length > 0 ? ac : undefined,
       };
     } catch {
       return {};
@@ -147,7 +151,10 @@ export class HookSystem {
       try {
         const r = await m.handler(ctx);
         if (r) {
+          const acParts = [result.additionalContext, r.additionalContext]
+            .filter((x): x is string => typeof x === "string" && x.length > 0);
           result = { ...result, ...r };
+          if (acParts.length > 0) result.additionalContext = acParts.join("\n"); // 多 hook 拼接不互相覆盖
           if (result.block) break;
         }
       } catch (err) {
