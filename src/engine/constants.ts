@@ -20,6 +20,14 @@ export const MAX_RESULT_CHARS = 100_000;
 export const MAX_GLOB_RESULTS = 100;
 export const MAX_GREP_RESULTS = 250;
 export const MAX_BASH_OUTPUT_CHARS = 50_000;
+/** 写组并行度上限（issue #57）：不同 file_path 的写可并行，同文件保序串行 */
+export const MAX_WRITE_CONCURRENCY = 4;
+export function resolveWriteConcurrency(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.TUPIG_WRITE_CONCURRENCY;
+  const n = raw ? Number(raw) : NaN;
+  if (!Number.isFinite(n) || n < 1) return MAX_WRITE_CONCURRENCY;
+  return Math.min(n, 16);
+}
 function resolveToolTimeoutMs(): number {
   const raw = process.env.TUPIG_TOOL_TIMEOUT_MS;
   const n = raw ? Number(raw) : NaN;

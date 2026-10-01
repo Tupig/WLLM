@@ -112,7 +112,8 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **检查点按名称回滚**：`/rewind` 参数为 id-or-label，id 精确优先、label 精确匹配（同名取最新），回滚消息标注匹配方式
 - **子代理工具超时**：子代理内 tool.call 与主循环同享 `TOOL_TIMEOUT_MS`（含 `TUPIG_TOOL_TIMEOUT_MS` 覆盖），挂死工具超时返回 is_error tool_result 后任务继续；withTimeout 抽到 `engine/time.ts` 供两侧共用
 - **PostToolUseFailure 补触发**：工具执行错误与超时（含 Bash 超时改为 reject 的真实失败语义）触发，携带 `output + durationMs`；校验失败/doom 拒绝不触发
-- **并行批 fail-soft**：同批只读工具并发执行不再被全局 `streaming` 互斥误伤（写/不安全项由 `partitionRuns` 独立成批 + 批间顺序执行天然互斥）；`mapWithConcurrency` 改 settled 语义，批内单任务异常只产生自己的 error tool_result 并触发 PostToolUseFailure，兄弟结果保留
+- **并行批 fail-soft**：同批只读工具并发执行不再被全局 `streaming` 互斥误伤（不安全项由 `partitionRuns` 独立成批 + 批间顺序执行天然互斥）；`mapWithConcurrency` 改 settled 语义，批内单任务异常只产生自己的 error tool_result 并触发 PostToolUseFailure，兄弟结果保留
+- **写工具按文件分组并行**：带 `file_path` 的写（Write/Edit/MultiEdit）相邻项合并为写组批——同文件保序串行（组内逐项 fail-soft，前项失败不连坐）、异文件组间并行（并发 `TUPIG_WRITE_CONCURRENCY`，默认 4）；批段间仍顺序，非写不安全项（Bash 等）保持独立成批
 - **token 口径校准**：`estimateTokens` 计入 system prompt + tool schema（chars/4 同口径，压缩阶梯与溢出恢复触发更准）；usage 末帧优先（`message_start` 首帧记 input，`input + cache_read + cache_creation` 全量入账）；OpenAI 直连接入 `stream_options.include_usage` 并解析末帧 usage-only chunk（与 proxy 注入口径一致）
 - **prompt cache 稳定前缀**：system 分层——稳定层带 `cache_control` 断点，lineage/工具状态/todo 等易变层排断点之后（前缀字节不变不致缓存失效）；Anthropic 请求 tools 末项 + 末条消息同打断点（每轮重建、历史断点先清理，不超 4 个上限）；OpenAI/mock 路径 blocks 展平为字符串不外泄字段
 - **流式空闲看门狗**：`withIdleWatchdog` 包装流式消费，距上一个内容事件超过阈值（默认 120s，`TUPIG_STREAM_IDLE_MS` 覆盖，0 关闭）即抛「流式响应空闲超时」并回收内层迭代器；字节级 keepalive 不产生事件不重置计时；错误归类 network（可重试 + failoverEligible），复用既有 retry/failover 通道
@@ -301,6 +302,7 @@ tupigcode/
 | `TUPIG_HOOKS_FILE` / `TUPIG_HOOKS_FAIL_OPEN` | hooks 配置 / 失败是否放行 |
 | `TUPIG_IDLE_NOTIFY_MS` | REPL 输入空闲 Notification 阈值（默认 300000，0 关闭） |
 | `TUPIG_BASH_OUTPUT_CHARS` | Bash 输出裁剪预算（默认 50000，正整数） |
+| `TUPIG_WRITE_CONCURRENCY` | 写组并行度（默认 4，1~16；同文件仍保序串行） |
 | `TUPIG_HARNESS` / `TUPIG_DEBUG` / `TUPIG_MOCK` / `TUPIG_PROMPT_OPT` / `TUPIG_EXTRA_TOOLS` | harness、调试、Mock、prompt 优化、额外工具 |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` | 云端 Provider 凭证（可选） |
 

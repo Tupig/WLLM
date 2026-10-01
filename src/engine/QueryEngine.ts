@@ -19,8 +19,8 @@ import { resolveFallback, streamWithFailover, isInfraError } from "../services/f
 import { renderSystemPrompt } from "./prompt.js";
 import { routeTask, formatRouteLog, profileTask, appendRouteFeedback } from "./router.js";
 import { appendFileSync, mkdirSync } from "fs";
-import { join } from "path";
-import { mapWithConcurrency, partitionRuns } from "../tools/parallel.js";
+import { join, resolve as resolvePath } from "path";
+import { mapWithConcurrency, partitionRuns, partitionWriteGroups } from "../tools/parallel.js";
 import { canUseTool, promptUserDecision } from "../services/permissions.js";
 import { deriveAlwaysPattern } from "../services/approvalStore.js";
 import { hookSystem, loadShellHooks, initShellHooks, reloadShellHooksIfChanged, type HookMatcher } from "./hooks.js";
@@ -32,7 +32,7 @@ import { OverflowRecovery, MAX_OVERFLOW_RETRIES } from "./overflowRecovery.js";
 import { fireSessionStart, fireStop, fireCompactPre, fireCompactPost, fireUserPromptSubmit } from "./hookEvents.js";
 import { ContextCompactor, LADDER_MICRO } from "../context/compact/index.js";
 import { appStore } from "../state/AppState.js";
-import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS } from "./constants.js";
+import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS, resolveWriteConcurrency } from "./constants.js";
 import { resolveRuleLayers, formatLayersForPrompt, type RuleLayer } from "../context/rules.js";
 import { loadMemoriesSync, formatMemoriesForPrompt, type MemoryEntry } from "../knowledge/memory.js";
 import { loadSkills, formatSkillCatalog, type SkillMeta } from "../knowledge/skills.js";
@@ -680,9 +680,27 @@ export class QueryEngine {
         const t = getToolByName(this.tools, e.buf.name);
         return !!t && t.isReadOnly(e.input) && t.isConcurrencySafe(e.input);
       };
-      const batches = partitionRuns(entries, isSafe);
-      for (const batch of batches) {
-        await this.runBatch(batch, toolContext, canUseToolFn, loopState, events, toolResults);
+      // 写工具（非只读且带 file_path）：相邻写单项批合并为写组批，组内按文件保序、组间并行（issue #57）
+      const isWriteItem = (e: { buf: { name: string }; input: Record<string, unknown> | null }) => {
+        if (!e.input) return false;
+        const t = getToolByName(this.tools, e.buf.name);
+        if (!t || t.isReadOnly(e.input)) return false;
+        return typeof e.input.file_path === "string";
+      };
+      type Seg = { write: boolean; entries: typeof entries };
+      const segments: Seg[] = [];
+      for (const batch of partitionRuns(entries, isSafe)) {
+        const write = batch.length === 1 && isWriteItem(batch[0]);
+        const last = segments[segments.length - 1];
+        if (write && last?.write) last.entries.push(batch[0]);
+        else segments.push({ write, entries: [...batch] });
+      }
+      for (const seg of segments) {
+        if (seg.write) {
+          await this.runWriteGroup(seg.entries, toolContext, canUseToolFn, loopState, events, toolResults);
+        } else {
+          await this.runBatch(seg.entries, toolContext, canUseToolFn, loopState, events, toolResults);
+        }
       }
 
       stopReason = "tool_use";
@@ -704,9 +722,10 @@ export class QueryEngine {
   }
 
   /**
-   * 批次级闸门（issue #43）：批间顺序执行（partitionRuns 把写/不安全项独立成批，
-   * 顺序循环天然互斥，仅快照类写操作靠 autoSnapshot 防抖串行）；
-   * 批内并行 fail-soft——单任务异常只产生自己的 error tool_result，不误伤兄弟。
+   * 批次级闸门（issue #43/#57）：批间顺序执行——safe 批可并行，非只读无 file_path 的
+   * 不安全项（如 Bash）由 partitionRuns 独立成批顺序跑；带 file_path 的写项已由
+   * runWriteGroup 按文件分组处理（见下）。批内并行 fail-soft——单任务异常只产生
+   * 自己的 error tool_result，不误伤兄弟。
    */
   /** 批内/早期派发异常兜底（issue #43/#47）：自己的 error tool_result + PostToolUseFailure */
   private recordToolFailure(
@@ -750,6 +769,61 @@ export class QueryEngine {
       const e = batch[i];
       const errMsg = s.reason instanceof Error ? s.reason.message : String(s.reason);
       this.recordToolFailure(e.buf, e.input, errMsg, loopState, events, toolResults);
+    }
+  }
+
+  /**
+   * 写组批（issue #57）：同 file_path 保序串行（组内逐项 fail-soft，前项失败不连坐后项），
+   * 异文件组间并行（resolveWriteConcurrency，TUPIG_WRITE_CONCURRENCY 可调）；
+   * 批段间仍顺序执行，与 safe 批/其他写项保持原闸门。
+   */
+  private async runWriteGroup(
+    entries: Array<{ buf: { id: string; name: string; inputJson: string }; input: Record<string, unknown> | null }>,
+    toolContext: ToolUseContext,
+    canUseToolFn: CanUseToolFn,
+    loopState: LoopState,
+    events: any[],
+    toolResults: Array<{ tool_use_id: string; content: string; is_error?: boolean }>,
+  ): Promise<void> {
+    const keyOf = (e: { input: Record<string, unknown> | null }): string | null => {
+      const fp = e.input?.file_path;
+      if (typeof fp !== "string" || !fp) return null;
+      try {
+        return resolvePath(toolContext.workDir, fp);
+      } catch {
+        return fp;
+      }
+    };
+    const groups = partitionWriteGroups(entries, keyOf);
+    if (groups.length === 1) {
+      for (const e of groups[0]) {
+        try {
+          await this.runToolBuffer(e.buf, e.input ?? {}, getToolByName(this.tools, e.buf.name), toolContext, canUseToolFn, loopState, events, toolResults);
+        } catch (err) {
+          this.recordToolFailure(e.buf, e.input, err instanceof Error ? err.message : String(err), loopState, events, toolResults);
+        }
+      }
+      return;
+    }
+    const runGroup = async (g: typeof entries): Promise<void> => {
+      for (const e of g) {
+        try {
+          await this.runToolBuffer(e.buf, e.input ?? {}, getToolByName(this.tools, e.buf.name), toolContext, canUseToolFn, loopState, events, toolResults);
+        } catch (err) {
+          this.recordToolFailure(e.buf, e.input, err instanceof Error ? err.message : String(err), loopState, events, toolResults);
+        }
+      }
+    };
+    const settled = await mapWithConcurrency(groups, resolveWriteConcurrency(), runGroup);
+    for (let i = 0; i < settled.length; i++) {
+      const s = settled[i];
+      if (s.status !== "rejected") continue;
+      const errMsg = s.reason instanceof Error ? s.reason.message : String(s.reason);
+      for (const e of groups[i]) {
+        if (!toolResults.some((r) => r.tool_use_id === e.buf.id)) {
+          this.recordToolFailure(e.buf, e.input, errMsg, loopState, events, toolResults);
+        }
+      }
     }
   }
 

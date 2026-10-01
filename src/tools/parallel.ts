@@ -47,6 +47,30 @@ export function partitionRuns<T>(items: T[], isSafe: (item: T) => boolean): T[][
   return batches;
 }
 
+/**
+ * 写工具按 file_path 分组（issue #57）：同文件保持输入序串行成链，
+ * 异文件各自成组可并行；无 file_path（null）→ 各自独立成组。
+ */
+export function partitionWriteGroups<T>(items: T[], fileKey: (item: T) => string | null): T[][] {
+  const groups: T[][] = [];
+  const indexByKey = new Map<string, number>();
+  for (const item of items) {
+    const key = fileKey(item);
+    if (key === null) {
+      groups.push([item]);
+      continue;
+    }
+    const idx = indexByKey.get(key);
+    if (idx === undefined) {
+      indexByKey.set(key, groups.length);
+      groups.push([item]);
+    } else {
+      groups[idx].push(item);
+    }
+  }
+  return groups;
+}
+
 export interface ParallelToolCall {
   /** 工具调用 ID */
   id: string;
