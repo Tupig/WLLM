@@ -137,6 +137,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **`/compact [focusing on X]` 手动压缩**：走既有压缩流水线（snip → micro → collapse → LLM 摘要），支持焦点指令透传；`/context` 分段明细（系统提示/对话消息/工具结果/工具 schema/记忆 各段 token+条数，求和=总量，估算 chars/4）
 - **内置技能包（10 个）**：git-workflow / git-log / gitingest / shell-command-engager / code-review / debugging / test-first / docs-sync / release-check / refactor-safe，`src/knowledge/skills/` 静态装载（build 拷贝到 dist），用户 `.tupigcode/skills/` 同名覆盖、无效回落内置，三重门禁与 3000 字目录预算对内置同样生效
 - **三级 diff 审查**：每轮写操作聚合为结构化 diff（自研 LCS，上下文 3），REPL 全局 a/r/s → 文件 y/n/h/q → 块 y/n 三级判定；拒绝按文件回滚（同文件多次修改回到首次之前）；超大 diff 降级为仅文件级；`TUPIG_DIFF_REVIEW=0` 关闭；**plan 模式改动暂存** `.tupigcode/staging/`，**`/apply` 才落盘**（越界条目拒绝）
+- **Bash 输出双端裁剪**：超长输出 head+tail 双端保留（both 默认 60/40，`keep=head|tail` 单端），预算 `TUPIG_BASH_OUTPUT_CHARS`（默认 50000）可调；截断标注原始大小/省略量/keep 模式，预算内原样返回
 - **工具延迟装载**：核心集（Read/Write/Edit/Bash/Glob/Grep/TodoWrite/Question）+ `ToolSearch` 元工具常驻，其余（git/测试/网页/子代理/仓库地图等）按需检索挂载（下一轮生效）；`TUPIG_EXTRA_TOOLS` 显式指定与 MCP 工具保持常驻；`TUPIG_LAZY_TOOLS=0` 回退全量注入
 - **wire.jsonl 原始报文**：`TUPIG_WIRE=1` 开启（默认关零开销）——pilot 侧 `streamMessage` 记录请求与流式合并后正文、proxy 侧透传观测，JSONL 落 `.tupigcode/wire.jsonl`（`TUPIG_WIRE_FILE`/`TUPIG_WIRE_MAX_BYTES` 可调，默认 5MB 滚动裁剪），request/response 共享 `req_id`
 - **auto-test 自验证**：`RunTests` 工具（默认集，只读）——探测 `TUPIG_TEST_CMD` / npm test（跳过占位）/ pytest / cargo / go，失败输出回喂修复复跑；超时可调 `TUPIG_TEST_TIMEOUT_MS`，输出尾部截断 4000 字符
@@ -297,6 +298,7 @@ tupigcode/
 | `TUPIG_MCP_APPROVAL` | MCP 审批全局开关：`off`=全部放行 / `ask`=全部强制询问（未设置=按 mcp.json 白名单与 readOnlyHint 分级） |
 | `TUPIG_HOOKS_FILE` / `TUPIG_HOOKS_FAIL_OPEN` | hooks 配置 / 失败是否放行 |
 | `TUPIG_IDLE_NOTIFY_MS` | REPL 输入空闲 Notification 阈值（默认 300000，0 关闭） |
+| `TUPIG_BASH_OUTPUT_CHARS` | Bash 输出裁剪预算（默认 50000，正整数） |
 | `TUPIG_HARNESS` / `TUPIG_DEBUG` / `TUPIG_MOCK` / `TUPIG_PROMPT_OPT` / `TUPIG_EXTRA_TOOLS` | harness、调试、Mock、prompt 优化、额外工具 |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` | 云端 Provider 凭证（可选） |
 

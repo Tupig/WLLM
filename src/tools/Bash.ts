@@ -6,13 +6,16 @@ import { spawn } from "child_process";
 import { classifyBash } from "../services/bashSafety.js";
 import { resolveSandboxPolicy, checkPath, checkBashPaths } from "../services/sandbox.js";
 import { buildTool, type ToolUseContext, type ToolResult } from "../engine/Tool.js";
-import { MAX_BASH_OUTPUT_CHARS, TOOL_TIMEOUT_MS } from "../engine/constants.js";
+import { TOOL_TIMEOUT_MS } from "../engine/constants.js";
+import { clipOutput, type ClipKeep } from "../utils/clipOutput.js";
 import { safePath } from "../utils/path.js";
 
 export const BashInput = z.object({
   command: z.string().describe("要执行的 Bash 命令"),
   workdir: z.string().optional().describe("工作目录（可选）"),
   timeout: z.number().optional().describe("超时时间，单位毫秒（默认 30000）"),
+  keep: z.enum(["head", "tail", "both"]).optional()
+    .describe("超长输出裁剪保留策略（默认 both 双端保留；head 只保头 / tail 只保尾）"),
 });
 
 const SENSITIVE_ENV = new Set([
@@ -95,7 +98,7 @@ export const BashTool = buildTool<string>({
         if (stdout) result += stdout;
         if (stderr) result += (result ? "\n" : "") + stderr;
         if (!result) result = `（退出码：${code ?? "未知"}）`;
-        if (result.length > MAX_BASH_OUTPUT_CHARS) result = result.slice(0, MAX_BASH_OUTPUT_CHARS) + "\n...（已截断）";
+        result = clipOutput(result, (input.keep ?? "both") as ClipKeep).text;
         finish({ data: result });
       });
 
