@@ -73,7 +73,11 @@ export const WebFetchTool = defineTool({
   }),
   readOnly: true,
   async execute(input) {
-    const maxLength = input.maxLength ?? 10000;
+    // 非正/非法回退默认（fix #71：0/负数曾产出空 window 原地续取）
+    const maxLength =
+      typeof input.maxLength === "number" && Number.isFinite(input.maxLength) && input.maxLength > 0
+        ? Math.floor(input.maxLength)
+        : 10000;
     const offset = Math.max(0, Math.floor(input.offset ?? 0));
 
     try {

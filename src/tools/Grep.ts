@@ -36,7 +36,11 @@ export const GrepTool = buildTool<string>({
   async call(input, context): Promise<ToolResult<string>> {
     const searchPath = input.path ? safePath(context.workDir, input.path) : context.workDir;
     const mode = input.output_mode || "content";
-    const headLimit = input.head_limit || MAX_GREP_RESULTS;
+    // 非正/非法回退默认（fix #71：负数 truthy 曾 slice 出空页死循环）
+    const headLimit =
+      typeof input.head_limit === "number" && Number.isFinite(input.head_limit) && input.head_limit > 0
+        ? Math.floor(input.head_limit)
+        : MAX_GREP_RESULTS;
     const include = input.include || "";
 
     try {
