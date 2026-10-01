@@ -331,7 +331,7 @@ gameqa 环境变量见上文 [gameqa 节](#-gameqa--unity-自动化测试平台)
 | ① 调研 | 读本仓代码 + git 历史 + 同类开源实现，边界写清 |
 | ② 测试 | 测试文件落盘，跑一次确认按预期红——**没有测试不许改代码** |
 | ③ 落盘 | 相关用例绿；只改本功能代码 |
-| ④ 审查 | 正确性/边界/错误路径/安全（注入、路径逃逸、命令盲执行）/无死代码；审查点进提交信息 |
+| ④ 审查 | 正确性/边界/错误路径/安全（注入、路径逃逸、命令盲执行）/无死代码；**边界用例以独立于实现的预期行为写成测试**（不复刻实现，红了先质疑测试再质疑实现）；发现的问题按下方 Issue 流程**先上报再修**，审查点进提交信息 |
 | ⑤ 回归 | `npx tsc --noEmit` + `npx vitest run` 全绿 |
 | ⑥ 验收 | AC 全过才算完成 |
 
@@ -348,12 +348,12 @@ gameqa 环境变量见上文 [gameqa 节](#-gameqa--unity-自动化测试平台)
 ## 🧪 测试与 CI
 
 ```bash
- npm test              # = npx vitest run，45 文件 / 531 用例
+ npm test              # = npx vitest run，92 文件 / 924 用例
  npx tsc --noEmit      # 类型门槛
  npm run build         # 构建门槛（含 gameqa 静态资源拷贝 + 入口 chmod）
  ```
 
-用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e17`
+用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e65`
 （Provider/配置/护栏/容错/工具/并行/路由/优化/图像输入/模糊编辑/错误分类/MCP）、`f*`（压缩/权限）、`i1~i4`
 （记忆/技能/hooks/反思）、`g1~g7`（gameqa store/服务/内置执行器/Unity 真执行全链路/
 airtest·性能·AI 集成/TLS·CLI/轻量报告/Allure 报告）、`proxy-*`（三协议转换/SSE/流式 usage）、`smoke`、`cli`、`ctx10m`。
