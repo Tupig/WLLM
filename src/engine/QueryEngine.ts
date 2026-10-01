@@ -476,6 +476,8 @@ export class QueryEngine {
 
     const toolBuffers = new Map<string, { id: string; name: string; inputJson: string }>();
     const toolResults: Array<{ tool_use_id: string; content: string; is_error?: boolean }> = [];
+    // 流式早期派发（issue #47）：tool_use 收完即执行只读并发安全工具，流结束复用结果
+    const earlyExecutions = new Map<string, Promise<void>>();
     let fullText = "";
     let stopReason: string | null = null;
     let inputTokens = 0;
@@ -489,6 +491,19 @@ export class QueryEngine {
     ];
 
     for (let attempt = 0; attempt < MAX_OUTPUT_TOKEN_ESCALATION.length; attempt++) {
+      // 重试前清空上一轮早期派发（issue #47）：等在途完成并移除其遗留结果
+      if (earlyExecutions.size > 0) {
+        const staleIds = new Set(earlyExecutions.keys());
+        await Promise.allSettled([...earlyExecutions.values()]);
+        earlyExecutions.clear();
+        for (let i = toolResults.length - 1; i >= 0; i--) {
+          if (staleIds.has(toolResults[i].tool_use_id)) toolResults.splice(i, 1);
+        }
+        for (let i = events.length - 1; i >= 0; i--) {
+          const ev: any = events[i];
+          if (ev?.type === "tool_result" && staleIds.has(ev.toolUseId)) events.splice(i, 1);
+        }
+      }
       toolBuffers.clear();
       fullText = "";
       stopReason = null;
@@ -523,7 +538,25 @@ export class QueryEngine {
               if (buf) buf.inputJson += event.inputJsonDelta;
               break;
             }
-            case "tool_use_stop": break;
+            case "tool_use_stop": {
+              // 流式早期派发（issue #47）：输入已收完，只读并发安全工具立刻执行，
+              // 与模型尾部生成重叠；流结束后在 entries 处过滤复用，不重复执行
+              const buf = toolBuffers.get(event.id);
+              if (!buf || earlyExecutions.has(buf.id)) break;
+              let earlyInput: Record<string, unknown>;
+              try { earlyInput = JSON.parse(buf.inputJson || "{}") as Record<string, unknown>; } catch { break; }
+              const earlyTool = getToolByName(this.tools, buf.name);
+              if (!earlyTool || !earlyTool.isReadOnly(earlyInput) || !earlyTool.isConcurrencySafe(earlyInput)) break;
+              earlyExecutions.set(
+                buf.id,
+                this.runToolBuffer(buf, earlyInput, earlyTool, toolContext, canUseToolFn, loopState, events, toolResults)
+                  .catch((err: unknown) => {
+                    const errMsg = err instanceof Error ? err.message : String(err);
+                    this.recordToolFailure(buf, earlyInput, errMsg, loopState, events, toolResults);
+                  }),
+              );
+              break;
+            }
             case "message_start":
               // 首帧 usage 记入（Anthropic 的 input_tokens 在 message_start，issue #44）
               usage.record((event.message as any)?.usage);
@@ -606,8 +639,12 @@ export class QueryEngine {
       }
       loopState.messages.push({ role: "assistant", content });
 
+      // 早期派发的工具可能仍在执行：先等全部落地（结果已在 toolResults/events）
+      if (earlyExecutions.size > 0) await Promise.allSettled([...earlyExecutions.values()]);
+
       const entries: Array<{ buf: { id: string; name: string; inputJson: string }; input: Record<string, unknown> | null }> = [];
       for (const [, buf] of toolBuffers) {
+        if (earlyExecutions.has(buf.id)) continue; // 已在流式期间执行（issue #47）
         let input: Record<string, unknown> | null = null;
         try { input = JSON.parse(buf.inputJson || "{}"); } catch { input = null; }
         if (input) entries.push({ buf, input });
@@ -645,6 +682,26 @@ export class QueryEngine {
    * 顺序循环天然互斥，仅快照类写操作靠 autoSnapshot 防抖串行）；
    * 批内并行 fail-soft——单任务异常只产生自己的 error tool_result，不误伤兄弟。
    */
+  /** 批内/早期派发异常兜底（issue #43/#47）：自己的 error tool_result + PostToolUseFailure */
+  private recordToolFailure(
+    buf: { id: string; name: string },
+    input: Record<string, unknown> | null,
+    errMsg: string,
+    loopState: LoopState,
+    events: any[],
+    toolResults: Array<{ tool_use_id: string; content: string; is_error?: boolean }>,
+  ): void {
+    process.stdout.write(chalk.red(`\n❌ ${errMsg}\n`));
+    if (!toolResults.some((r) => r.tool_use_id === buf.id)) {
+      toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
+      events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
+    }
+    void firePostToolUseFailure(hookSystem, {
+      toolName: buf.name, input: input ?? {}, output: errMsg, durationMs: 0,
+    }, { turnNumber: loopState.turnCount, sessionId: appStore.getState().sessionId });
+    this.trajectory?.recordError(errMsg);
+  }
+
   private async runBatch(
     batch: Array<{ buf: { id: string; name: string; inputJson: string }; input: Record<string, unknown> | null }>,
     toolContext: ToolUseContext,
@@ -666,15 +723,7 @@ export class QueryEngine {
       if (s.status !== "rejected") continue;
       const e = batch[i];
       const errMsg = s.reason instanceof Error ? s.reason.message : String(s.reason);
-      process.stdout.write(chalk.red(`\n❌ ${errMsg}\n`));
-      if (!toolResults.some((r) => r.tool_use_id === e.buf.id)) {
-        toolResults.push({ tool_use_id: e.buf.id, content: errMsg, is_error: true });
-        events.push({ type: "tool_result", toolUseId: e.buf.id, content: errMsg, isError: true });
-      }
-      void firePostToolUseFailure(hookSystem, {
-        toolName: e.buf.name, input: e.input ?? {}, output: errMsg, durationMs: 0,
-      }, { turnNumber: loopState.turnCount, sessionId: appStore.getState().sessionId });
-      this.trajectory?.recordError(errMsg);
+      this.recordToolFailure(e.buf, e.input, errMsg, loopState, events, toolResults);
     }
   }
 
