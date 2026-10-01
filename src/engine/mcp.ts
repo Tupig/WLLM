@@ -46,21 +46,40 @@ export function loadMcpConfig(workDir: string): McpConfigFile | null {
   }
 }
 
-type McpToolDef = {
-  name: string;
-  description?: string;
-  inputSchema?: Record<string, unknown>;
-  annotations?: { readOnlyHint?: boolean };
+export type McpAnnotations = {
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
 };
 
-function wrapMcpTool(serverName: string, def: McpToolDef, client: Client, entry: McpServerEntry): Tool {
-  const toolName = `mcp_${serverName}_${def.name}`;
-  const readOnly = def.annotations?.readOnlyHint === true;
-  // 审批登记：per-tool 覆盖 server 级，均未配置 = default（走通用权限链）
-  approvalTable.set(toolName, entry.tools?.[def.name] ?? entry.approval ?? "default");
-  const jsonSchema = def.inputSchema ?? { type: "object", properties: {} };
-  const desc = def.description || "MCP 工具（无描述）";
+export type McpToolDef = {
+  name: string;
+  title?: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  annotations?: McpAnnotations;
+};
 
+/**
+ * 把 MCP 工具桥接为 tupigcode Tool（issue #58）：
+ * annotations 全量消费——readOnlyHint 决定只读分级；显式 destructiveHint=true
+ * 且非只读 → 审批登记时升为 ask（deny 优先、allow 被覆盖）；annotations 缺省不强制。
+ */
+export function wrapMcpTool(serverName: string, def: McpToolDef, client: Pick<Client, "callTool">, entry: McpServerEntry): Tool {
+  const toolName = `mcp_${serverName}_${def.name}`;
+  const an = def.annotations ?? {};
+  const readOnly = an.readOnlyHint === true;
+  // 审批登记：per-tool 覆盖 server 级，均未配置 = default（走通用权限链）
+  let approval: McpApproval | "default" = entry.tools?.[def.name] ?? entry.approval ?? "default";
+  if (approval !== "deny" && !readOnly && an.destructiveHint === true) {
+    approval = "ask"; // 破坏性标注强制确认（issue #58）
+  }
+  approvalTable.set(toolName, approval);
+  const jsonSchema = def.inputSchema ?? { type: "object", properties: {} };
+  const title = def.annotations?.title ?? def.title;
+  const desc = (title ? `${title} — ` : "") + (def.description || "MCP 工具（无描述）");
   return buildTool<string>({
     name: toolName,
     inputSchema: z.any(),
