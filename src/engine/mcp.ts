@@ -304,6 +304,27 @@ export function backoffDelayMs(attempt: number): number {
 }
 
 /**
+ * 重连单飞守卫（issue #76）：同一 key 的重连循环同时只允许一个——
+ * acquire 失败即拒绝重复触发，release 后才可再次获取。
+ */
+export function createReconnectGuard(): {
+  acquire: (key: string) => boolean;
+  release: (key: string) => void;
+} {
+  const busy = new Set<string>();
+  return {
+    acquire: (key) => {
+      if (busy.has(key)) return false;
+      busy.add(key);
+      return true;
+    },
+    release: (key) => {
+      busy.delete(key);
+    },
+  };
+}
+
+/**
  * 断开重连循环（issue #60）：退避重试，成功返回 true；
  * 耗尽 maxAttempts 调 onGaveUp 返回 false。
  */
@@ -363,11 +384,25 @@ export function makeServerRefresher(opts: {
       const newNames = new Set(fresh.map((t) => t.name));
       const added = [...newNames].filter((n) => !oldNames.has(n));
       const removed = [...oldNames].filter((n) => !newNames.has(n));
+      // 同名工具 signature 变更也算变更（fix #75）：schema/description/readOnly
+      // 变更后外部不换新 wrap 会残留旧免审面
+      const sigOf = (t: Tool): string =>
+        JSON.stringify([
+          t.name,
+          (t as { jsonSchema?: unknown }).jsonSchema ?? null,
+          typeof t.description === "function" ? t.description({} as never) : String((t as { description?: unknown }).description ?? ""),
+          (() => { try { return t.isReadOnly({} as never); } catch { return false; } })(),
+        ]);
+      const oldSig = new Map(old.map((t) => [t.name, sigOf(t)]));
+      const updated = fresh.some((t) => oldSig.has(t.name) && oldSig.get(t.name) !== sigOf(t));
       serverTools.set(serverName, fresh);
       if (added.length || removed.length) {
         onWarn?.(
           `MCP server "${serverName}" 工具列表已变更：+${added.join(", ") || "无"} -${removed.join(", ") || "无"}`,
         );
+        fireChanged();
+      } else if (updated) {
+        onWarn?.(`MCP server "${serverName}" 同名工具定义已变更，已刷新生效`);
         fireChanged();
       }
       return { added, removed };
@@ -414,6 +449,7 @@ export async function connectMcpServers(
   const fireChanged = () => onToolsChanged?.([...serverTools.values()].flat());
 
   let closed = false; // connection close 后不再重连（issue #60）
+  const reconnectGuard = createReconnectGuard(); // 重连单飞（issue #76）
 
   await Promise.all(
     entries.map(async ([serverName, entry]) => {
@@ -459,10 +495,11 @@ export async function connectMcpServers(
           const refreshOne = makeServerRefresher({ serverName, entry, client, serverTools, fireChanged, onWarn });
           refresherMap.set(serverName, refreshOne);
           registerListChanged(client, refreshOne);
-          // 断开 → 立即摘除死工具 + 退避重连（issue #60）
+          // 断开 → 立即摘除死工具 + 退避重连（issue #60/#76 单飞）
           transport.onclose = () => {
             if (closed) return;
             handleServerDrop(serverName, serverTools, fireChanged, onWarn);
+            if (!reconnectGuard.acquire(serverName)) return; // 已有重连循环在跑
             void reconnectLoop({
               tryConnect: async () => {
                 if (closed) return true;
@@ -473,7 +510,7 @@ export async function connectMcpServers(
                 return true;
               },
               onGaveUp: () => onWarn?.(`MCP server "${serverName}" 重连放弃（最多 5 次退避重试）`),
-            });
+            }).finally(() => reconnectGuard.release(serverName));
           };
           // 进程退出兜底：stdio 子进程随父进程清理
           if (transport instanceof StdioClientTransport) {

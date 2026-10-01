@@ -8,7 +8,7 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 
 import {
-  makeServerRefresher,
+  makeServerRefresher, wrapMcpTool,
   registerListChanged,
   clearMcpApprovals,
   type McpServerEntry,
@@ -19,15 +19,15 @@ import type { Tool } from "../src/engine/Tool";
 const entry: McpServerEntry = { command: "noop", approval: "allow" };
 
 function makeEnv(initialDefs: McpToolDef[], next?: McpToolDef[] | Error) {
-  const serverTools = new Map<string, Tool[]>();
-  serverTools.set(
-    "srv",
-    initialDefs.map((d) => ({ name: `mcp_srv_${d.name}` } as Tool)),
-  );
   const client = {
     callTool: async () => ({ content: [] }),
     listTools: vi.fn(async () => ({ tools: typeof next === "object" && !(next instanceof Error) ? next : initialDefs })),
   };
+  const serverTools = new Map<string, Tool[]>();
+  serverTools.set(
+    "srv",
+    initialDefs.map((d) => wrapMcpTool("srv", d, client as any, entry)),
+  );
   if (next instanceof Error) client.listTools = vi.fn(async () => { throw next; });
   const fireChanged = vi.fn();
   const onWarn = vi.fn();
