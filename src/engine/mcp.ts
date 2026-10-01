@@ -15,6 +15,8 @@ export type McpServerEntry = {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  /** callTool 单次调用超时（毫秒，issue #60）；未配走 SDK 默认 */
+  timeout?: number;
   /** server 级审批：allow=白名单放行 / ask=强制问 / deny=阻断；未配置=沿用通用链 */
   approval?: McpApproval;
   /** per-tool 覆盖 server 级，key 为 MCP 原始工具名 */
@@ -101,7 +103,12 @@ export function wrapMcpTool(serverName: string, def: McpToolDef, client: Pick<Cl
     },
     async call(input, _ctx: ToolUseContext, _canUseTool: CanUseToolFn) {
       try {
-        const r = await client.callTool({ name: def.name, arguments: (input ?? {}) as Record<string, unknown> });
+        const opts = typeof entry.timeout === "number" && entry.timeout > 0 ? { timeout: entry.timeout } : undefined;
+        const r = await client.callTool(
+          { name: def.name, arguments: (input ?? {}) as Record<string, unknown> },
+          undefined,
+          opts,
+        );
         const content = (r?.content ?? []) as Array<{ type: string; text?: string }>;
         const texts = content.filter((b) => b.type === "text").map((b) => b.text ?? "");
         const joined = texts.length > 0 ? texts.join("\n") : JSON.stringify(content);
@@ -118,6 +125,51 @@ export function wrapMcpTool(serverName: string, def: McpToolDef, client: Pick<Cl
       return { type: "tool_result", tool_use_id: toolUseID, content };
     },
   });
+}
+
+/** transport.onclose：摘除断开 server 的全部工具（issue #60），模型不再看到死工具 */
+export function handleServerDrop(
+  serverName: string,
+  serverTools: Map<string, Tool[]>,
+  fireChanged: () => void,
+  onWarn?: (msg: string) => void,
+): void {
+  if (!serverTools.has(serverName)) return;
+  serverTools.delete(serverName);
+  onWarn?.(`MCP server "${serverName}" 连接断开，已摘除其工具（重连中）`);
+  fireChanged();
+}
+
+/** 退避延迟（issue #60）：1s 起指数翻倍，30s 封顶 */
+export function backoffDelayMs(attempt: number): number {
+  const exp = 1_000 * 2 ** Math.max(0, attempt - 1);
+  return Math.min(exp, 30_000);
+}
+
+/**
+ * 断开重连循环（issue #60）：退避重试，成功返回 true；
+ * 耗尽 maxAttempts 调 onGaveUp 返回 false。
+ */
+export async function reconnectLoop(opts: {
+  tryConnect: () => Promise<boolean>;
+  maxAttempts?: number;
+  delayMs?: (attempt: number) => number;
+  sleep?: (ms: number) => Promise<void>;
+  onGaveUp?: () => void;
+}): Promise<boolean> {
+  const max = opts.maxAttempts ?? 5;
+  const delay = opts.delayMs ?? backoffDelayMs;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  for (let attempt = 1; attempt <= max; attempt++) {
+    await sleep(delay(attempt));
+    try {
+      if (await opts.tryConnect()) return true;
+    } catch {
+      /* 单次重连失败 → 继续退避 */
+    }
+  }
+  opts.onGaveUp?.();
+  return false;
 }
 
 export type McpConnection = {
@@ -201,11 +253,17 @@ export async function connectMcpServers(
   const closers: Array<() => Promise<void>> = [];
   const fireChanged = () => onToolsChanged?.([...serverTools.values()].flat());
 
+  let closed = false; // connection close 后不再重连（issue #60）
+
   await Promise.all(
     entries.map(async ([serverName, entry]) => {
-      let client: Client | null = null;
-      try {
-        client = new Client({ name: "tupigcode-tupigcode", version: "1.0.0" });
+      let curClient: Client | null = null;
+      let curTransport: StdioClientTransport | null = null;
+
+      // 首连与退避重连复用（issue #60）：新 client/transport 就位后重 wrap 全量工具
+      const connectOnce = async (): Promise<void> => {
+        const client = new Client({ name: "tupigcode-tupigcode", version: "1.0.0" });
+        curClient = client;
         const merged = { ...process.env, ...entry.env };
         const env: Record<string, string> = {};
         for (const [k, v] of Object.entries(merged)) if (v !== undefined) env[k] = v;
@@ -215,19 +273,31 @@ export async function connectMcpServers(
           env,
           stderr: "pipe",
         });
+        curTransport = transport;
         await client.connect(transport);
         const listed = await client.listTools();
         serverTools.set(
           serverName,
-          ((listed.tools ?? []) as McpToolDef[]).map((t) => wrapMcpTool(serverName, t, client!, entry)),
+          ((listed.tools ?? []) as McpToolDef[]).map((t) => wrapMcpTool(serverName, t, client, entry)),
         );
         const refreshOne = makeServerRefresher({ serverName, entry, client, serverTools, fireChanged, onWarn });
         refresherMap.set(serverName, refreshOne);
         registerListChanged(client, refreshOne);
-        closers.push(async () => {
-          try { await client!.close(); } catch { /* 已断开 */ }
-          try { await transport.close(); } catch { /* 已关闭 */ }
-        });
+        // stdio 断开 → 立即摘除死工具 + 退避重连（issue #60）
+        transport.onclose = () => {
+          if (closed) return;
+          handleServerDrop(serverName, serverTools, fireChanged, onWarn);
+          void reconnectLoop({
+            tryConnect: async () => {
+              if (closed) return true;
+              await connectOnce();
+              onWarn?.(`MCP server "${serverName}" 已重连，工具恢复`);
+              fireChanged();
+              return true;
+            },
+            onGaveUp: () => onWarn?.(`MCP server "${serverName}" 重连放弃（最多 5 次退避重试）`),
+          });
+        };
         // 进程退出兜底：stdio 子进程随父进程清理
         const pid = transport.pid;
         if (pid) {
@@ -235,11 +305,21 @@ export async function connectMcpServers(
             try { process.kill(pid, "SIGTERM"); } catch { /* 已退出 */ }
           });
         }
+      };
+
+      closers.push(async () => {
+        try { await curClient?.close(); } catch { /* 已断开 */ }
+        try { await curTransport?.close(); } catch { /* 已关闭 */ }
+      });
+
+      try {
+        await connectOnce(); // 首连失败只降级跳过，不自动重连（与既有语义一致）
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         onWarn?.(`MCP server "${serverName}" 连接失败，已跳过：${msg}`);
-        if (client) {
-          try { await client.close(); } catch { /* 忽略 */ }
+        const failed = curClient as Client | null;
+        if (failed) {
+          try { await failed.close(); } catch { /* 忽略 */ }
         }
       }
     }),
@@ -254,6 +334,7 @@ export async function connectMcpServers(
       return { added, removed };
     },
     close: async () => {
+      closed = true;
       await Promise.allSettled(closers.map((c) => c()));
     },
   };
