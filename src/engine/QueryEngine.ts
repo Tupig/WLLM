@@ -255,18 +255,28 @@ export class QueryEngine {
     if (this.mcpInitialized) return;
     this.mcpInitialized = true;
     try {
-      const mcp = await connectMcpServers(this.config.cwd, (msg) =>
-        process.stderr.write(`⚠️  ${msg}\n`),
+      const mcp = await connectMcpServers(
+        this.config.cwd,
+        (msg) => process.stderr.write(`⚠️  ${msg}\n`),
+        (tools) => this.applyMcpTools(tools), // list_changed 动态刷新（issue #59）
       );
       this.mcp = mcp;
-      if (mcp.tools.length > 0) {
-        this.tools.push(...mcp.tools);
-        markLoaded(mcp.tools.map((t) => t.name)); // MCP 工具显式配置 → 常驻
-        setSearchPool(this.tools);
-      }
+      this.applyMcpTools(mcp.tools);
     } catch {
       /* MCP 不可用不影响主流程 */
     }
+  }
+
+  /**
+   * 同步 MCP 工具集（issue #59）：替换 this.tools 中 mcp_ 前缀工具，
+   * markLoaded 常驻 + setSearchPool 重建发现池（新增可搜、移除自然消失）。
+   */
+  private applyMcpTools(mcpTools: Tool[]): void {
+    this.tools = [...this.tools.filter((t) => !t.name.startsWith("mcp_")), ...mcpTools];
+    if (mcpTools.length > 0) {
+      markLoaded(mcpTools.map((t) => t.name)); // MCP 工具常驻
+    }
+    setSearchPool(this.tools);
   }
 
   async *submitMessage(prompt: string): AsyncGenerator<SDKMessage, void, unknown> {

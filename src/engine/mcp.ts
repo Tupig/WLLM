@@ -3,6 +3,7 @@
  * 配置：workDir/.tupigcode/mcp.json（Claude Code 兼容 { mcpServers: { name: { command, args, env } } }）
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { z } from "zod";
 import { readFileSync } from "fs";
@@ -121,20 +122,84 @@ export function wrapMcpTool(serverName: string, def: McpToolDef, client: Pick<Cl
 
 export type McpConnection = {
   tools: Tool[];
+  /** 全量重拉所有 server 的 tools/list 并 diff 同步（issue #59） */
+  refresh: () => Promise<{ added: string[]; removed: string[] }>;
   close: () => Promise<void>;
 };
+
+type RefreshableClient = Pick<Client, "callTool"> & { listTools?: () => Promise<{ tools?: McpToolDef[] }> };
+
+/**
+ * 构建单 server 的 tools/list 重拉器（issue #59）：
+ * 重拉 → 重 wrap 全量 → diff added/removed → 写回 serverTools；
+ * 变更才 fireChanged + onWarn；失败保留旧工具只告警。
+ */
+export function makeServerRefresher(opts: {
+  serverName: string;
+  entry: McpServerEntry;
+  client: RefreshableClient;
+  serverTools: Map<string, Tool[]>;
+  fireChanged: () => void;
+  onWarn?: (msg: string) => void;
+}): () => Promise<{ added: string[]; removed: string[] }> {
+  const { serverName, entry, client, serverTools, fireChanged, onWarn } = opts;
+  return async () => {
+    const old = serverTools.get(serverName) ?? [];
+    try {
+      const listed = await client.listTools?.();
+      const fresh = (listed?.tools ?? []).map((t) => wrapMcpTool(serverName, t, client, entry));
+      const oldNames = new Set(old.map((t) => t.name));
+      const newNames = new Set(fresh.map((t) => t.name));
+      const added = [...newNames].filter((n) => !oldNames.has(n));
+      const removed = [...oldNames].filter((n) => !newNames.has(n));
+      serverTools.set(serverName, fresh);
+      if (added.length || removed.length) {
+        onWarn?.(
+          `MCP server "${serverName}" 工具列表已变更：+${added.join(", ") || "无"} -${removed.join(", ") || "无"}`,
+        );
+        fireChanged();
+      }
+      return { added, removed };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      onWarn?.(`MCP server "${serverName}" tools/list 刷新失败（保留旧工具）：${msg}`);
+      return { added: [], removed: [] };
+    }
+  };
+}
+
+/** 订阅 notifications/tools/list_changed → 触发刷新（issue #59）；不支持则静默 */
+export function registerListChanged(
+  client: Pick<Client, "setNotificationHandler">,
+  refresh: () => Promise<unknown>,
+): void {
+  try {
+    client.setNotificationHandler(ToolListChangedNotificationSchema as never, async () => {
+      await refresh();
+    });
+  } catch {
+    /* client 不支持通知处理器 */
+  }
+}
 
 /**
  * 连接全部已配置的 MCP server 并桥接为 tupigcode Tool。
  * 单个 server 失败只降级跳过，从不 reject。
+ * onToolsChanged：任一 server list_changed/refresh 后回调全量工具集（issue #59）。
  */
-export async function connectMcpServers(workDir: string, onWarn?: (msg: string) => void): Promise<McpConnection> {
+export async function connectMcpServers(
+  workDir: string,
+  onWarn?: (msg: string) => void,
+  onToolsChanged?: (tools: Tool[]) => void,
+): Promise<McpConnection> {
   const cfg = loadMcpConfig(workDir);
   const entries = Object.entries(cfg?.mcpServers ?? {});
-  if (entries.length === 0) return { tools: [], close: async () => {} };
+  if (entries.length === 0) return { tools: [], refresh: async () => ({ added: [], removed: [] }), close: async () => {} };
 
-  const tools: Tool[] = [];
+  const serverTools = new Map<string, Tool[]>();
+  const refresherMap = new Map<string, () => Promise<{ added: string[]; removed: string[] }>>();
   const closers: Array<() => Promise<void>> = [];
+  const fireChanged = () => onToolsChanged?.([...serverTools.values()].flat());
 
   await Promise.all(
     entries.map(async ([serverName, entry]) => {
@@ -152,9 +217,13 @@ export async function connectMcpServers(workDir: string, onWarn?: (msg: string) 
         });
         await client.connect(transport);
         const listed = await client.listTools();
-        for (const t of (listed.tools ?? []) as McpToolDef[]) {
-          tools.push(wrapMcpTool(serverName, t, client, entry));
-        }
+        serverTools.set(
+          serverName,
+          ((listed.tools ?? []) as McpToolDef[]).map((t) => wrapMcpTool(serverName, t, client!, entry)),
+        );
+        const refreshOne = makeServerRefresher({ serverName, entry, client, serverTools, fireChanged, onWarn });
+        refresherMap.set(serverName, refreshOne);
+        registerListChanged(client, refreshOne);
         closers.push(async () => {
           try { await client!.close(); } catch { /* 已断开 */ }
           try { await transport.close(); } catch { /* 已关闭 */ }
@@ -177,7 +246,13 @@ export async function connectMcpServers(workDir: string, onWarn?: (msg: string) 
   );
 
   return {
-    tools,
+    tools: [...serverTools.values()].flat(),
+    refresh: async () => {
+      const results = await Promise.all([...refresherMap.values()].map((r) => r()));
+      const added = results.flatMap((r) => r.added);
+      const removed = results.flatMap((r) => r.removed);
+      return { added, removed };
+    },
     close: async () => {
       await Promise.allSettled(closers.map((c) => c()));
     },
