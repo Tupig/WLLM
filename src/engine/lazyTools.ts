@@ -26,6 +26,7 @@ const ALIASES: Record<string, string> = {
   WebFetch: "fetch url 抓取 网页",
   GitCommit: "commit 提交 git 提交",
   GitUndo: "undo reset 撤销 回退",
+  MultiEdit: "multi edit 批量编辑 多处替换 bulk edit 原子编辑",
 };
 
 let pool: Tool[] = [];

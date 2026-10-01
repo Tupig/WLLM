@@ -93,7 +93,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 
 | 类别 | 工具 |
 | --- | --- |
-| 读写 | `FileRead`（文本 + 图片多模态输入，png/jpg/webp/gif ≤5MB）`FileWrite` `FileEdit`（精确 + 模糊回退：容忍缩进/空白/单字符漂移，唯一命中才替换）`DocRead` |
+| 读写 | `FileRead`（文本 + 图片多模态输入，png/jpg/webp/gif ≤5MB）`FileWrite` `FileEdit`（精确 + 模糊回退：容忍缩进/空白/单字符漂移，唯一命中才替换）`MultiEdit`（多组替换原子落盘，失败报「第 N 处不匹配」；extras 池经 ToolSearch/`TUPIG_EXTRA_TOOLS` 挂载）`DocRead` |
 | 检索 | `Grep`（ripgrep 主路径 + 内置降级）`Glob` `RepoMap`（全仓地图）`similar`（语义近邻） |
 | 执行 | `Bash`（沙箱 + 安全护栏）`PackageManager` `lint` `Refactor` `Analysis` |
 | 规划 | `todo`（任务清单）`Question`（向用户澄清）`parallel`（并行子任务）`Agent`（子代理派发） |

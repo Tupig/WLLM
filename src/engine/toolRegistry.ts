@@ -5,6 +5,7 @@ import type { Tool } from "./Tool.js";
 import { FileReadTool } from "../tools/FileRead.js";
 import { FileWriteTool } from "../tools/FileWrite.js";
 import { FileEditTool } from "../tools/FileEdit.js";
+import { MultiEditTool } from "../tools/MultiEdit.js";
 import { GlobTool } from "../tools/Glob.js";
 import { GrepTool } from "../tools/Grep.js";
 import { BashTool } from "../tools/Bash.js";
@@ -51,6 +52,7 @@ export function getExtraTools(): Tool[] {
     GitCommitTool, GitUndoTool,
     WebFetchTool,
     ImageReadTool, DocReadTool,
+    MultiEditTool,
     RenameSymbolTool, ExtractFunctionTool, MoveFileTool,
     InlineVariableTool, ExtractConstantTool,
     CodeStatsTool, ListFunctionsTool, DependencyAnalysisTool, ComplexityAnalysisTool,
