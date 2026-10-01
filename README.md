@@ -104,7 +104,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 
 - **上下文工程**：预算制压缩（`compact`）含阈值梯子与熔断，**force 档 LLM 摘要三链路可用**（openai 本地非流式 sideQuery 短超时 / anthropic / mock，失败回退预算削减且 keep_first）；`TUPIG_MAX_CONTEXT_TOKENS` 自适应（30k ~ 10M 窗口）、轨迹（trajectory）记录与复盘
 - **多 Provider 容错**：Anthropic / OpenAI / 本地代理统一接入，`TUPIG_FAILOVER` 链式降级；错误标准分类（`services/errors.ts`：rate_limit / auth / context_too_long / overloaded / server / network / invalid_request，429/529/5xx/断连触发切换，401 与业务错误不切换），`TUPIG_ROLE_MODELS` 分角色选模型
-- **hook 信任 TOFU**：shell hook 首次触发询问、确认后写 `.tupigcode/hook-trust.json`（规则 hash：event/matcher/command/timeout 任一变更即重询），拒绝不持久化、异常/超时仍 fail-closed；非 TTY 与 `TUPIG_HOOK_TRUST=0` 不打断；`/hooks` 查看、`/hooks clear` 清除、`/doctor` 有信任清单
+- **hook 信任 TOFU**：shell hook 首次触发询问、确认后写 `.tupigcode/hook-trust.json`（规则 hash：event/matcher/command/timeout 任一变更即重询），拒绝不持久化、异常/超时仍 fail-closed；非 TTY 与 `TUPIG_HOOK_TRUST=0` 不打断；`/hooks` 查看、`/hooks clear` 清除、`/hooks reload` 手动重载 hooks.json、`/doctor` 有信任清单
 - **会话列表可辨识**：`/resume`（无 id）与 `/sessions` 统一行格式 `id + 相对时间 + 条数 + 首条用户 prompt 预览`（截断 60 字，空会话显示「无预览」占位），按 updatedAt 倒序
 - **模式切换触发 ModeChange**：`/plan`、`/act` 实际发生切换时携带 `modeFrom/modeTo` 触发（同模式不触发），matcher 可按 modeTo 过滤
 - **模型主动压缩 CompactContext**：只读工具，阶段完成后模型自行请求折叠（focus 透传摘要）；QueryEngine 下一轮循环前执行压缩流水线（source=model，PreCompact/PostCompact 同步触发，`/context` 可见）
@@ -129,6 +129,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **UserPromptSubmit hook**：prompt 进模型前触发（mode 命令之后、init 之前）；`block`（exit 2/JSON block）拒绝本轮不发请求并输出原因，`additionalContext`（平铺 JSON 或 Claude Code `hookSpecificOutput` 嵌套）以独立 user 消息注入本轮上下文，多 hook 拼接合并不覆盖
 - **hook 并行执行 + 最严合并**：同事件多 handler `Promise.all` 并行（总耗时≈max，单点异常吞掉不拖累）；合并 block 任一为真即 block 且 message 不被后续覆盖、未 block 取注册序第一个非空 message/replacement、additionalContext 拼接；并行下 block 不再短路后续 handler
 - **hook matcher 正则化**：`tool_name` 全串锚定正则 `^(?:p)$`（`Edit|Write` 命中两工具不误伤 MultiEdit，精确配置行为不变，子串用 `.*X.*`，非法正则回退精确）；shell hooks.json 解析透传 `matcher.decision`/`matcher.modeTo`（此前被丢弃）；TOFU `hashRule` 纳入 matcher 全字段，任一变更重询
+- **hooks.json 热加载**：shell hooks 按工厂注册，`submitMessage` 入口 mtime 检测变更才整批重载（文件没变零动作，删除即失效）；代码注册（`hookSystem.register`）不受重载影响；REPL `/hooks reload` 不看 mtime 强制重载并打印数量
 - **重试抖动 + 预算上限**：`callWithRetry` full-jitter 退避（`rand(0, min(10s, 1s·2^n))`）防同步重试风暴，总预算 `TUPIG_RETRY_BUDGET_MS`（默认 60s）超限即抛最后错误，401/403 仍立即抛
 - **上下文溢出自动恢复**：API 报 prompt too long 不再直接失败——走压缩流水线重建 messages 后重试本轮（限 2 次、触发 PreCompact/PostCompact hook、`compactionCount+1`），与 max_tokens 输出升级额度互不干扰；该类错误 `failoverEligible=false`（切 provider 解决不了超限）
 - **变更史注入（Context Lineage）**：`git log` 近 30 条 → 模型压成短摘要 → `.tupigcode/cache/lineage.json` 缓存（HEAD 变更才重算），以「## 近期变更」注入 system prompt 尾部；预算截断取最近（`TUPIG_LINEAGE_MAX_CHARS` 默认 800）；无 git/无模型/超时（5s）静默跳过零影响

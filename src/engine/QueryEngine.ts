@@ -23,7 +23,7 @@ import { join } from "path";
 import { mapWithConcurrency, partitionRuns } from "../tools/parallel.js";
 import { canUseTool, promptUserDecision } from "../services/permissions.js";
 import { deriveAlwaysPattern } from "../services/approvalStore.js";
-import { hookSystem, loadShellHooks } from "./hooks.js";
+import { hookSystem, loadShellHooks, initShellHooks, reloadShellHooksIfChanged, type HookMatcher } from "./hooks.js";
 import { firePermissionResult, firePostToolUseFailure, fireModeChange } from "./hookEvents.js";
 import { formatCompactionLine } from "./compactionMeta.js";
 import { ensureHookTrust, answerHookTrust, promptHookTrust } from "./hookTrust.js";
@@ -213,24 +213,8 @@ export class QueryEngine {
       );
     }
 
-    // 加载项目规则文件
-    for (const h of loadShellHooks(config.cwd)) {
-      hookSystem.register({
-        event: h.event,
-        matcher: h.matcher,
-        handler: async (c) => {
-          // TOFU 信任（issue #20）：首次询问、信任持久化、规则变更重询
-          const gate = await ensureHookTrust(config.cwd, h);
-          if (gate === "ask") {
-            const yes = await promptHookTrust(h);
-            if (answerHookTrust(config.cwd, h, yes) === "deny") {
-              return { block: true, message: "hook 未获信任，已阻止（/hooks clear 可重置后重新询问）" };
-            }
-          }
-          return hookSystem.triggerShellHook(h.command, c, h.timeout);
-        },
-      });
-    }
+    // shell hooks（issue #51 热加载）：工厂注册，mtime 变更/手动 reload 复用
+    initShellHooks(config.cwd, () => this.buildShellHookMatchers());
     this.ruleLayers = resolveRuleLayers(config.cwd);
     this.memoryEntries = loadMemoriesSync(config.cwd);
     this.skillCatalog = formatSkillCatalog(loadSkills(config.cwd));
@@ -245,6 +229,25 @@ export class QueryEngine {
         toolPermissionContext: { ...s.toolPermissionContext, mode: "bypassPermissions" },
       }));
     }
+  }
+
+  /** shell hooks → 注册器（TOFU 信任闸门闭包，issue #20/#51） */
+  private buildShellHookMatchers(): HookMatcher[] {
+    const workDir = this.config.cwd;
+    return loadShellHooks(workDir).map((h): HookMatcher => ({
+      event: h.event,
+      matcher: h.matcher,
+      handler: async (c) => {
+        const gate = await ensureHookTrust(workDir, h);
+        if (gate === "ask") {
+          const yes = await promptHookTrust(h);
+          if (answerHookTrust(workDir, h, yes) === "deny") {
+            return { block: true, message: "hook 未获信任，已阻止（/hooks clear 可重置后重新询问）" };
+          }
+        }
+        return hookSystem.triggerShellHook(h.command, c, h.timeout);
+      },
+    }));
   }
 
   /** 惰性连接 .tupigcode/mcp.json 配置的 MCP server；未配置零变化，失败只降级 */
@@ -268,6 +271,7 @@ export class QueryEngine {
 
   async *submitMessage(prompt: string): AsyncGenerator<SDKMessage, void, unknown> {
     await this.ensureMcpTools();
+    reloadShellHooksIfChanged(); // hooks.json 热加载（issue #51）：mtime 变更才重载
     // 记录用户消息
     this.trajectory?.recordUserMessage(prompt);
 

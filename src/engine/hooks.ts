@@ -2,7 +2,7 @@
  * hooks/system.ts — Hook 系统
  */
 import { spawn } from "child_process";
-import { readFileSync } from "fs";
+import { readFileSync, statSync } from "fs";
 import { join } from "path";
 
 export type HookEvent =
@@ -151,14 +151,37 @@ export function matchToolPattern(pattern: string, value: string): boolean {
 
 export class HookSystem {
   private matchers: HookMatcher[] = [];
+  /** shell hooks.json 注册快照（issue #51 热加载只换这一批） */
+  private shellMatchers: HookMatcher[] = [];
 
   register(matcher: HookMatcher): void {
     this.matchers.push(matcher);
   }
 
+  /** 注册 shell 来源 hook（可被 reloadShell 整批替换） */
+  registerShell(matcher: HookMatcher): void {
+    this.matchers.push(matcher);
+    this.shellMatchers.push(matcher);
+  }
+
+  /** 整批替换 shell 注册；代码注册（register）不受影响。返回新注册数 */
+  reloadShell(matchers: HookMatcher[]): number {
+    const shellSet = new Set(this.shellMatchers);
+    this.matchers = this.matchers.filter((m) => !shellSet.has(m));
+    this.shellMatchers = [];
+    for (const m of matchers) this.registerShell(m);
+    return matchers.length;
+  }
+
+  /** 当前 shell hook 注册数 */
+  shellCount(): number {
+    return this.shellMatchers.length;
+  }
+
   /** 清空全部匹配器（测试隔离 / 热重载） */
   clear(): void {
     this.matchers = [];
+    this.shellMatchers = [];
   }
 
   async trigger(event: HookEvent, ctx: HookContext): Promise<HookResult> {
@@ -260,3 +283,51 @@ export class HookSystem {
 }
 
 export const hookSystem = new HookSystem();
+
+// ---- shell hooks 热加载（issue #51）----
+
+export type ShellHookFactory = () => HookMatcher[];
+
+let shellFactory: ShellHookFactory | null = null;
+let shellWorkDir = "";
+let shellMtimeMs = Number.NaN; // NaN = 未初始化
+
+export function hooksFilePath(workDir: string): string {
+  return process.env.TUPIG_HOOKS_FILE || join(workDir, ".tupigcode", "hooks.json");
+}
+
+function statHooksMtime(workDir: string): number {
+  try {
+    return statSync(hooksFilePath(workDir)).mtimeMs;
+  } catch {
+    return -1; // 文件不存在
+  }
+}
+
+/**
+ * 构造时一次性初始化：记录工厂与 mtime 并完成首批注册。
+ * 工厂由调用方提供（需携带 cwd、TOFU 信任闭包），reload 时复用。
+ */
+export function initShellHooks(workDir: string, factory: ShellHookFactory): number {
+  shellFactory = factory;
+  shellWorkDir = workDir;
+  shellMtimeMs = statHooksMtime(workDir);
+  return hookSystem.reloadShell(factory());
+}
+
+/** 入口惰性检查：mtime 变了才重载，没变零动作。返回是否重载 */
+export function reloadShellHooksIfChanged(): boolean {
+  if (!shellFactory) return false;
+  const m = statHooksMtime(shellWorkDir);
+  if (m === shellMtimeMs) return false;
+  shellMtimeMs = m;
+  hookSystem.reloadShell(shellFactory());
+  return true;
+}
+
+/** 强制重载（/hooks reload），不看 mtime。返回新注册数；未初始化返回 -1 */
+export function reloadShellHooks(): number {
+  if (!shellFactory) return -1;
+  shellMtimeMs = statHooksMtime(shellWorkDir);
+  return hookSystem.reloadShell(shellFactory());
+}

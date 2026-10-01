@@ -15,7 +15,7 @@ import {
 import { applyStaged, listStaged } from "./engine/staging.js";
 import { listTrust, clearTrust } from "./engine/hookTrust.js";
 import { fireCompactPre, fireCompactPost, runClearSequence, fireRewindPost } from "./engine/hookEvents.js";
-import { hookSystem } from "./engine/hooks.js";
+import { hookSystem, reloadShellHooks } from "./engine/hooks.js";
 import { ContextCompactor, estimateTokens } from "./context/compact/index.js";
 import { formatCompactionLine } from "./engine/compactionMeta.js";
 import { contextBreakdown } from "./context/breakdown.js";
@@ -63,7 +63,7 @@ function printHelp(): void {
   /checkpoint [new|list|rollback <id>]  会话检查点/回滚
   /rewind [chat|code|all] [id|label]   三档回卷（默认 all，缺省=最新，支持名称匹配）
   /apply                              落盘 plan 模式暂存改动
-  /hooks [clear]                      查看/清除 hook 信任（TOFU）
+  /hooks [clear|reload]               查看/清除 hook 信任（TOFU）/ 重载 hooks.json
   /permissions [clear]                查看/清除「总是允许」持久规则
   /compact [focusing on X]            手动压缩上下文（可带焦点指令）
   /context                            上下文占用分段明细（system/消息/工具结果/schema/记忆）
@@ -508,11 +508,16 @@ async function startREPL(): Promise<void> {
       return;
     }
 
-    if (input === "/hooks" || input === "/hooks clear") {
+    if (input === "/hooks" || input === "/hooks clear" || input === "/hooks reload") {
       const workDir = appStore.getState().workDir;
       if (input === "/hooks clear") {
         clearTrust(workDir);
         console.log(chalk.green("✓ 已清除全部 hook 信任记录（下次触发重新询问）\n"));
+      } else if (input === "/hooks reload") {
+        // hooks.json 手动重载（issue #51）：不看 mtime 强制重载
+        const n = reloadShellHooks();
+        if (n < 0) console.log(chalk.gray("当前会话未初始化 shell hooks，无动作\n"));
+        else console.log(chalk.green(`✓ 已重载 hooks.json，当前 ${n} 个 shell hook\n`));
       } else {
         const list = listTrust(workDir);
         if (list.length === 0) {
