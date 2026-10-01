@@ -16,6 +16,7 @@ export type HookEvent =
   | "PostClear"
   | "PostRewind"
   | "PermissionResult"
+  | "Notification"
   | "ModeChange"
   | "Stop"
   | "SessionStart"
@@ -40,7 +41,12 @@ export interface HookContext {
   /** 模式切换前后（issue #42） */
   modeFrom?: string;
   modeTo?: string;
+  /** Notification 事件类型（issue #52） */
+  notificationType?: "permission_prompt" | "idle_prompt";
 }
+
+export type NotificationType = "permission_prompt" | "idle_prompt";
+const NOTIFICATION_TYPES = new Set<string>(["permission_prompt", "idle_prompt"]);
 
 export type HookResult = {
   block?: boolean;
@@ -92,6 +98,7 @@ export type ShellHookConfig = {
     source?: string;
     decision?: "allow" | "deny" | "always";
     modeTo?: string;
+    notificationType?: NotificationType;
   };
   command: string;
   timeout?: number;
@@ -118,6 +125,9 @@ export function loadShellHooks(workDir: string): ShellHookConfig[] {
                 ? { decision: h.matcher.decision as "allow" | "deny" | "always" }
                 : {}),
               ...(typeof h.matcher.modeTo === "string" ? { modeTo: h.matcher.modeTo } : {}),
+              ...(typeof h.matcher.notificationType === "string" && NOTIFICATION_TYPES.has(h.matcher.notificationType)
+                ? { notificationType: h.matcher.notificationType as NotificationType }
+                : {}),
             }
           : undefined,
         command: h.command,
@@ -130,7 +140,13 @@ export function loadShellHooks(workDir: string): ShellHookConfig[] {
 
 export type HookMatcher = {
   event: HookEvent;
-  matcher?: { tool_name?: string; source?: string; decision?: "allow" | "deny" | "always"; modeTo?: string };
+  matcher?: {
+    tool_name?: string;
+    source?: string;
+    decision?: "allow" | "deny" | "always";
+    modeTo?: string;
+    notificationType?: NotificationType;
+  };
   handler: HookHandler;
   type?: HookType;
   timeout?: number;
@@ -191,6 +207,7 @@ export class HookSystem {
       if (m.matcher?.source && m.matcher.source !== ctx.source) return false;
       if (m.matcher?.decision && m.matcher.decision !== ctx.decision) return false;
       if (m.matcher?.modeTo && m.matcher.modeTo !== ctx.modeTo) return false;
+      if (m.matcher?.notificationType && m.matcher.notificationType !== ctx.notificationType) return false;
       return true;
     });
 

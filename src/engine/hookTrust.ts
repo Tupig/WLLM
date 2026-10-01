@@ -43,6 +43,7 @@ export function hashRule(h: ShellHookConfig): string {
     h.matcher?.source ?? "",
     h.matcher?.decision ?? "",
     h.matcher?.modeTo ?? "",
+    h.matcher?.notificationType ?? "",
     h.command,
     h.timeout ?? 5000,
   ]);

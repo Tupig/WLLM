@@ -14,8 +14,9 @@ import {
 } from "./engine/diffReview.js";
 import { applyStaged, listStaged } from "./engine/staging.js";
 import { listTrust, clearTrust } from "./engine/hookTrust.js";
-import { fireCompactPre, fireCompactPost, runClearSequence, fireRewindPost } from "./engine/hookEvents.js";
+import { fireCompactPre, fireCompactPost, runClearSequence, fireRewindPost, fireNotification } from "./engine/hookEvents.js";
 import { hookSystem, reloadShellHooks } from "./engine/hooks.js";
+import { createIdleNotifier, resolveIdleNotifyMs } from "./services/idleNotify.js";
 import { ContextCompactor, estimateTokens } from "./context/compact/index.js";
 import { formatCompactionLine } from "./engine/compactionMeta.js";
 import { contextBreakdown } from "./context/breakdown.js";
@@ -126,6 +127,26 @@ async function startREPL(): Promise<void> {
   };
   process.once("SIGINT", onSignal);
   process.once("SIGTERM", onSignal);
+
+  // 输入空闲 Notification（issue #52）：prompt 布防、line 重置，一轮只 fire 一次
+  const idleNotifyMs = resolveIdleNotifyMs();
+  const idle = createIdleNotifier(idleNotifyMs, () => {
+    void fireNotification(undefined, "idle_prompt", {
+      turnNumber: 0,
+      sessionId: appStore.getState().sessionId,
+    });
+    process.stdout.write(
+      chalk.gray(`\n⏰ 输入已空闲 ${Math.round(idleNotifyMs / 60_000)} 分钟（TUPIG_IDLE_NOTIFY_MS 可调）\n`),
+    );
+    rl.prompt();
+  });
+  const origPrompt = rl.prompt.bind(rl);
+  rl.prompt = ((...args: Parameters<typeof origPrompt>) => {
+    const r = origPrompt(...args);
+    idle.arm();
+    return r;
+  }) as Interface["prompt"];
+  rl.on("line", () => idle.reset()); // 用户输入 → 解除本轮空闲通知
 
   rl.prompt();
 

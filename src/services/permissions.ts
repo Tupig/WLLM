@@ -10,6 +10,7 @@ import { appStore } from "../state/AppState.js";
 import { planRerouteTarget, ensureStagedSeed } from "../engine/staging.js";
 import chalk from "chalk";
 import { evaluatePersistentAllow, deriveAlwaysPattern, addAlwaysAllow } from "./approvalStore.js";
+import { fireNotification } from "../engine/hookEvents.js";
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -236,6 +237,13 @@ export async function promptUserDecision(
   opts?: { allowAlways?: boolean },
 ): Promise<ApprovalDecision> {
   if (!process.stdin.isTTY) return "deny";
+  // Notification（issue #52）：权限询问通知，fire-and-forget 不拖住弹问
+  void fireNotification(undefined, "permission_prompt", {
+    turnNumber: 0,
+    sessionId: appStore.getState().sessionId,
+    toolName,
+    input,
+  });
   const allowAlways = opts?.allowAlways !== false;
   const inputStr = JSON.stringify(input, null, 2);
   const truncated = inputStr.length > 500 ? inputStr.slice(0, 500) + "\n..." : inputStr;

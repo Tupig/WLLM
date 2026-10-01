@@ -6,7 +6,7 @@
  * 压缩事件透传 source（manual/auto）供 matcher 过滤。
  */
 import {
-  hookSystem, type HookSystem, type HookContext, type HookEvent, type HookResult,
+  hookSystem, type HookSystem, type HookContext, type HookEvent, type HookResult, type NotificationType,
 } from "./hooks.js";
 
 export async function fireLifecycle(
@@ -144,4 +144,13 @@ export async function fireUserPromptSubmit(
   } catch {
     return {};
   }
+}
+
+/** Notification（issue #52）：权限询问 / REPL 空闲两类「等待用户」通知，matcher 按类型过滤 */
+export async function fireNotification(
+  hs: HookSystem = hookSystem,
+  type: NotificationType,
+  ctx: HookContext,
+): Promise<void> {
+  await fireLifecycle(hs, "Notification", { ...ctx, notificationType: type });
 }

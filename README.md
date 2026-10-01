@@ -130,6 +130,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **hook 并行执行 + 最严合并**：同事件多 handler `Promise.all` 并行（总耗时≈max，单点异常吞掉不拖累）；合并 block 任一为真即 block 且 message 不被后续覆盖、未 block 取注册序第一个非空 message/replacement、additionalContext 拼接；并行下 block 不再短路后续 handler
 - **hook matcher 正则化**：`tool_name` 全串锚定正则 `^(?:p)$`（`Edit|Write` 命中两工具不误伤 MultiEdit，精确配置行为不变，子串用 `.*X.*`，非法正则回退精确）；shell hooks.json 解析透传 `matcher.decision`/`matcher.modeTo`（此前被丢弃）；TOFU `hashRule` 纳入 matcher 全字段，任一变更重询
 - **hooks.json 热加载**：shell hooks 按工厂注册，`submitMessage` 入口 mtime 检测变更才整批重载（文件没变零动作，删除即失效）；代码注册（`hookSystem.register`）不受重载影响；REPL `/hooks reload` 不看 mtime 强制重载并打印数量
+- **Notification hook**：`permission_prompt`（`promptUserDecision` 弹问前 fire-and-forget，非 TTY 不 fire）与 `idle_prompt`（REPL 输入空闲，`TUPIG_IDLE_NOTIFY_MS` 默认 300s、0 关闭，prompt 布防/line 重置/一轮一次）；`matcher.notificationType` 过滤，shell hooks.json 解析透传，TOFU hash 覆盖
 - **重试抖动 + 预算上限**：`callWithRetry` full-jitter 退避（`rand(0, min(10s, 1s·2^n))`）防同步重试风暴，总预算 `TUPIG_RETRY_BUDGET_MS`（默认 60s）超限即抛最后错误，401/403 仍立即抛
 - **上下文溢出自动恢复**：API 报 prompt too long 不再直接失败——走压缩流水线重建 messages 后重试本轮（限 2 次、触发 PreCompact/PostCompact hook、`compactionCount+1`），与 max_tokens 输出升级额度互不干扰；该类错误 `failoverEligible=false`（切 provider 解决不了超限）
 - **变更史注入（Context Lineage）**：`git log` 近 30 条 → 模型压成短摘要 → `.tupigcode/cache/lineage.json` 缓存（HEAD 变更才重算），以「## 近期变更」注入 system prompt 尾部；预算截断取最近（`TUPIG_LINEAGE_MAX_CHARS` 默认 800）；无 git/无模型/超时（5s）静默跳过零影响
@@ -295,6 +296,7 @@ tupigcode/
 | `TUPIG_SANDBOX_WRITE` / `TUPIG_SANDBOX_DENY` | 写沙箱白名单 / 黑名单 |
 | `TUPIG_MCP_APPROVAL` | MCP 审批全局开关：`off`=全部放行 / `ask`=全部强制询问（未设置=按 mcp.json 白名单与 readOnlyHint 分级） |
 | `TUPIG_HOOKS_FILE` / `TUPIG_HOOKS_FAIL_OPEN` | hooks 配置 / 失败是否放行 |
+| `TUPIG_IDLE_NOTIFY_MS` | REPL 输入空闲 Notification 阈值（默认 300000，0 关闭） |
 | `TUPIG_HARNESS` / `TUPIG_DEBUG` / `TUPIG_MOCK` / `TUPIG_PROMPT_OPT` / `TUPIG_EXTRA_TOOLS` | harness、调试、Mock、prompt 优化、额外工具 |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `OPENAI_BASE_URL` | 云端 Provider 凭证（可选） |
 
