@@ -127,6 +127,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **SIGINT 会话抢救**：Ctrl+C/SIGTERM 同步落盘当前历史并打 `interrupted` 标记（空会话不写）；下次启动扫描孤儿会话打印「恢复：/resume \<id\>」提示；正常 turn 结束的保存不带标记自然冲掉，也可手动 `clearInterruptedFlag`
 - **生命周期 hook 事件**：`Stop`（自然结束）/`SessionStart`（submitMessage 入口）/`PreCompact`+`PostCompact`（阈值梯度、溢出恢复、手动 /compact 三处压缩点）全部落地；压缩事件带 `source: manual|auto` 供 matcher 过滤，shell hooks.json 支持 `matcher.source`；一切 hook 异常吞掉不阻塞
 - **UserPromptSubmit hook**：prompt 进模型前触发（mode 命令之后、init 之前）；`block`（exit 2/JSON block）拒绝本轮不发请求并输出原因，`additionalContext`（平铺 JSON 或 Claude Code `hookSpecificOutput` 嵌套）以独立 user 消息注入本轮上下文，多 hook 拼接合并不覆盖
+- **hook 并行执行 + 最严合并**：同事件多 handler `Promise.all` 并行（总耗时≈max，单点异常吞掉不拖累）；合并 block 任一为真即 block 且 message 不被后续覆盖、未 block 取注册序第一个非空 message/replacement、additionalContext 拼接；并行下 block 不再短路后续 handler
 - **重试抖动 + 预算上限**：`callWithRetry` full-jitter 退避（`rand(0, min(10s, 1s·2^n))`）防同步重试风暴，总预算 `TUPIG_RETRY_BUDGET_MS`（默认 60s）超限即抛最后错误，401/403 仍立即抛
 - **上下文溢出自动恢复**：API 报 prompt too long 不再直接失败——走压缩流水线重建 messages 后重试本轮（限 2 次、触发 PreCompact/PostCompact hook、`compactionCount+1`），与 max_tokens 输出升级额度互不干扰；该类错误 `failoverEligible=false`（切 provider 解决不了超限）
 - **变更史注入（Context Lineage）**：`git log` 近 30 条 → 模型压成短摘要 → `.tupigcode/cache/lineage.json` 缓存（HEAD 变更才重算），以「## 近期变更」注入 system prompt 尾部；预算截断取最近（`TUPIG_LINEAGE_MAX_CHARS` 默认 800）；无 git/无模型/超时（5s）静默跳过零影响

@@ -146,24 +146,49 @@ export class HookSystem {
       return true;
     });
 
-    let result: HookResult = {};
-    for (const m of matching) {
-      try {
-        const r = await m.handler(ctx);
-        if (r) {
-          const acParts = [result.additionalContext, r.additionalContext]
-            .filter((x): x is string => typeof x === "string" && x.length > 0);
-          result = { ...result, ...r };
-          if (acParts.length > 0) result.additionalContext = acParts.join("\n"); // 多 hook 拼接不互相覆盖
-          if (result.block) break;
+    // 并行执行（issue #49）：不再串行叠加超时，单点异常吞掉不拖累他人
+    const results = await Promise.all(
+      matching.map(async (m) => {
+        try {
+          return await m.handler(ctx);
+        } catch (err) {
+          if (process.env.TUPIG_DEBUG) {
+            console.error(`[Hook] 处理器执行出错：`, err);
+          }
+          return null;
         }
-      } catch (err) {
-        if (process.env.TUPIG_DEBUG) {
-          console.error(`[Hook] 处理器执行出错：`, err);
-        }
+      }),
+    );
+
+    // 最严合并（issue #49）：block 优先且不被后续覆盖；未 block 取注册序
+    // 第一个非空 message/replacement；additionalContext 拼接不互相覆盖
+    let blockFirst: HookResult | null = null;
+    let message: string | undefined;
+    let replacement: string | undefined;
+    const acParts: string[] = [];
+    for (const r of results) {
+      if (!r) continue;
+      if (typeof r.additionalContext === "string" && r.additionalContext.length > 0) acParts.push(r.additionalContext);
+      if (r.block) {
+        if (!blockFirst) blockFirst = r;
+        continue;
       }
+      if (blockFirst) continue; // block 之后的 handler 结果视为不生效（等价原短路）
+      if (r.message && message === undefined) message = r.message;
+      if (r.replacement && replacement === undefined) replacement = r.replacement;
     }
-    return result;
+
+    const out: HookResult = {};
+    if (blockFirst) {
+      out.block = true;
+      out.message = blockFirst.message ?? message;
+      if (blockFirst.replacement) out.replacement = blockFirst.replacement;
+    } else {
+      if (message !== undefined) out.message = message;
+      if (replacement !== undefined) out.replacement = replacement;
+    }
+    if (acParts.length > 0) out.additionalContext = acParts.join("\n");
+    return out;
   }
 
   async triggerShellHook(
