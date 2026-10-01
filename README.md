@@ -112,6 +112,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **检查点按名称回滚**：`/rewind` 参数为 id-or-label，id 精确优先、label 精确匹配（同名取最新），回滚消息标注匹配方式
 - **子代理工具超时**：子代理内 tool.call 与主循环同享 `TOOL_TIMEOUT_MS`（含 `TUPIG_TOOL_TIMEOUT_MS` 覆盖），挂死工具超时返回 is_error tool_result 后任务继续；withTimeout 抽到 `engine/time.ts` 供两侧共用
 - **PostToolUseFailure 补触发**：工具执行错误与超时（含 Bash 超时改为 reject 的真实失败语义）触发，携带 `output + durationMs`；校验失败/doom 拒绝不触发
+- **并行批 fail-soft**：同批只读工具并发执行不再被全局 `streaming` 互斥误伤（写/不安全项由 `partitionRuns` 独立成批 + 批间顺序执行天然互斥）；`mapWithConcurrency` 改 settled 语义，批内单任务异常只产生自己的 error tool_result 并触发 PostToolUseFailure，兄弟结果保留
 - **权限落定触发 PermissionResult**：allow/deny/always 决策后携带 `decision + ruleSource` 触发供审计，matcher 可按 decision 过滤
 - **/rewind 触发 PostRewind**：回滚成功后携带 `checkpointId + mode` 触发，失败不触发，hook 异常吞掉
 - **/clear 触发 PreClear/PostClear**：清空序列为 Pre hook → 重置状态 → Post hook，hook 异常吞掉、重置失败原样上抛

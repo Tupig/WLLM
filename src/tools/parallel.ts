@@ -6,17 +6,25 @@
  */
 import type { Tool, ToolUseContext, ToolResult, CanUseToolFn } from "../engine/Tool.js";
 
+/**
+ * 并发映射（fail-soft，issue #43）：settled 语义，单任务异常不整批 reject，
+ * 结果按输入顺序返回，失败项为 `rejected` 由调用方各自兜底。
+ */
 export async function mapWithConcurrency<T, R>(
   items: T[], limit: number, fn: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
+): Promise<PromiseSettledResult<R>[]> {
   if (items.length === 0) return [];
-  const results = new Array<R>(items.length);
+  const results = new Array<PromiseSettledResult<R>>(items.length);
   let next = 0;
   const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
     while (true) {
       const i = next++;
       if (i >= items.length) return;
-      results[i] = await fn(items[i], i);
+      try {
+        results[i] = { status: "fulfilled", value: await fn(items[i], i) };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
     }
   });
   await Promise.all(workers);

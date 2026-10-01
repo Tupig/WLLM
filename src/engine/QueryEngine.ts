@@ -148,7 +148,6 @@ export class QueryEngine {
   private ruleLayers: RuleLayer[] = [];
   private memoryEntries: MemoryEntry[] = [];
   private skillCatalog: string = "";
-  private streaming = false;
   private modeManager: ModeManager;
   private trajectory: TrajectoryRecorder | null = null;
   private cache: ToolCache;
@@ -598,14 +597,7 @@ export class QueryEngine {
       };
       const batches = partitionRuns(entries, isSafe);
       for (const batch of batches) {
-        if (batch.length > 1) {
-          await mapWithConcurrency(batch, 4, async (e) => {
-            await this.runToolBuffer(e.buf, e.input!, getToolByName(this.tools, e.buf.name), toolContext, canUseToolFn, loopState, events, toolResults, true);
-          });
-        } else {
-          const e = batch[0];
-          await this.runToolBuffer(e.buf, e.input ?? {}, getToolByName(this.tools, e.buf.name), toolContext, canUseToolFn, loopState, events, toolResults, false);
-        }
+        await this.runBatch(batch, toolContext, canUseToolFn, loopState, events, toolResults);
       }
 
       stopReason = "tool_use";
@@ -626,6 +618,44 @@ export class QueryEngine {
     return { stopReason, toolResults, events };
   }
 
+  /**
+   * 批次级闸门（issue #43）：批间顺序执行（partitionRuns 把写/不安全项独立成批，
+   * 顺序循环天然互斥，仅快照类写操作靠 autoSnapshot 防抖串行）；
+   * 批内并行 fail-soft——单任务异常只产生自己的 error tool_result，不误伤兄弟。
+   */
+  private async runBatch(
+    batch: Array<{ buf: { id: string; name: string; inputJson: string }; input: Record<string, unknown> | null }>,
+    toolContext: ToolUseContext,
+    canUseToolFn: CanUseToolFn,
+    loopState: LoopState,
+    events: any[],
+    toolResults: Array<{ tool_use_id: string; content: string; is_error?: boolean }>,
+  ): Promise<void> {
+    const runOne = async (e: { buf: { id: string; name: string; inputJson: string }; input: Record<string, unknown> | null }) => {
+      await this.runToolBuffer(e.buf, e.input ?? {}, getToolByName(this.tools, e.buf.name), toolContext, canUseToolFn, loopState, events, toolResults);
+    };
+    if (batch.length === 1) {
+      await runOne(batch[0]);
+      return;
+    }
+    const settled = await mapWithConcurrency(batch, 4, runOne);
+    for (let i = 0; i < settled.length; i++) {
+      const s = settled[i];
+      if (s.status !== "rejected") continue;
+      const e = batch[i];
+      const errMsg = s.reason instanceof Error ? s.reason.message : String(s.reason);
+      process.stdout.write(chalk.red(`\n❌ ${errMsg}\n`));
+      if (!toolResults.some((r) => r.tool_use_id === e.buf.id)) {
+        toolResults.push({ tool_use_id: e.buf.id, content: errMsg, is_error: true });
+        events.push({ type: "tool_result", toolUseId: e.buf.id, content: errMsg, isError: true });
+      }
+      void firePostToolUseFailure(hookSystem, {
+        toolName: e.buf.name, input: e.input ?? {}, output: errMsg, durationMs: 0,
+      }, { turnNumber: loopState.turnCount, sessionId: appStore.getState().sessionId });
+      this.trajectory?.recordError(errMsg);
+    }
+  }
+
   private async runToolBuffer(
     buf: { id: string; name: string; inputJson: string },
     input: Record<string, unknown>,
@@ -635,7 +665,6 @@ export class QueryEngine {
     loopState: LoopState,
     events: any[],
     toolResults: Array<{ tool_use_id: string; content: string; is_error?: boolean }>,
-    parallel: boolean,
   ): Promise<void> {
       const permission = await canUseToolFn(buf.name, input);
       this.trajectory?.record("permission", {
@@ -705,16 +734,10 @@ export class QueryEngine {
           return;
         }
 
-        // 流式锁：防止并发工具执行
-        if (this.streaming) {
-          toolResults.push({ tool_use_id: buf.id, content: "错误：另一个工具正在执行中", is_error: true });
-          return;
-        }
-        this.streaming = true;
-
+        // 流式锁已移除（issue #43）：同批只读工具并发执行不再互斥，
+        // 写/不安全项由 partitionRuns 独立成批 + 批间顺序循环天然互斥
         const doomSig = JSON.stringify({ name: buf.name, input });
         if (this.doomDetector.feed(doomSig)) {
-          this.streaming = false;
           const errMsg = "检测到连续重复动作（doom loop），已中断。请换一种方式完成任务。";
           process.stdout.write(chalk.red(`\n🛑 ${errMsg}\n`));
           toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
@@ -745,8 +768,6 @@ export class QueryEngine {
           events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
           this.trajectory?.recordError(errMsg);
           return;
-        } finally {
-          this.streaming = false;
         }
 
         // 记录工具执行状态

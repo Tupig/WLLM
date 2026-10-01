@@ -9,7 +9,11 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 describe("mapWithConcurrency", () => {
   it("保持输入顺序返回结果", async () => {
     const out = await mapWithConcurrency([30, 10, 20], 3, async (ms) => { await sleep(ms); return ms * 2; });
-    expect(out).toEqual([60, 20, 40]);
+    expect(out).toEqual([
+      { status: "fulfilled", value: 60 },
+      { status: "fulfilled", value: 20 },
+      { status: "fulfilled", value: 40 },
+    ]);
   });
   it("并发不超过 limit", async () => {
     let active = 0, peak = 0;
@@ -24,10 +28,11 @@ describe("mapWithConcurrency", () => {
   it("空数组 → 空结果", async () => {
     expect(await mapWithConcurrency([], 4, async () => 1)).toEqual([]);
   });
-  it("异常 → 快速失败", async () => {
-    await expect(
-      mapWithConcurrency([1, 2], 2, async (x) => { if (x === 2) throw new Error("boom"); return x; }),
-    ).rejects.toThrow("boom");
+  it("异常 → fail-soft（settled，不整批 reject）", async () => {
+    const out = await mapWithConcurrency([1, 2], 2, async (x) => { if (x === 2) throw new Error("boom"); return x; });
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({ status: "fulfilled", value: 1 });
+    expect(out[1].status).toBe("rejected");
   });
 });
 
