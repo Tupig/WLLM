@@ -17,6 +17,10 @@ export type McpServerEntry = {
   env?: Record<string, string>;
   /** callTool 单次调用超时（毫秒，issue #60）；未配走 SDK 默认 */
   timeout?: number;
+  /** 工具白名单（MCP 原始名，issue #61）；空数组=不裁剪 */
+  includeTools?: string[];
+  /** 工具黑名单（MCP 原始名，issue #61）；优先于 includeTools */
+  excludeTools?: string[];
   /** server 级审批：allow=白名单放行 / ask=强制问 / deny=阻断；未配置=沿用通用链 */
   approval?: McpApproval;
   /** per-tool 覆盖 server 级，key 为 MCP 原始工具名 */
@@ -64,6 +68,16 @@ export type McpToolDef = {
   inputSchema?: Record<string, unknown>;
   annotations?: McpAnnotations;
 };
+
+/**
+ * 按 server 配置裁剪工具列表（issue #61）：
+ * exclude 命中先剔除（exclude 优先）；配了非空 include → 只留名单内；均未配 → 全量。
+ */
+export function filterMcpToolDefs(defs: McpToolDef[], entry: McpServerEntry): McpToolDef[] {
+  const exclude = new Set(entry.excludeTools ?? []);
+  const include = entry.includeTools?.length ? new Set(entry.includeTools) : null;
+  return defs.filter((d) => !exclude.has(d.name) && (!include || include.has(d.name)));
+}
 
 /**
  * 把 MCP 工具桥接为 tupigcode Tool（issue #58）：
@@ -199,7 +213,7 @@ export function makeServerRefresher(opts: {
     const old = serverTools.get(serverName) ?? [];
     try {
       const listed = await client.listTools?.();
-      const fresh = (listed?.tools ?? []).map((t) => wrapMcpTool(serverName, t, client, entry));
+      const fresh = filterMcpToolDefs(listed?.tools ?? [], entry).map((t) => wrapMcpTool(serverName, t, client, entry));
       const oldNames = new Set(old.map((t) => t.name));
       const newNames = new Set(fresh.map((t) => t.name));
       const added = [...newNames].filter((n) => !oldNames.has(n));
@@ -278,7 +292,7 @@ export async function connectMcpServers(
         const listed = await client.listTools();
         serverTools.set(
           serverName,
-          ((listed.tools ?? []) as McpToolDef[]).map((t) => wrapMcpTool(serverName, t, client, entry)),
+          filterMcpToolDefs((listed.tools ?? []) as McpToolDef[], entry).map((t) => wrapMcpTool(serverName, t, client, entry)),
         );
         const refreshOne = makeServerRefresher({ serverName, entry, client, serverTools, fireChanged, onWarn });
         refresherMap.set(serverName, refreshOne);
