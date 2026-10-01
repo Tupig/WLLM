@@ -6,6 +6,7 @@ import { spawn } from "child_process";
 import { buildTool, type ToolUseContext, type ToolResult } from "../engine/Tool.js";
 import { safePath } from "../utils/path.js";
 import { MAX_GREP_RESULTS, TOOL_TIMEOUT_MS, GREP_FALLBACK_TIMEOUT_MS } from "../engine/constants.js";
+import { truncationHint } from "../utils/truncationHint.js";
 
 export const GrepInput = z.object({
   pattern: z.string().describe("用于搜索的正则表达式"),
@@ -13,6 +14,7 @@ export const GrepInput = z.object({
   include: z.string().optional().describe("要包含的文件 glob（例如 '*.ts'）"),
   output_mode: z.enum(["content", "files_with_matches", "count"]).optional().describe("输出模式（默认：content）"),
   head_limit: z.number().optional().describe("最大结果数（默认 250）"),
+  offset: z.number().optional().describe("结果偏移（截断后按此续取，默认 0）"),
 });
 
 export type GrepInput = z.infer<typeof GrepInput>;
@@ -60,14 +62,18 @@ export const GrepTool = buildTool<string>({
         resolve(result);
       };
 
-      // rg 与 find+grep fallback 共用：格式化 + 超量降级（行为一致）
+      // rg 与 find+grep fallback 共用：格式化 + 分页截断 + 续取交接（issue #56）
       const format = (raw: string): ToolResult<string> => {
         const lines = raw.trim().split("\n").filter(Boolean);
         if (!lines.length) return { data: `未找到匹配「${input.pattern}」的结果` };
-        const truncated = lines.length > headLimit;
-        const resultLines = truncated ? lines.slice(0, headLimit) : lines;
+        const offset = Math.max(0, input.offset ?? 0);
+        if (offset > 0 && offset >= lines.length) {
+          return { data: `未找到更多结果（offset=${offset}，共 ${lines.length} 条匹配）` };
+        }
+        const page = lines.slice(offset, offset + headLimit);
+        const truncated = lines.length > offset + headLimit;
 
-        if (mode === "content" && truncated) {
+        if (mode === "content" && truncated && offset === 0) {
           // SWE-agent 做法：超量且散在多文件 → 只列文件名，逼模型缩窄条件
           const files = [...new Set(lines.map((l) => l.split(":")[0]))];
           if (files.length > 10) {
@@ -82,13 +88,17 @@ export const GrepTool = buildTool<string>({
 
         let result: string;
         if (mode === "files_with_matches") {
-          result = `找到 ${resultLines.length} 个文件：\n${resultLines.join("\n")}`;
+          result = `找到 ${page.length} 个文件：\n${page.join("\n")}`;
         } else if (mode === "count") {
-          result = `匹配数：\n${resultLines.join("\n")}`;
+          result = `匹配数：\n${page.join("\n")}`;
         } else {
-          result = `找到 ${resultLines.length} 处匹配：\n${resultLines.join("\n")}`;
+          result = `找到 ${page.length} 处匹配：\n${page.join("\n")}`;
         }
-        if (truncated) result += `\n（显示前 ${headLimit} 条，共 ${lines.length} 条匹配）`;
+        if (truncated) {
+          result += "\n" + truncationHint({
+            total: lines.length, shown: page.length, offset, limit: headLimit,
+          });
+        }
         return { data: result };
       };
 

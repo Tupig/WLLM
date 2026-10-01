@@ -94,7 +94,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 | 类别 | 工具 |
 | --- | --- |
 | 读写 | `FileRead`（文本 + 图片多模态输入，png/jpg/webp/gif ≤5MB）`FileWrite` `FileEdit`（精确 + 模糊回退：容忍缩进/空白/单字符漂移，唯一命中才替换）`MultiEdit`（多组替换原子落盘，失败报「第 N 处不匹配」；extras 池经 ToolSearch/`TUPIG_EXTRA_TOOLS` 挂载）`DocRead` |
-| 检索 | `Grep`（ripgrep 主路径 + 内置降级）`Glob` `RepoMap`（全仓地图）`similar`（语义近邻） |
+| 检索 | `Grep`（ripgrep 主路径 + 内置降级；`offset`/`head_limit` 分页，截断带续取交接）`Glob` `RepoMap`（全仓地图）`similar`（语义近邻） |
 | 执行 | `Bash`（沙箱 + 安全护栏）`PackageManager` `lint` `Refactor` `Analysis` |
 | 规划 | `todo`（任务清单）`Question`（向用户澄清）`parallel`（并行子任务）`Agent`（子代理派发） |
 | 状态 | `rollback`（回滚）`state`（状态机）`Web`（联网抓取） |
@@ -139,6 +139,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **内置技能包（10 个）**：git-workflow / git-log / gitingest / shell-command-engager / code-review / debugging / test-first / docs-sync / release-check / refactor-safe，`src/knowledge/skills/` 静态装载（build 拷贝到 dist），用户 `.tupigcode/skills/` 同名覆盖、无效回落内置，三重门禁与 3000 字目录预算对内置同样生效
 - **三级 diff 审查**：每轮写操作聚合为结构化 diff（自研 LCS，上下文 3），REPL 全局 a/r/s → 文件 y/n/h/q → 块 y/n 三级判定；拒绝按文件回滚（同文件多次修改回到首次之前）；超大 diff 降级为仅文件级；`TUPIG_DIFF_REVIEW=0` 关闭；**plan 模式改动暂存** `.tupigcode/staging/`，**`/apply` 才落盘**（越界条目拒绝）
 - **Bash 输出双端裁剪**：超长输出 head+tail 双端保留（both 默认 60/40，`keep=head|tail` 单端），预算 `TUPIG_BASH_OUTPUT_CHARS`（默认 50000）可调；截断标注原始大小/省略量/keep 模式，预算内原样返回
+- **截断续取交接提示**：统一 `已截断 total=N，本次显示 x~y，用 offset=… 续取` 文案（`truncationHint`，unit 条/字符可配）；Grep 支持 `offset` 分页（越界返回「无更多结果」），WebFetch 按字符窗口 `offset`+`maxLength` 续取（此前砍头后不可达）
 - **工具延迟装载**：核心集（Read/Write/Edit/Bash/Glob/Grep/TodoWrite/Question）+ `ToolSearch` 元工具常驻，其余（git/测试/网页/子代理/仓库地图等）按需检索挂载（下一轮生效）；`TUPIG_EXTRA_TOOLS` 显式指定与 MCP 工具保持常驻；`TUPIG_LAZY_TOOLS=0` 回退全量注入
 - **wire.jsonl 原始报文**：`TUPIG_WIRE=1` 开启（默认关零开销）——pilot 侧 `streamMessage` 记录请求与流式合并后正文、proxy 侧透传观测，JSONL 落 `.tupigcode/wire.jsonl`（`TUPIG_WIRE_FILE`/`TUPIG_WIRE_MAX_BYTES` 可调，默认 5MB 滚动裁剪），request/response 共享 `req_id`
 - **auto-test 自验证**：`RunTests` 工具（默认集，只读）——探测 `TUPIG_TEST_CMD` / npm test（跳过占位）/ pytest / cargo / go，失败输出回喂修复复跑；超时可调 `TUPIG_TEST_TIMEOUT_MS`，输出尾部截断 4000 字符

@@ -6,6 +6,7 @@
  */
 import { z } from "zod";
 import { defineTool } from "../engine/Tool.js";
+import { truncationHint } from "../utils/truncationHint.js";
 
 /**
  * Web 搜索工具
@@ -68,10 +69,12 @@ export const WebFetchTool = defineTool({
     url: z.string().url().describe("要抓取的 URL"),
     format: z.enum(["text", "markdown"]).optional().describe("输出格式（默认 text）"),
     maxLength: z.number().optional().describe("最大字符数（默认 10000）"),
+    offset: z.number().optional().describe("起始字符偏移（截断后按此续取，默认 0）"),
   }),
   readOnly: true,
   async execute(input) {
     const maxLength = input.maxLength ?? 10000;
+    const offset = Math.max(0, Math.floor(input.offset ?? 0));
 
     try {
       const response = await fetch(input.url, {
@@ -98,12 +101,22 @@ export const WebFetchTool = defineTool({
         content = htmlToText(content);
       }
 
-      // 截断
-      if (content.length > maxLength) {
-        content = content.slice(0, maxLength) + "\n\n[已截断，原始长度 " + content.length + " 字符]";
+      // 字符窗口 + 截断续取交接（issue #56）
+      if (offset >= content.length) {
+        return `未找到更多内容（offset=${offset}，共 ${content.length} 字符）`;
       }
-
-      return content;
+      const window = content.slice(offset, offset + maxLength);
+      if (content.length > offset + window.length) {
+        return window + "\n\n" + truncationHint({
+          total: content.length,
+          shown: window.length,
+          offset,
+          limit: maxLength,
+          unit: "字符",
+          limitParam: "maxLength",
+        });
+      }
+      return window;
     } catch (err) {
       return `抓取失败：${err instanceof Error ? err.message : err}`;
     }
