@@ -87,10 +87,17 @@ export function interpretShellExit(
 
 export type ShellHookConfig = {
   event: HookEvent;
-  matcher?: { tool_name?: string; source?: string };
+  matcher?: {
+    tool_name?: string;
+    source?: string;
+    decision?: "allow" | "deny" | "always";
+    modeTo?: string;
+  };
   command: string;
   timeout?: number;
 };
+
+const DECISIONS = new Set(["allow", "deny", "always"]);
 
 export function loadShellHooks(workDir: string): ShellHookConfig[] {
   const file = process.env.TUPIG_HOOKS_FILE || join(workDir, ".tupigcode", "hooks.json");
@@ -106,6 +113,11 @@ export function loadShellHooks(workDir: string): ShellHookConfig[] {
           ? {
               ...(typeof h.matcher.tool_name === "string" ? { tool_name: h.matcher.tool_name } : {}),
               ...(typeof h.matcher.source === "string" ? { source: h.matcher.source } : {}),
+              // decision/modeTo 此前被丢弃（issue #50）
+              ...(typeof h.matcher.decision === "string" && DECISIONS.has(h.matcher.decision)
+                ? { decision: h.matcher.decision as "allow" | "deny" | "always" }
+                : {}),
+              ...(typeof h.matcher.modeTo === "string" ? { modeTo: h.matcher.modeTo } : {}),
             }
           : undefined,
         command: h.command,
@@ -124,6 +136,19 @@ export type HookMatcher = {
   timeout?: number;
 };
 
+/**
+ * tool_name 匹配（issue #50）：全串锚定正则 `^(?:pattern)$`——
+ * `Edit|Write` 命中两工具且不误伤 MultiEdit；既有精确配置行为不变；
+ * 子串意图写 `.*X.*`；非法正则回退精确比较。
+ */
+export function matchToolPattern(pattern: string, value: string): boolean {
+  try {
+    return new RegExp(`^(?:${pattern})$`).test(value);
+  } catch {
+    return pattern === value;
+  }
+}
+
 export class HookSystem {
   private matchers: HookMatcher[] = [];
 
@@ -139,7 +164,7 @@ export class HookSystem {
   async trigger(event: HookEvent, ctx: HookContext): Promise<HookResult> {
     const matching = this.matchers.filter((m) => {
       if (m.event !== event) return false;
-      if (m.matcher?.tool_name && m.matcher.tool_name !== ctx.toolName) return false;
+      if (m.matcher?.tool_name && (ctx.toolName === undefined || !matchToolPattern(m.matcher.tool_name, ctx.toolName))) return false;
       if (m.matcher?.source && m.matcher.source !== ctx.source) return false;
       if (m.matcher?.decision && m.matcher.decision !== ctx.decision) return false;
       if (m.matcher?.modeTo && m.matcher.modeTo !== ctx.modeTo) return false;

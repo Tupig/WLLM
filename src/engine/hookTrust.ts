@@ -35,11 +35,14 @@ function saveTrust(workDir: string, store: TrustStore): void {
   writeFileSync(file, JSON.stringify(store, null, 2), "utf-8");
 }
 
-/** 规则 hash：event + matcher + command + timeout 任一变更即失效重询 */
+/** 规则 hash：event + matcher 全字段（tool_name/source/decision/modeTo）+ command + timeout 任一变更即失效重询 */
 export function hashRule(h: ShellHookConfig): string {
   const payload = JSON.stringify([
     h.event,
     h.matcher?.tool_name ?? "",
+    h.matcher?.source ?? "",
+    h.matcher?.decision ?? "",
+    h.matcher?.modeTo ?? "",
     h.command,
     h.timeout ?? 5000,
   ]);
