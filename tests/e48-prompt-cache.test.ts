@@ -2,7 +2,7 @@
  * E48 prompt cache 稳定前缀 + cache_control 断点（#45）
  *
  * - system 分层：稳定层带 cache_control 断点，易变层（lineage/状态）排在断点之后不破坏前缀
- * - anthropic 请求：tools 末项 + system 稳定层 + 末条消息三断点，历史残留断点先清理（上限 4）
+ * - anthropic 请求：tools 末项 + system 稳定层 + 末条消息末 block 三断点（fix #63 block 级），历史残留断点先清理（上限 4）
  * - OpenAI/mock：blocks 展平为字符串，不外泄 cache_control 字段
  */
 import { describe, expect, it, beforeAll } from "vitest";
@@ -57,7 +57,9 @@ describe("tools/消息 cache_control 断点", () => {
     expect(out).not.toBe(msgs);
     expect((out[0] as any).cache_control).toBeUndefined();
     expect(msgs[0].cache_control).toEqual({ type: "ephemeral" }); // 原数组未被改
-    expect((out[2] as any).cache_control).toEqual({ type: "ephemeral" });
+    // 断点在 block 级、MessageParam 顶层无此字段（fix #63）
+    expect((out[2] as any).cache_control).toBeUndefined();
+    expect(out[2].content[0].cache_control).toEqual({ type: "ephemeral" });
     expect(withMessageCacheBreakpoint([])).toEqual([]);
   });
 });
@@ -102,7 +104,9 @@ describe("anthropic 请求三断点", () => {
     expect((captured.params.tools.at(-1) as any).cache_control).toEqual({ type: "ephemeral" });
     expect((captured.params.tools[0] as any).cache_control).toBeUndefined();
     const last = captured.params.messages.at(-1);
-    expect(last.cache_control).toEqual({ type: "ephemeral" });
+    expect(last.cache_control).toBeUndefined();
+    const lastBlocks: any[] = last.content;
+    expect(lastBlocks.at(-1).cache_control).toEqual({ type: "ephemeral" });
     expect(captured.params.messages[0].cache_control).toBeUndefined();
     expect(evs.at(-1).type).toBe("message_stop");
   });

@@ -51,17 +51,39 @@ export function withMessageCacheBreakpoint(
   messages: Anthropic.MessageParam[],
 ): Anthropic.MessageParam[] {
   if (messages.length === 0) return messages;
+  // 断点必须打在 content block 级（fix #63）：MessageParam 无顶层 cache_control 字段
   const cleaned = messages.map((m) => {
-    const { cache_control: _stale, ...rest } = m as Anthropic.MessageParam & {
+    const { cache_control: _topStale, ...rest } = m as Anthropic.MessageParam & {
       cache_control?: unknown;
     };
-    return rest as Anthropic.MessageParam;
+    const blocks = Array.isArray(rest.content)
+      ? rest.content.map((b) => {
+          if (b === null || typeof b !== "object") return b;
+          const { cache_control: _stale, ...blockRest } = b as unknown as Record<
+            string,
+            unknown
+          > & { cache_control?: unknown };
+          return blockRest;
+        })
+      : rest.content;
+    return { ...rest, content: blocks } as Anthropic.MessageParam;
   });
   const last = cleaned[cleaned.length - 1];
-  cleaned[cleaned.length - 1] = {
-    ...last,
-    cache_control: { type: "ephemeral" },
-  } as Anthropic.MessageParam;
+  if (Array.isArray(last.content) && last.content.length > 0) {
+    const blocks = last.content.map((b, i) =>
+      i === last.content.length - 1 && b !== null && typeof b === "object"
+        ? ({ ...b, cache_control: { type: "ephemeral" } } as Anthropic.ContentBlockParam)
+        : b,
+    );
+    cleaned[cleaned.length - 1] = { ...last, content: blocks } as Anthropic.MessageParam;
+  } else if (typeof last.content === "string") {
+    cleaned[cleaned.length - 1] = {
+      ...last,
+      content: [
+        { type: "text", text: last.content, cache_control: { type: "ephemeral" } },
+      ],
+    } as Anthropic.MessageParam;
+  }
   return cleaned;
 }
 

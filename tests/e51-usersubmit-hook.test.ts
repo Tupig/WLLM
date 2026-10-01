@@ -19,6 +19,14 @@ beforeAll(() => {
   process.env.TUPIG_HOOK_TRUST = "0";
 });
 
+/** 消息 content 可能是 string 或 blocks（末条经 cache 断点转换，fix #63） */
+const textOf = (m: any): string =>
+  typeof m.content === "string"
+    ? m.content
+    : Array.isArray(m.content)
+      ? m.content.map((b: any) => b?.text ?? "").join("")
+      : "";
+
 beforeEach(() => { hookSystem.clear(); });
 afterEach(() => { hookSystem.clear(); });
 
@@ -110,10 +118,10 @@ describe("submitMessage 触发 UserPromptSubmit", () => {
     expect(captured).toBeTruthy();
     const msgs: any[] = captured.messages;
     const userMsgs = msgs.filter((m) => m.role === "user");
-    expect(userMsgs.some((m) => String(m.content).includes("你好 tupig"))).toBe(true);
-    const injected = userMsgs.find((m) => String(m.content).includes("CTX-A"));
+    expect(userMsgs.some((m) => textOf(m).includes("你好 tupig"))).toBe(true);
+    const injected = userMsgs.find((m) => textOf(m).includes("CTX-A"));
     expect(injected).toBeTruthy();
-    expect(String(injected.content)).toContain("CTX-B");
+    expect(textOf(injected)).toContain("CTX-B");
     expect(out.some((m) => m.type === "result")).toBe(true);
   }, 15_000);
 
@@ -125,8 +133,8 @@ describe("submitMessage 触发 UserPromptSubmit", () => {
 
     expect(captured).toBeTruthy();
     const msgs: any[] = captured.messages;
-    expect(msgs.some((m) => m.role === "user" && String(m.content).includes("普通提问"))).toBe(true);
-    expect(msgs.every((m) => !String(m.content).includes("additionalContext"))).toBe(true);
+    expect(msgs.some((m) => m.role === "user" && textOf(m).includes("普通提问"))).toBe(true);
+    expect(msgs.every((m) => !textOf(m).includes("additionalContext"))).toBe(true);
     expect(out.length).toBeGreaterThan(0);
   }, 15_000);
 
