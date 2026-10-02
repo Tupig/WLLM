@@ -132,7 +132,7 @@ async function startREPL(): Promise<void> {
   const idleNotifyMs = resolveIdleNotifyMs();
   const idle = createIdleNotifier(idleNotifyMs, () => {
     void fireNotification(undefined, "idle_prompt", {
-      turnNumber: 0,
+      turnNumber: appStore.getState().userPromptCount, // 已提交输入数（issue #69）
       sessionId: appStore.getState().sessionId,
     });
     process.stdout.write(

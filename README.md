@@ -128,8 +128,8 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **审批 diff 预览**：ask 弹问时 Edit/Write 渲染真实变更（复用 LCS 三级审查的 mini 渲染，含新建/覆盖、diff 行着色），定位失败/内容无变化/其他工具回退 JSON 截断 500 字符
 - **SIGINT 会话抢救**：Ctrl+C/SIGTERM 同步落盘当前历史并打 `interrupted` 标记（空会话不写）；下次启动扫描孤儿会话打印「恢复：/resume \<id\>」提示；正常 turn 结束的保存不带标记自然冲掉，也可手动 `clearInterruptedFlag`
 - **生命周期 hook 事件**：`Stop`（自然结束）/`SessionStart`（submitMessage 入口）/`PreCompact`+`PostCompact`（阈值梯度、溢出恢复、手动 /compact 三处压缩点）全部落地；压缩事件带 `source: manual|auto` 供 matcher 过滤，shell hooks.json 支持 `matcher.source`；一切 hook 异常吞掉不阻塞
-- **UserPromptSubmit hook**：prompt 进模型前触发（mode 命令之后、init 之前）；`block`（exit 2/JSON block）拒绝本轮不发请求并输出原因，`additionalContext`（平铺 JSON 或 Claude Code `hookSpecificOutput` 嵌套）以独立 user 消息注入本轮上下文，多 hook 拼接合并不覆盖
-- **hook 并行执行 + 最严合并**：同事件多 handler `Promise.all` 并行（总耗时≈max，单点异常吞掉不拖累）；合并 block 任一为真即 block 且 message 不被后续覆盖、未 block 取注册序第一个非空 message/replacement、additionalContext 拼接；并行下 block 不再短路后续 handler
+- **UserPromptSubmit hook**：prompt 进模型前触发（mode 命令之后、init 之前）；`block`（exit 2/JSON block）拒绝本轮不发请求并输出原因，`additionalContext`（平铺 JSON 或 Claude Code `hookSpecificOutput` 嵌套）以独立 user 消息注入本轮上下文，多 hook 拼接合并不覆盖；`turnNumber` 为该条输入的 0-based 序号（`appStore.userPromptCount`，block 也递增）
+- **hook 并行执行 + 最严合并**：同事件多 handler `Promise.all` 并行（总耗时≈max，单点异常吞掉不拖累）；合并 block 任一为真即 block 且 message 不被后续覆盖、未 block 取注册序第一个非空 message/replacement、additionalContext 拼接；并行下 block 不再短路后续 handler；两处有意收紧（issue #70）：block 者未带 replacement 时**不保留**前面 handler 的 replacement（拒绝一切参数改动更安全）、block 之后 handler 的 additionalContext 仍被收集但 block 消费方（UserPromptSubmit）整体丢弃结果不注入
 - **hook matcher 正则化**：`tool_name` 全串锚定正则 `^(?:p)$`（`Edit|Write` 命中两工具不误伤 MultiEdit，精确配置行为不变，子串用 `.*X.*`，非法正则回退精确）；shell hooks.json 解析透传 `matcher.decision`/`matcher.modeTo`（此前被丢弃）；TOFU `hashRule` 纳入 matcher 全字段，任一变更重询
 - **hooks.json 热加载**：shell hooks 按工厂注册，`submitMessage` 入口 mtime 检测变更才整批重载（文件没变零动作，删除即失效）；代码注册（`hookSystem.register`）不受重载影响；REPL `/hooks reload` 不看 mtime 强制重载并打印数量
 - **Notification hook**：`permission_prompt`（`promptUserDecision` 弹问前 fire-and-forget，非 TTY 不 fire）与 `idle_prompt`（REPL 输入空闲，`TUPIG_IDLE_NOTIFY_MS` 默认 300s、0 关闭，prompt 布防/line 重置/一轮一次）；`matcher.notificationType` 过滤，shell hooks.json 解析透传，TOFU hash 覆盖
@@ -348,12 +348,12 @@ gameqa 环境变量见上文 [gameqa 节](#-gameqa--unity-自动化测试平台)
 ## 🧪 测试与 CI
 
 ```bash
- npm test              # = npx vitest run，97 文件 / 954 用例
+ npm test              # = npx vitest run，98 文件 / 959 用例
  npx tsc --noEmit      # 类型门槛
  npm run build         # 构建门槛（含 gameqa 静态资源拷贝 + 入口 chmod）
  ```
 
-用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e70`
+用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e71`
 （Provider/配置/护栏/容错/工具/并行/路由/优化/图像输入/模糊编辑/错误分类/MCP）、`f*`（压缩/权限）、`i1~i4`
 （记忆/技能/hooks/反思）、`g1~g7`（gameqa store/服务/内置执行器/Unity 真执行全链路/
 airtest·性能·AI 集成/TLS·CLI/轻量报告/Allure 报告）、`proxy-*`（三协议转换/SSE/流式 usage）、`smoke`、`cli`、`ctx10m`。

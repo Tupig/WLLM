@@ -314,10 +314,11 @@ export class QueryEngine {
     // UserPromptSubmit（issue #48）：prompt 进模型前触发；block 拒绝本轮（不发请求），
     // additionalContext 注入到本轮消息（prompt 之后）
     const submitResult = await fireUserPromptSubmit(hookSystem, {
-      turnNumber: 0,
+      turnNumber: appStore.getState().userPromptCount, // 该条输入的 0-based 序号（issue #69）
       sessionId: this.sessionState?.sessionId ?? "",
       input: { prompt },
     });
+    appStore.setState((s) => ({ ...s, userPromptCount: s.userPromptCount + 1 })); // block 也递增（输入已发生）
     if (submitResult.block) {
       yield {
         type: "text",

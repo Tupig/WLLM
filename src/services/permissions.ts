@@ -314,7 +314,7 @@ export async function promptUserDecision(
   if (!process.stdin.isTTY) return "deny";
   // Notification（issue #52）：权限询问通知，fire-and-forget 不拖住弹问
   void fireNotification(undefined, "permission_prompt", {
-    turnNumber: 0,
+    turnNumber: appStore.getState().userPromptCount, // 已提交输入数（issue #69）
     sessionId: appStore.getState().sessionId,
     toolName,
     input,
