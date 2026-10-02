@@ -787,6 +787,9 @@ export class QueryEngine {
    * 写组批（issue #57）：同 file_path 保序串行（组内逐项 fail-soft，前项失败不连坐后项），
    * 异文件组间并行（resolveWriteConcurrency，TUPIG_WRITE_CONCURRENCY 可调）；
    * 批段间仍顺序执行，与 safe 批/其他写项保持原闸门。
+   * 已接受边界（issue #74）：分组 key 用 resolvePath 字面规范化、不解析 symlink——
+   * 同一轮用两个别名路径（如 a.ts 与指向它的 link.ts）写同一物理文件会落不同分组，
+   * 绕过保序；触发需工作区含 symlink + 模型同轮双别名写，极低频，接受现状不修。
    */
   private async runWriteGroup(
     entries: Array<{ buf: { id: string; name: string; inputJson: string }; input: Record<string, unknown> | null }>,
