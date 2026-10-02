@@ -13,6 +13,9 @@ import type { Tool, ToolUseContext, ToolResult, CanUseToolFn } from "../engine/T
 export async function mapWithConcurrency<T, R>(
   items: T[], limit: number, fn: (item: T, index: number) => Promise<R>,
 ): Promise<PromiseSettledResult<R>[]> {
+  if (!Number.isFinite(limit) || limit < 1) {
+    throw new RangeError(`mapWithConcurrency: limit 必须 >= 1，收到 ${limit}`);
+  }
   if (items.length === 0) return [];
   const results = new Array<PromiseSettledResult<R>>(items.length);
   let next = 0;

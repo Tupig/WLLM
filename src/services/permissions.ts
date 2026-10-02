@@ -236,7 +236,7 @@ async function readIfExists(path: string): Promise<string | null> {
 }
 
 /**
- * 审批 diff 预览（issue #54）：Edit/Write 渲染真实变更（含新建/覆盖）；
+ * 审批 diff 预览（issue #54/#72）：Edit/Write/MultiEdit 渲染真实变更（含新建/覆盖）；
  * 其他工具、定位失败、内容无变化 → null（调用方回退 JSON 截断）。
  */
 export async function buildApprovalPreview(
@@ -257,6 +257,23 @@ export async function buildApprovalPreview(
         replace_all: input.replace_all === true,
       });
       if (after === null || after === before) return null;
+      return renderOpsPreview([{ path, before, after }]);
+    }
+    if (toolName === "MultiEdit") {
+      const edits = Array.isArray(input.edits) ? (input.edits as Array<Record<string, unknown>>) : [];
+      if (edits.length === 0) return null;
+      const before = await readIfExists(path);
+      if (before === null) return null;
+      let after: string | null = before;
+      for (const e of edits) {
+        after = previewEdit(after, {
+          old_string: String(e.old_string ?? ""),
+          new_string: String(e.new_string ?? ""),
+          replace_all: e.replace_all === true,
+        });
+        if (after === null) return null; // 任一处不匹配 → 回退 JSON
+      }
+      if (after === before) return null;
       return renderOpsPreview([{ path, before, after }]);
     }
     if (toolName === "Write") {

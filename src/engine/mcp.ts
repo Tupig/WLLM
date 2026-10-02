@@ -16,6 +16,7 @@ import { spawn } from "child_process";
 import { mkdirSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { z } from "zod";
+import { randomBytes } from "crypto";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { buildTool, type Tool, type ToolUseContext, type CanUseToolFn } from "./Tool.js";
@@ -86,6 +87,8 @@ type OAuthStored = { tokens?: OAuthTokens; clientInformation?: OAuthClientInform
  */
 export class FileOAuthProvider implements OAuthClientProvider {
   onCode?: (code: string) => void;
+  /** 本次授权的 state（issue #77）：回调不匹配一律拒收 */
+  private oauthState?: string;
   private readonly file: string;
   private readonly open?: (url: string) => void;
   private readonly warn?: (msg: string) => void;
@@ -130,6 +133,9 @@ export class FileOAuthProvider implements OAuthClientProvider {
   codeVerifier(): string { return this.read().codeVerifier ?? ""; }
 
   redirectToAuthorization(authorizationUrl: URL): void {
+    // 拼入随机 state（issue #77）：授权服务器原样回传，回调比对不匹配拒收
+    this.oauthState = randomBytes(16).toString("hex");
+    authorizationUrl.searchParams.set("state", this.oauthState);
     this.warn?.(`MCP OAuth 授权：请在浏览器完成授权 ${authorizationUrl.href}`);
     try { this.open?.(authorizationUrl.href); } catch { /* 依赖告警文案展示 URL */ }
   }
@@ -139,7 +145,14 @@ export class FileOAuthProvider implements OAuthClientProvider {
     this.server = createHttpServer((req, res) => {
       const u = new URL(req.url ?? "/", "http://127.0.0.1");
       const code = u.searchParams.get("code");
+      const state = u.searchParams.get("state");
       res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+      if (code && (!this.oauthState || state !== this.oauthState)) {
+        // state 不匹配/缺失（issue #77）：拒绝注入的 code，保持监听等正确回调
+        res.end("拒绝：state 校验失败，请从授权页面重新发起。");
+        this.warn?.("MCP OAuth 回调 state 校验失败，已拒收该 code");
+        return;
+      }
       res.end(code ? "授权成功，可关闭本页。" : `授权失败：${u.searchParams.get("error") ?? "缺少 code"}`);
       if (code) {
         const cb = this.onCode;

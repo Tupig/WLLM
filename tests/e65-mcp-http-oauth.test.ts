@@ -104,11 +104,15 @@ describe("FileOAuthProvider", () => {
 
     await p.whenReady;
     const redirect = String(p.redirectUrl);
-    await p.redirectToAuthorization(new URL("https://as.example.com/authorize?x=1"));
+    const authUrl = new URL("https://as.example.com/authorize?x=1");
+    await p.redirectToAuthorization(authUrl);
     expect(onWarn).toHaveBeenCalledWith(expect.stringContaining("https://as.example.com/authorize"));
     expect(open).toHaveBeenCalledTimes(1);
+    // state 必须原样回传（issue #77），否则拒收
+    const state = authUrl.searchParams.get("state");
+    expect(state).toBeTruthy();
 
-    const res = await fetch(`${redirect}?code=CODE-42&state=s`);
+    const res = await fetch(`${redirect}?code=CODE-42&state=${encodeURIComponent(state!)}`);
     expect(res.status).toBe(200);
     expect(await gotCode).toBe("CODE-42");
     p.dispose();
