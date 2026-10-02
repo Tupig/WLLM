@@ -1,6 +1,7 @@
 /**
  * tools/FileWrite.ts — 文件写入工具
  */
+import { MAX_RESULT_CHARS } from "../engine/constants.js";
 import { z } from "zod";
 import { mkdir, stat } from "fs/promises";
 import { dirname } from "path";
@@ -19,7 +20,7 @@ export const FileWriteInput = z.object({
 export const FileWriteTool = buildTool<string>({
   name: "Write",
   inputSchema: FileWriteInput,
-  maxResultSizeChars: 100_000,
+  maxResultSizeChars: MAX_RESULT_CHARS,
   description: () => "将内容写入文件。自动创建父目录，覆盖已有内容。",
   prompt: () => "将内容写入文件，内容会覆盖文件中的现有内容。",
   userFacingName: () => "Write",

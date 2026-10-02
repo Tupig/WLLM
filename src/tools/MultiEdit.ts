@@ -4,6 +4,7 @@
  * 按序把 edits 应用到内存（定位复用 FileEdit 同源 previewEdit），
  * 任一处不匹配即整体不落盘并精确报「第 N 处」；全部成功才单次写入。
  */
+import { MAX_RESULT_CHARS } from "../engine/constants.js";
 import { z } from "zod";
 import { readFile, stat } from "fs/promises";
 import { buildTool, type ToolResult } from "../engine/Tool.js";
@@ -28,7 +29,7 @@ export const MultiEditInput = z.object({
 export const MultiEditTool = buildTool<string>({
   name: "MultiEdit",
   inputSchema: MultiEditInput,
-  maxResultSizeChars: 100_000,
+  maxResultSizeChars: MAX_RESULT_CHARS,
   description: () =>
     "对同一文件按序应用多组字符串替换，全部匹配才一次性落盘（原子）；任一处失败整体不生效并报第 N 处。",
   prompt: () =>

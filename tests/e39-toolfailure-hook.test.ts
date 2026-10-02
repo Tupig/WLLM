@@ -2,7 +2,15 @@
  * E39 PostToolUseFailure 补触发（issue #36）
  * 执行错误/超时触发一次（带 error output + durationMs）/ 异常吞掉 / 字段正确
  */
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
+// 环境必须在静态 import（模块求值）前生效——constants.ts 的 TOOL_TIMEOUT_MS
+// 是 import 期求值的（issue #84 接线后 hooks 也静态触达 constants）
+const CLEAN_ENV = vi.hoisted(() => {
+  const clean = { ...process.env };
+  process.env.TUPIG_MOCK = "1";
+  process.env.TUPIG_TOOL_TIMEOUT_MS = "300";
+  return clean;
+});
 import { HookSystem, type HookContext } from "../src/engine/hooks";
 import { firePostToolUseFailure } from "../src/engine/hookEvents";
 
@@ -34,14 +42,11 @@ describe("PostToolUseFailure 单元", () => {
 });
 
 describe("PostToolUseFailure 端到端：工具超时触发", () => {
-  const originalEnv = { ...process.env };
   afterEach(() => {
-    process.env = { ...originalEnv };
+    process.env = { ...CLEAN_ENV };
   });
 
   it("mock + bypassPermissions + 超时 → 触发带超时 output（20s 限时）", async () => {
-    process.env.TUPIG_MOCK = "1";
-    process.env.TUPIG_TOOL_TIMEOUT_MS = "300";
     const { query } = await import("../src/engine/QueryEngine");
     const { hookSystem } = await import("../src/engine/hooks");
     const seen: HookContext[] = [];

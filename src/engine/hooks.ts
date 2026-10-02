@@ -4,6 +4,7 @@
 import { spawn } from "child_process";
 import { readFileSync, statSync } from "fs";
 import { join } from "path";
+import { HOOK_TIMEOUT_MS } from "./constants.js";
 
 export type HookEvent =
   | "PreToolUse"
@@ -259,7 +260,7 @@ export class HookSystem {
   async triggerShellHook(
     command: string,
     ctx: HookContext,
-    timeoutMs = 5000,
+    timeoutMs = HOOK_TIMEOUT_MS,
   ): Promise<HookResult> {
     return new Promise((resolve) => {
       let settled = false;

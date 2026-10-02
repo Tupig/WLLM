@@ -1,6 +1,7 @@
 /**
  * tools/FileEdit.ts — 文件编辑工具
  */
+import { MAX_RESULT_CHARS } from "../engine/constants.js";
 import { z } from "zod";
 import { readFile, stat } from "fs/promises";
 import { buildTool, type ToolResult } from "../engine/Tool.js";
@@ -51,7 +52,7 @@ export function previewEdit(
 export const FileEditTool = buildTool<string>({
   name: "Edit",
   inputSchema: FileEditInput,
-  maxResultSizeChars: 100_000,
+  maxResultSizeChars: MAX_RESULT_CHARS,
   description: () => "通过替换文本来编辑文件。优先精确匹配，失败时自动容忍缩进/空白差异做模糊回退。",
   prompt: () => "执行字符串替换。old_string 应在文件中恰好出现一次（精确或唯一模糊命中），除非设置 replace_all。",
   userFacingName: () => "Edit",

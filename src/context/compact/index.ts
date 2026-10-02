@@ -4,7 +4,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ApiClient } from "../../services/api.js";
 import { chatUrl } from "../../services/api.js";
-import { ADAPTIVE_ITERATIONS_CAP, DEFAULT_MAX_CONTEXT_TOKENS } from "../../engine/constants.js";
+import { ADAPTIVE_ITERATIONS_CAP, DEFAULT_MAX_CONTEXT_TOKENS, TOKEN_BYTES_PER_TOKEN } from "../../engine/constants.js";
 import { setCompactionRecord } from "../../engine/compactionMeta.js";
 
 const SUMMARY_MAX_TOKENS = 768;
@@ -161,7 +161,7 @@ export function adaptiveIterations(_estimatedTokens: number, maxTokens: number):
 }
 
 export function estimateTokens(messages: Anthropic.MessageParam[]): number {
-  return Math.ceil(JSON.stringify(messages).length / 4);
+  return Math.ceil(JSON.stringify(messages).length / TOKEN_BYTES_PER_TOKEN);
 }
 
 export class ContextCompactor {

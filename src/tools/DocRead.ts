@@ -4,6 +4,7 @@
  * 支持读取图片和 PDF 文件，为视觉模型提供支持。
  * 灵感来自 Cursor 的图片读取和 Cline 的图片分析。
  */
+import { MAX_RESULT_CHARS } from "../engine/constants.js";
 import { z } from "zod";
 import { readFile, stat } from "fs/promises";
 import { existsSync } from "fs";
@@ -80,7 +81,7 @@ export const DocReadTool = defineTool({
       // 文本文件直接读取
       if ([".txt", ".md", ".json", ".csv", ".xml", ".yaml", ".yml"].includes(ext)) {
         const content = await readFile(resolved, "utf-8");
-        const maxSize = 100_000;
+        const maxSize = MAX_RESULT_CHARS;
         if (content.length > maxSize) {
           return content.slice(0, maxSize) + `\n\n[已截断，原始大小 ${content.length} 字符]`;
         }
