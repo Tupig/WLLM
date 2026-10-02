@@ -5,17 +5,16 @@
 import { withTimeout } from "./time.js";
 import Anthropic from "@anthropic-ai/sdk";
 import chalk from "chalk";
-import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { Tool, ToolUseContext, CanUseToolFn } from "./Tool.js";
 import { anthropicToolResultContent } from "./Tool.js";
-import { connectMcpServers, type McpConnection } from "./mcp.js";
+import { connectMcpServers } from "./mcp.js";
 import { getDefaultTools, getToolByName, resolveExtraTools } from "./toolRegistry.js";
 import { promptTools, setExplicitExtras, setSearchPool, markLoaded } from "./lazyTools.js";
 import { resetTurnOps } from "./diffReview.js";
-import { createClient, streamMessage, UsageTracker, type StreamEvent, type ApiClient } from "../services/api.js";
-import { resolveHarness, parseXmlToolCalls, buildXmlToolSection } from "./harness.js";
-import { resolveFallback, streamWithFailover, isInfraError } from "../services/failover.js";
+import { createClient, streamMessage, UsageTracker, type ApiClient } from "../services/api.js";
+import { resolveHarness, parseXmlToolCalls } from "./harness.js";
+import { resolveFallback, streamWithFailover } from "../services/failover.js";
 import { renderSystemPrompt } from "./prompt.js";
 import { routeTask, formatRouteLog, profileTask, appendRouteFeedback } from "./router.js";
 import { appendFileSync, mkdirSync } from "fs";
@@ -32,10 +31,10 @@ import { OverflowRecovery, MAX_OVERFLOW_RETRIES } from "./overflowRecovery.js";
 import { fireSessionStart, fireStop, fireCompactPre, fireCompactPost, fireUserPromptSubmit } from "./hookEvents.js";
 import { ContextCompactor, LADDER_MICRO } from "../context/compact/index.js";
 import { appStore } from "../state/AppState.js";
-import { MAX_CONTEXT_TOKENS, DEFAULT_MODEL, TOOL_TIMEOUT_MS, resolveWriteConcurrency } from "./constants.js";
+import { MAX_CONTEXT_TOKENS, TOOL_TIMEOUT_MS, resolveWriteConcurrency } from "./constants.js";
 import { resolveRuleLayers, formatLayersForPrompt, type RuleLayer } from "../context/rules.js";
 import { loadMemoriesSync, formatMemoriesForPrompt, type MemoryEntry } from "../knowledge/memory.js";
-import { loadSkills, formatSkillCatalog, type SkillMeta } from "../knowledge/skills.js";
+import { loadSkills, formatSkillCatalog } from "../knowledge/skills.js";
 import { loadAgents } from "../agents/agents.js";
 import { listSpecs } from "../modes/spec.js";
 import { setAgentRegistry } from "../tools/Agent.js";
@@ -46,14 +45,10 @@ import { createTrajectoryRecorder, type TrajectoryRecorder } from "../session/tr
 import { autoSnapshot } from "../session/checkpoint.js";
 
 const WRITE_SNAP_TOOLS = new Set(["Write", "Edit", "NotebookEdit", "Bash"]);
-import { getConfig, type TupigCodeConfig } from "../config.js";
-import { ToolCache, isCacheable, createDefaultCache } from "../context/cache.js";
 import {
-  saveSession, loadSession, createSessionState,
+  loadSession, createSessionState,
   generateSessionId, type SessionState,
 } from "../session/sessionState.js";
-import { categorizeError, getRecoverySuggestions, withRetry, isRetryable } from "./errors.js";
-import { TokenBudgetManager, createDefaultBudgetManager } from "../context/budget.js";
 
 export type SDKMessage =
   | { type: "assistant"; message: { content: Array<{ type: string; [key: string]: unknown }> } }
@@ -150,11 +145,8 @@ export class QueryEngine {
   private skillCatalog: string = "";
   private modeManager: ModeManager;
   private trajectory: TrajectoryRecorder | null = null;
-  private cache: ToolCache;
   private sessionState: SessionState | null = null;
-  private budgetManager: TokenBudgetManager;
   private doomDetector = createDoomDetector(3);
-  private mcp: McpConnection | null = null;
   private mcpInitialized = false;
   private fallbackClient: ApiClient | null = null;
   private fallbackLabel: string | null = null;
@@ -184,8 +176,6 @@ export class QueryEngine {
     this.abortController = new AbortController();
     this.toolState = createToolState(config.cwd);
     this.modeManager = new ModeManager(config.initialMode ?? "act");
-    this.cache = createDefaultCache();
-    this.budgetManager = createDefaultBudgetManager(config.model);
 
     // 加载或创建会话
     if (config.sessionId) {
@@ -260,7 +250,6 @@ export class QueryEngine {
         (msg) => process.stderr.write(`⚠️  ${msg}\n`),
         (tools) => this.applyMcpTools(tools), // list_changed 动态刷新（issue #59）
       );
-      this.mcp = mcp;
       this.applyMcpTools(mcp.tools);
     } catch {
       /* MCP 不可用不影响主流程 */

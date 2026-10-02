@@ -3,7 +3,7 @@
  */
 import { spawn } from "child_process";
 import net from "net";
-import { dirname, join, resolve } from "path";
+import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 
 export function cliRoot(): string {

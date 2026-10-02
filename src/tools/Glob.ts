@@ -3,7 +3,7 @@
  */
 import { z } from "zod";
 import { glob } from "glob";
-import { buildTool, type ToolUseContext, type ToolResult } from "../engine/Tool.js";
+import { buildTool, type ToolResult } from "../engine/Tool.js";
 import { safePath } from "../utils/path.js";
 import { MAX_GLOB_RESULTS } from "../engine/constants.js";
 

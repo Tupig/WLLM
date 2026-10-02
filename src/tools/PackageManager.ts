@@ -5,12 +5,11 @@
  * 灵感来自 SWE-agent 的 Tool Bundles。
  */
 import { z } from "zod";
-import { existsSync, readFileSync } from "fs";
+import { existsSync } from "fs";
 import { join } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { defineTool } from "../engine/Tool.js";
-import { safePath } from "../utils/path.js";
 
 const execFileAsync = promisify(execFile);
 

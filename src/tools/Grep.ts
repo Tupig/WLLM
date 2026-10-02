@@ -3,7 +3,7 @@
  */
 import { z } from "zod";
 import { spawn } from "child_process";
-import { buildTool, type ToolUseContext, type ToolResult } from "../engine/Tool.js";
+import { buildTool, type ToolResult } from "../engine/Tool.js";
 import { safePath } from "../utils/path.js";
 import { MAX_GREP_RESULTS, TOOL_TIMEOUT_MS, GREP_FALLBACK_TIMEOUT_MS } from "../engine/constants.js";
 import { truncationHint } from "../utils/truncationHint.js";

@@ -15,10 +15,6 @@ const SUPPORTED_IMAGE_EXTENSIONS = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg",
 ]);
 
-const SUPPORTED_DOC_EXTENSIONS = new Set([
-  ".pdf", ".txt", ".md", ".json", ".csv", ".xml", ".yaml", ".yml",
-]);
-
 /**
  * 图片读取工具
  */

@@ -6,7 +6,7 @@
 import readline from "readline";
 import { realpathSync } from "fs";
 import { fileURLToPath } from "url";
-import { die, ensureService, info } from "./common.js";
+import { die, ensureService } from "./common.js";
 import { runMlxCmd } from "./mlxcmd.js";
 
 const NAME = "llm";

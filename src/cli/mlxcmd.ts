@@ -4,10 +4,9 @@
  */
 import { spawn, spawnSync } from "child_process";
 import { existsSync, mkdirSync, openSync, closeSync, readFileSync, writeFileSync, readdirSync, statSync, rmSync } from "fs";
-import net from "net";
 import { basename, join } from "path";
 import { createInterface } from "readline";
-import { cliRoot, info } from "./common.js";
+import { cliRoot } from "./common.js";
 
 // ------------------------------------------------------------------ 配置（config.env 等价：env 优先 + 内置默认）
 

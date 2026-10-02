@@ -6,7 +6,7 @@
  */
 import { z } from "zod";
 import { readFile, stat } from "fs/promises";
-import { buildTool, type ToolUseContext, type ToolResult } from "../engine/Tool.js";
+import { buildTool, type ToolResult } from "../engine/Tool.js";
 import { safePath } from "../utils/path.js";
 import { runPostEditLint, formatLintResult } from "./lint.js";
 import { writeWithRollback } from "./rollback.js";

@@ -5,9 +5,9 @@
  * 灵感来自 IDE 的重构功能和 Aider 的多格式编辑。
  */
 import { z } from "zod";
-import { readFile, writeFile, rename, stat } from "fs/promises";
+import { readFile, writeFile, rename } from "fs/promises";
 import { existsSync } from "fs";
-import { join, dirname, relative } from "path";
+import { relative } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { defineTool } from "../engine/Tool.js";
@@ -122,9 +122,7 @@ export const ExtractFunctionTool = defineTool({
         return `结束行号无效：${input.endLine}`;
       }
 
-      // 提取选中的代码
       const selectedLines = lines.slice(input.startLine - 1, input.endLine);
-      const selectedCode = selectedLines.join("\n");
 
       // 检测缩进
       const indent = selectedLines[0].match(/^(\s*)/)?.[1] ?? "";

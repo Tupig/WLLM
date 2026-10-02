@@ -2,13 +2,13 @@
  * tools/FileEdit.ts — 文件编辑工具
  */
 import { z } from "zod";
-import { readFile, writeFile, stat } from "fs/promises";
-import { buildTool, type ToolUseContext, type ToolResult } from "../engine/Tool.js";
+import { readFile, stat } from "fs/promises";
+import { buildTool, type ToolResult } from "../engine/Tool.js";
 import { safePath } from "../utils/path.js";
 import { runPostEditLint, formatLintResult } from "./lint.js";
 import { formatNoMatchFeedback, fuzzyLocate } from "./similar.js";
 import { writeWithRollback } from "./rollback.js";
-import { resolveSandboxPolicy, checkPath, checkBashPaths } from "../services/sandbox.js";
+import { resolveSandboxPolicy, checkPath } from "../services/sandbox.js";
 import { pushTurnOp } from "../engine/diffReview.js";
 
 export const FileEditInput = z.object({

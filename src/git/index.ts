@@ -10,8 +10,6 @@
  */
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { existsSync } from "fs";
-import { join } from "path";
 
 const execFileAsync = promisify(execFile);
 
@@ -135,7 +133,7 @@ export async function autoCommit(
     if (!diffCached.trim()) return null;
 
     // 提交
-    const { stdout } = await execFileAsync(
+    await execFileAsync(
       "git",
       ["commit", "-m", message, "--allow-empty"],
       { cwd: workDir, timeout: 10000 },

@@ -2,7 +2,7 @@
  * search/index.ts — repo 地图：符号索引 + 预算 + mtime 缓存（N9 / A18）
  * 不引 tree-sitter：正则抽定义行，控制在本机小模型上下文预算内。
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "fs";
 import { join, relative, resolve } from "path";
 
 export const REPO_SKIP_DIRS = [

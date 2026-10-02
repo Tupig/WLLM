@@ -2,7 +2,7 @@
  * services/sandbox.ts — 沙箱策略：允许写目录 + 敏感路径拦截（A8）
  */
 import { homedir } from "os";
-import { isAbsolute, resolve } from "path";
+import { resolve } from "path";
 
 export interface SandboxPolicy {
   workDir: string;

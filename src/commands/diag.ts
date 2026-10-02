@@ -1,7 +1,7 @@
 /**
  * diag/index.ts — /doctor 体检、/init 生成 AGENTS.md、/review 评审 prompt（N11 / A22）
  */
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, readdirSync } from "fs";
+import { existsSync, readFileSync, statSync, writeFileSync, readdirSync } from "fs";
 import { listTrust } from "../engine/hookTrust.js";
 import { join } from "path";
 import { resolveProvider, resolveModel } from "../services/api.js";
@@ -13,7 +13,6 @@ import { MAX_CONTEXT_TOKENS } from "../engine/constants.js";
 export type CheckLevel = "ok" | "warn" | "error";
 export type CheckResult = { id: string; level: CheckLevel; label: string; detail?: string };
 
-const SKILLS_ROOT = (w: string) => join(w, ".tupigcode", "skills");
 const AGENTS_ROOT = (w: string) => join(w, ".tupigcode", "agents");
 
 function duplicateNames(pairs: Array<[string, string]>): string[] {

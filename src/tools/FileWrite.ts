@@ -4,11 +4,11 @@
 import { z } from "zod";
 import { mkdir, stat } from "fs/promises";
 import { dirname } from "path";
-import { buildTool, type ToolUseContext, type ToolResult } from "../engine/Tool.js";
+import { buildTool, type ToolResult } from "../engine/Tool.js";
 import { safePath } from "../utils/path.js";
 import { runPostEditLint, formatLintResult } from "./lint.js";
 import { writeWithRollback } from "./rollback.js";
-import { resolveSandboxPolicy, checkPath, checkBashPaths } from "../services/sandbox.js";
+import { resolveSandboxPolicy, checkPath } from "../services/sandbox.js";
 import { pushTurnOp } from "../engine/diffReview.js";
 
 export const FileWriteInput = z.object({

@@ -8,7 +8,7 @@
  * 固定黑名单对所有子代理恒生效（防嵌套委派与任务清单污染）。
  */
 import { readdirSync, readFileSync, existsSync, statSync } from "fs";
-import { join, resolve } from "path";
+import { join } from "path";
 
 export const MAX_AGENT_BYTES = 50_000;
 export const AGENT_CATALOG_BUDGET = 1_500;

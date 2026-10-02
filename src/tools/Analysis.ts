@@ -5,7 +5,7 @@
  * 灵感来自 SWE-agent 的 ACI 和 Continue 的代码理解。
  */
 import { z } from "zod";
-import { readFile, stat } from "fs/promises";
+import { readFile } from "fs/promises";
 import { existsSync } from "fs";
 import { join, extname } from "path";
 import { execFile } from "child_process";

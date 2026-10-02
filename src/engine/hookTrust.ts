@@ -7,7 +7,7 @@
  * 异常/超时 fail-closed 逻辑不受信任影响。
  */
 import { createHash } from "crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { dirname, join } from "path";
 import chalk from "chalk";
 import type { ShellHookConfig } from "./hooks.js";

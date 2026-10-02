@@ -6,7 +6,7 @@
  * 拒绝的写操作按文件回滚（同文件多次修改回到首次之前的版本）。
  * 超大 diff（行数/块数/文件数超限）降级为仅文件级。
  */
-import { readFile, writeFile, unlink, mkdir } from "fs/promises";
+import { writeFile, unlink, mkdir } from "fs/promises";
 import { dirname } from "path";
 
 export interface FileOp {

@@ -72,8 +72,6 @@ export function resolveRuleLayers(workDir: string, filePath?: string): RuleLayer
   return layers;
 }
 
-const REF_LINE = /^@(\S+)\s*$/gm;
-
 export function expandRuleRefs(content: string, baseDir: string): string {
   return content.replace(/^@(\S+)\s*$/gm, (_m, p: string) => {
     const target = resolve(baseDir, p);
