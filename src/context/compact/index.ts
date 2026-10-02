@@ -76,12 +76,16 @@ export async function llmSummary(
   const userContent = `${chainPart}请总结以下对话${focusHint}：\n${JSON.stringify(chained ? toSummarize.slice(1) : toSummarize, null, 2)}`;
 
   if (client.type === "anthropic" && client.anthropic) {
-    const resp = await client.anthropic.messages.create({
-      model: model || "claude-haiku-4-20250414",
-      max_tokens: SUMMARY_MAX_TOKENS,
-      system: SUMMARY_SYSTEM,
-      messages: [{ role: "user", content: userContent }],
-    });
+    // 超时兜底（issue #91）：与 openai 链路同款 30s，防摘要挂起卡死主循环
+    const resp = await client.anthropic.messages.create(
+      {
+        model: model || "claude-haiku-4-20250414",
+        max_tokens: SUMMARY_MAX_TOKENS,
+        system: SUMMARY_SYSTEM,
+        messages: [{ role: "user", content: userContent }],
+      },
+      { signal: AbortSignal.timeout(SUMMARY_TIMEOUT_MS) },
+    );
     return resp.content[0]?.type === "text" ? resp.content[0].text : "";
   }
 

@@ -102,7 +102,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 
 ### 内核特性
 
-- **上下文工程**：预算制压缩（`compact`）含阈值梯子与熔断，**force 档 LLM 摘要三链路可用**（openai 本地非流式 sideQuery 短超时 / anthropic / mock，失败回退预算削减且 keep_first）；`TUPIG_MAX_CONTEXT_TOKENS` 自适应（30k ~ 10M 窗口）、轨迹（trajectory）记录与复盘
+- **上下文工程**：预算制压缩（`compact`）含阈值梯子与熔断、**等值检查**（micro/snip 压不动时不计数、不误报、不开熔断），**force 档 LLM 摘要三链路可用**（openai 本地非流式与 anthropic 均 30s 短超时 / mock，失败回退预算削减且 keep_first）；`TUPIG_MAX_CONTEXT_TOKENS` 自适应（30k ~ 10M 窗口）、轨迹（trajectory）记录与复盘
 - **多 Provider 容错**：Anthropic / OpenAI / 本地代理统一接入，`TUPIG_FAILOVER` 链式降级；错误标准分类（`services/errors.ts`：rate_limit / auth / context_too_long / overloaded / server / network / invalid_request，429/529/5xx/断连触发切换，401 与业务错误不切换），`TUPIG_ROLE_MODELS` 分角色选模型
 - **hook 信任 TOFU**：shell hook 首次触发询问、确认后写 `.tupigcode/hook-trust.json`（规则 hash：event/matcher/command/timeout 任一变更即重询），拒绝不持久化、异常/超时仍 fail-closed；非 TTY 与 `TUPIG_HOOK_TRUST=0` 不打断；`/hooks` 查看、`/hooks clear` 清除、`/hooks reload` 手动重载 hooks.json、`/doctor` 有信任清单
 - **会话列表可辨识**：`/resume`（无 id）与 `/sessions` 统一行格式 `id + 相对时间 + 条数 + 首条用户 prompt 预览`（截断 60 字，空会话显示「无预览」占位），按 updatedAt 倒序
@@ -128,7 +128,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **审批 diff 预览**：ask 弹问时 Edit/Write 渲染真实变更（复用 LCS 三级审查的 mini 渲染，含新建/覆盖、diff 行着色），定位失败/内容无变化/其他工具回退 JSON 截断 500 字符
 - **交互式弹问串行化**（issue #64）：审批弹问与 hook 信任询问（TOFU）共用一把进程内锁——同一时刻只占一个 readline，后续并发调用按到达序排队、前一个 settle 后才提示下一个，杜绝并发工具审批时按键串线；非 TTY 快速拒绝不入队
 - **REPL 输入防重入**（issue #86）：line handler 持 `TurnGate` 门闩——turn 进行中的行直接丢弃；审批弹问的裸 stdin 监听与 readline 共挂同一输入流，一次 y⏎ 双路分发不再产生幻影 prompt / 并发 query
-- **SIGINT 会话抢救**：Ctrl+C/SIGTERM 同步落盘当前历史并打 `interrupted` 标记（空会话不写）；下次启动扫描孤儿会话打印「恢复：/resume \<id\>」提示；正常 turn 结束的保存不带标记自然冲掉，也可手动 `clearInterruptedFlag`
+- **SIGINT 会话抢救**：Ctrl+C/SIGTERM 同步落盘当前历史并打 `interrupted` 标记（空会话不写）；下次启动扫描孤儿会话打印「恢复：/resume \<id\>」提示；正常 turn 结束的保存不带标记自然冲掉，也可手动 `clearInterruptedFlag`；会话文件 **temp+rename 原子写**（中断不半写），sessionId 白名单校验拒绝含 `/` 的穿越 id
 - **生命周期 hook 事件**：`Stop`（自然结束）/`SessionStart`（submitMessage 入口）/`PreCompact`+`PostCompact`（阈值梯度、溢出恢复、手动 /compact 三处压缩点）全部落地；压缩事件带 `source: manual|auto` 供 matcher 过滤，shell hooks.json 支持 `matcher.source`；一切 hook 异常吞掉不阻塞
 - **UserPromptSubmit hook**：prompt 进模型前触发（mode 命令之后、init 之前）；`block`（exit 2/JSON block）拒绝本轮不发请求并输出原因，`additionalContext`（平铺 JSON 或 Claude Code `hookSpecificOutput` 嵌套）以独立 user 消息注入本轮上下文，多 hook 拼接合并不覆盖；`turnNumber` 为该条输入的 0-based 序号（`appStore.userPromptCount`，block 也递增）
 - **hook 并行执行 + 最严合并**：同事件多 handler `Promise.all` 并行（总耗时≈max，单点异常吞掉不拖累）；合并 block 任一为真即 block 且 message 不被后续覆盖、未 block 取注册序第一个非空 message/replacement、additionalContext 拼接；并行下 block 不再短路后续 handler；两处有意收紧（issue #70）：block 者未带 replacement 时**不保留**前面 handler 的 replacement（拒绝一切参数改动更安全）、block 之后 handler 的 additionalContext 仍被收集但 block 消费方（UserPromptSubmit）整体丢弃结果不注入
@@ -350,12 +350,12 @@ gameqa 环境变量见上文 [gameqa 节](#-gameqa--unity-自动化测试平台)
 ## 🧪 测试与 CI
 
 ```bash
- npm test              # = npx vitest run，102 文件 / 977 用例
+ npm test              # = npx vitest run，108 文件 / 1000 用例
  npx tsc --noEmit      # 类型门槛
  npm run build         # 构建门槛（含 gameqa 静态资源拷贝 + 入口 chmod）
  ```
 
-用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e75`
+用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e81`
 （Provider/配置/护栏/容错/工具/并行/路由/优化/图像输入/模糊编辑/错误分类/MCP）、`f*`（压缩/权限）、`i1~i4`
 （记忆/技能/hooks/反思）、`g1~g7`（gameqa store/服务/内置执行器/Unity 真执行全链路/
 airtest·性能·AI 集成/TLS·CLI/轻量报告/Allure 报告）、`proxy-*`（三协议转换/SSE/流式 usage）、`smoke`、`cli`、`ctx10m`。

@@ -389,7 +389,12 @@ export class QueryEngine {
       ) {
         const r = this.compactor.compactByLadder(loopState.messages, estimatedTokens, MAX_CONTEXT_TOKENS);
         loopState.hasAttemptedReactiveCompact = true;
-        if (r.strategy !== "none" && r.strategy !== "circuit-open") {
+        // 等值检查（issue #91）：非 force 档压缩无实际变化（如 9 条 micro 原样返回）
+        // → 整段跳过，不 fire hook、不计数、不 recordResult（防假熔断）
+        if (
+          (r.strategy !== "none" && r.strategy !== "circuit-open") &&
+          (r.strategy === "force" || r.messages !== loopState.messages)
+        ) {
           const hctx = { turnNumber: loopState.turnCount, sessionId: this.sessionState?.sessionId ?? "" };
           await fireCompactPre(undefined, hctx, "auto");
           // force 档（>95%）：LLM 摘要（openai/anthropic/mock 三链路，失败自动回退预算削减）
@@ -397,12 +402,14 @@ export class QueryEngine {
           if (r.strategy === "force") {
             out = await this.compactor.autoCompact(this.client, this.config.model, loopState.messages);
           }
-          this.compactor.recordResult(loopState.messages, out, estimatedTokens, MAX_CONTEXT_TOKENS);
-          loopState.messages = out;
-          loopState.compacted = true;
-          appStore.setState((s) => ({ ...s, compactionCount: s.compactionCount + 1 }));
-          const cLine = formatCompactionLine();
-          if (cLine) process.stdout.write(chalk.gray(`\n♻️  已压缩：${cLine}\n`));
+          if (out !== loopState.messages) {
+            this.compactor.recordResult(loopState.messages, out, estimatedTokens, MAX_CONTEXT_TOKENS);
+            loopState.messages = out;
+            loopState.compacted = true;
+            appStore.setState((s) => ({ ...s, compactionCount: s.compactionCount + 1 }));
+            const cLine = formatCompactionLine();
+            if (cLine) process.stdout.write(chalk.gray(`\n♻️  已压缩：${cLine}\n`));
+          }
           await fireCompactPost(undefined, hctx, "auto");
         }
       }

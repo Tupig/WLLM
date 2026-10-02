@@ -5,7 +5,8 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { parseOptimizeCommand, optimizePrompt, needsClarification, appendPromptStyle } from "./engine/promptOptimize.js";
-import { join } from "path";
+import { join, resolve } from "path";
+import { existsSync } from "fs";
 import { createInterface, Interface } from "readline";
 import { TurnGate } from "./services/turnGate.js";
 import { snapshot, listCheckpoints, rollbackCheckpoint, rewind, autoSnapshot, pruneCheckpoints } from "./session/checkpoint.js";
@@ -39,7 +40,7 @@ import { promptUserDecision } from "./services/permissions.js";
 import { loadAlwaysAllow, clearAlwaysAllow } from "./services/approvalStore.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { query, type SDKMessage } from "./engine/QueryEngine.js";
-import { appStore } from "./state/AppState.js";
+import { appStore, adoptSessionId } from "./state/AppState.js";
 
 import { createRequire } from "module";
 const requirePkg = createRequire(import.meta.url);
@@ -110,6 +111,7 @@ async function startREPL(): Promise<void> {
   printBanner();
   let sessionHistory: Anthropic.MessageParam[] = [];
   let sessionId = `s-${Date.now().toString(36)}`;
+  adoptSessionId(sessionId);
 
   // 启动检测 Ctrl+C 打断的孤儿会话（issue #27）
   const notice = formatInterruptedNotice(listInterruptedSessions(appStore.getState().workDir));
@@ -486,6 +488,7 @@ async function startREPL(): Promise<void> {
       if (!msgs) { console.log(chalk.red(`会话不存在：${id}\n`)); rl.prompt(); return; }
       sessionHistory = msgs as Anthropic.MessageParam[];
       sessionId = id;
+      adoptSessionId(id);
       console.log(chalk.gray(`已恢复会话 ${id}（${msgs.length} 条历史）\n`));
       rl.prompt();
       return;
@@ -498,6 +501,7 @@ async function startREPL(): Promise<void> {
       if (!msgs) { console.log(chalk.red(`会话不存在：${fid}\n`)); rl.prompt(); return; }
       const forked = forkMessages(msgs as Anthropic.MessageParam[], n);
       sessionId = `fork-${Date.now().toString(36)}`;
+      adoptSessionId(sessionId);
       sessionHistory = forked;
       await saveSessionMessages(appStore.getState().workDir, sessionId, sessionHistory);
       console.log(chalk.gray(`已分叉 ${fid} 前 ${n} 条 → 新会话 ${sessionId}（${forked.length} 条）\n`));
@@ -616,7 +620,7 @@ async function startREPL(): Promise<void> {
       return;
     }
 
-    const styleDir = join(process.cwd(), ".tupigcode", "memory");
+    const styleDir = join(appStore.getState().workDir, ".tupigcode", "memory");
     let finalInput: string | undefined;
     const optCmd = parseOptimizeCommand(input);
     if (optCmd !== null) {
@@ -652,7 +656,13 @@ async function startREPL(): Promise<void> {
     }
 
     try {
-      const opts = { cwd: process.cwd(), model: process.env.TUPIG_MODEL };
+      const opts = {
+        cwd: appStore.getState().workDir,
+        sessionId,
+        model: process.env.TUPIG_MODEL,
+        maxTurns: appStore.getState().maxTurns,
+        maxTokens: appStore.getState().maxTokens,
+      };
       for await (const msg of query({
         prompt: finalInput ?? input,
         initialMessages: sessionHistory,
@@ -785,7 +795,12 @@ async function runTurnDiffReview(ops: FileOp[], rl: Interface): Promise<void> {
 async function runSingle(prompt: string): Promise<void> {
   for await (const msg of query({
     prompt,
-    options: { cwd: process.cwd(), model: process.env.TUPIG_MODEL },
+    options: {
+      cwd: appStore.getState().workDir,
+      model: process.env.TUPIG_MODEL,
+      maxTurns: appStore.getState().maxTurns,
+      maxTokens: appStore.getState().maxTokens,
+    },
   })) {
     handleSDKMessage(msg);
   }
@@ -811,6 +826,16 @@ function main(): void {
   program.parse();
   const opts = program.opts();
   if (opts.model) process.env.TUPIG_MODEL = opts.model;
+
+  // -w/--max-turns/-t 接线（issue #89）：进 appStore，REPL 与单发 query 共同消费
+  const workDir = resolve(String(opts.workDir));
+  if (!existsSync(workDir)) {
+    console.error(chalk.red(`错误：工作目录不存在：${workDir}`));
+    process.exit(1);
+  }
+  const maxTurns = Number.isFinite(opts.maxTurns) && opts.maxTurns > 0 ? opts.maxTurns : 20;
+  const maxTokens = Number.isFinite(opts.maxTokens) && opts.maxTokens > 0 ? opts.maxTokens : 8192;
+  appStore.setState((s) => ({ ...s, workDir, maxTurns, maxTokens }));
 
   const permMode = opts.yolo ? "bypassPermissions" : opts.plan ? "plan" : opts.permissionMode;
   if (permMode) {

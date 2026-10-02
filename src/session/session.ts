@@ -2,8 +2,9 @@
  * session.ts — 会话持久化：save/load/list/fork（A5 resume/fork）
  */
 import { mkdir, readFile, writeFile, readdir, stat } from "fs/promises";
-import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from "fs";
+import { mkdirSync, readFileSync, existsSync, readdirSync } from "fs";
 import { join } from "path";
+import { writeFileAtomic, writeFileAtomicSync } from "../utils/atomicWrite.js";
 
 export type SessionMeta = {
   id: string;
@@ -16,21 +17,27 @@ function sessionsDir(workDir: string): string {
   return join(workDir, ".tupigcode", "sessions");
 }
 
+/** sessionId 白名单（issue #90）：含 "/" 即路径穿越，拒绝一切读写 */
+const SESSION_ID_RE = /^[A-Za-z0-9._-]+$/;
+function isValidSessionId(id: string): boolean {
+  return SESSION_ID_RE.test(id);
+}
+
 export async function saveSessionMessages(
   workDir: string,
   sessionId: string,
   messages: unknown[],
   opts?: { interrupted?: boolean },
 ): Promise<void> {
+  if (!isValidSessionId(sessionId)) return;
   await mkdir(sessionsDir(workDir), { recursive: true });
-  await writeFile(
+  await writeFileAtomic(
     join(sessionsDir(workDir), `${sessionId}.json`),
     JSON.stringify({
       updatedAt: new Date().toISOString(),
       messages,
       ...(opts?.interrupted ? { interrupted: true } : {}),
     }),
-    "utf-8",
   );
 }
 
@@ -38,12 +45,12 @@ export async function saveSessionMessages(
 export function rescueSessionSync(workDir: string, sessionId: string, messages: unknown[]): void {
   try {
     if (!messages || messages.length === 0) return;
+    if (!isValidSessionId(sessionId)) return;
     const dir = sessionsDir(workDir);
     mkdirSync(dir, { recursive: true });
-    writeFileSync(
+    writeFileAtomicSync(
       join(dir, `${sessionId}.json`),
       JSON.stringify({ updatedAt: new Date().toISOString(), messages, interrupted: true }),
-      "utf-8",
     );
   } catch {
     /* 抢救失败也不能在信号处理里抛 */
@@ -82,11 +89,12 @@ export function listInterruptedSessions(workDir: string): InterruptedSession[] {
 /** 手动清除 interrupted 标记（保留消息） */
 export function clearInterruptedFlag(workDir: string, sessionId: string): void {
   try {
+    if (!isValidSessionId(sessionId)) return;
     const p = join(sessionsDir(workDir), `${sessionId}.json`);
     if (!existsSync(p)) return;
     const data = JSON.parse(readFileSync(p, "utf-8"));
     delete data.interrupted;
-    writeFileSync(p, JSON.stringify(data), "utf-8");
+    writeFileAtomicSync(p, JSON.stringify(data));
   } catch {
     /* 忽略 */
   }
@@ -103,6 +111,7 @@ export async function loadSessionMessages<T = unknown>(
   workDir: string,
   sessionId: string,
 ): Promise<T[] | null> {
+  if (!isValidSessionId(sessionId)) return null;
   try {
     const raw = await readFile(join(sessionsDir(workDir), `${sessionId}.json`), "utf-8");
     const data = JSON.parse(raw);

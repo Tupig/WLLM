@@ -34,6 +34,10 @@ export type AppState = {
   tokenUsage: { input: number; output: number };
   compactionCount: number;
   lastCompaction?: CompactionRecord;
+  /** 最大工具调用轮次（CLI --max-turns，issue #89） */
+  maxTurns: number;
+  /** 最大输出 Token（CLI -t/--max-tokens，issue #89） */
+  maxTokens: number;
   todoState?: import("../tools/todo.js").TodoState | null;
 };
 
@@ -54,7 +58,14 @@ export const defaultAppState: AppState = {
   userPromptCount: 0,
   tokenUsage: { input: 0, output: 0 },
   compactionCount: 0,
+  maxTurns: 20,
+  maxTokens: 8192,
   todoState: null,
 };
 
 export const appStore = createStore<AppState>(defaultAppState);
+
+/** 会话身份切换（issue #88）：REPL 生成 / resume / fork 后同步，hook ctx 与磁盘同一 id */
+export function adoptSessionId(id: string): void {
+  appStore.setState((s) => ({ ...s, sessionId: id }));
+}

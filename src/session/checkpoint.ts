@@ -7,6 +7,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { mkdir, readFile, appendFile, writeFile, rm } from "fs/promises";
 import { join } from "path";
+import { writeFileAtomic } from "../utils/atomicWrite.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -202,7 +203,7 @@ export async function pruneCheckpoints(workDir: string, keep: number): Promise<n
 
   const lines = [...kept].reverse().map((r) => JSON.stringify(r)).join("\n") + "\n";
   await mkdir(join(workDir, ".tupigcode"), { recursive: true });
-  await writeFile(jsonlPath(workDir), lines, "utf-8");
+  await writeFileAtomic(jsonlPath(workDir), lines);
 
   for (const r of removed) {
     try {
