@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "
 import { dirname, join } from "path";
 import chalk from "chalk";
 import type { ShellHookConfig } from "./hooks.js";
+import { withPromptLock } from "../services/promptLock.js";
 
 export const TRUST_FILE = join(".tupigcode", "hook-trust.json");
 
@@ -101,8 +102,9 @@ export function answerHookTrust(workDir: string, h: ShellHookConfig, yes: boolea
 }
 
 /** 真实 TTY 询问（仅 ensureHookTrust 返回 ask 时调用）；30s 超时按拒绝处理 */
-export function promptHookTrust(h: ShellHookConfig): Promise<boolean> {
-  return new Promise((resolve) => {
+export async function promptHookTrust(h: ShellHookConfig): Promise<boolean> {
+  // 与审批弹问共用串行锁（issue #64）：同一时刻只占一个 readline
+  return withPromptLock(() => new Promise((resolve) => {
     let settled = false;
     const finish = (r: boolean) => {
       if (settled) return;
@@ -123,5 +125,5 @@ export function promptHookTrust(h: ShellHookConfig): Promise<boolean> {
     process.stdin.once("close", () => finish(false));
     process.stdin.once("end", () => finish(false));
     const timer = setTimeout(() => finish(false), 30_000);
-  });
+  }));
 }

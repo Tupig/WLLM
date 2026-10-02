@@ -126,6 +126,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **子代理自动压缩**：子代理循环每轮前估算上下文，超预算（`MAX_CONTEXT_TOKENS×0.6`）走既有压缩流水线重建后继续，失败回退 budgetReduction 不崩；`SubAgentResult.compactions` 计数对父代理/轨迹可见
 - **审批「总是允许」持久化**：审批 prompt `y/N/a`，选 `a` 推导模式（Bash 首词前缀 `Bash(npm *)`、写工具工具级）写入项目级 `.tupigcode/permissions.json`，后续同前缀自动放行；deny 规则/敏感路径/自修改面仍优先（敏感路径检查已前移到规则链之前）；`/permissions [clear]` 查看清除
 - **审批 diff 预览**：ask 弹问时 Edit/Write 渲染真实变更（复用 LCS 三级审查的 mini 渲染，含新建/覆盖、diff 行着色），定位失败/内容无变化/其他工具回退 JSON 截断 500 字符
+- **交互式弹问串行化**（issue #64）：审批弹问与 hook 信任询问（TOFU）共用一把进程内锁——同一时刻只占一个 readline，后续并发调用按到达序排队、前一个 settle 后才提示下一个，杜绝并发工具审批时按键串线；非 TTY 快速拒绝不入队
 - **SIGINT 会话抢救**：Ctrl+C/SIGTERM 同步落盘当前历史并打 `interrupted` 标记（空会话不写）；下次启动扫描孤儿会话打印「恢复：/resume \<id\>」提示；正常 turn 结束的保存不带标记自然冲掉，也可手动 `clearInterruptedFlag`
 - **生命周期 hook 事件**：`Stop`（自然结束）/`SessionStart`（submitMessage 入口）/`PreCompact`+`PostCompact`（阈值梯度、溢出恢复、手动 /compact 三处压缩点）全部落地；压缩事件带 `source: manual|auto` 供 matcher 过滤，shell hooks.json 支持 `matcher.source`；一切 hook 异常吞掉不阻塞
 - **UserPromptSubmit hook**：prompt 进模型前触发（mode 命令之后、init 之前）；`block`（exit 2/JSON block）拒绝本轮不发请求并输出原因，`additionalContext`（平铺 JSON 或 Claude Code `hookSpecificOutput` 嵌套）以独立 user 消息注入本轮上下文，多 hook 拼接合并不覆盖；`turnNumber` 为该条输入的 0-based 序号（`appStore.userPromptCount`，block 也递增）
@@ -348,12 +349,12 @@ gameqa 环境变量见上文 [gameqa 节](#-gameqa--unity-自动化测试平台)
 ## 🧪 测试与 CI
 
 ```bash
- npm test              # = npx vitest run，98 文件 / 959 用例
+ npm test              # = npx vitest run，99 文件 / 963 用例
  npx tsc --noEmit      # 类型门槛
  npm run build         # 构建门槛（含 gameqa 静态资源拷贝 + 入口 chmod）
  ```
 
-用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e71`
+用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e72`
 （Provider/配置/护栏/容错/工具/并行/路由/优化/图像输入/模糊编辑/错误分类/MCP）、`f*`（压缩/权限）、`i1~i4`
 （记忆/技能/hooks/反思）、`g1~g7`（gameqa store/服务/内置执行器/Unity 真执行全链路/
 airtest·性能·AI 集成/TLS·CLI/轻量报告/Allure 报告）、`proxy-*`（三协议转换/SSE/流式 usage）、`smoke`、`cli`、`ctx10m`。

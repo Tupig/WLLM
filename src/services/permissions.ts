@@ -7,6 +7,7 @@ import { classifyBash } from "./bashSafety.js";
 import { getMcpApproval } from "../engine/mcp.js";
 import { resolve } from "path";
 import { appStore } from "../state/AppState.js";
+import { withPromptLock } from "./promptLock.js";
 import { planRerouteTarget, ensureStagedSeed } from "../engine/staging.js";
 import chalk from "chalk";
 import { evaluatePersistentAllow, deriveAlwaysPattern, addAlwaysAllow } from "./approvalStore.js";
@@ -312,6 +313,15 @@ export async function promptUserDecision(
   opts?: { allowAlways?: boolean },
 ): Promise<ApprovalDecision> {
   if (!process.stdin.isTTY) return "deny";
+  // 串行化（issue #64）：同一时刻只弹一个问，后续并发调用按序排队
+  return withPromptLock(() => promptUserDecisionLocked(toolName, input, opts));
+}
+
+async function promptUserDecisionLocked(
+  toolName: string,
+  input: Record<string, unknown>,
+  opts?: { allowAlways?: boolean },
+): Promise<ApprovalDecision> {
   // Notification（issue #52）：权限询问通知，fire-and-forget 不拖住弹问
   void fireNotification(undefined, "permission_prompt", {
     turnNumber: appStore.getState().userPromptCount, // 已提交输入数（issue #69）
