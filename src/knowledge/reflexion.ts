@@ -75,14 +75,25 @@ export function parseReviewDecision(text: string): ReviewDecision | null {
   return { action, reason, content };
 }
 
-/** 从会话消息抽工具失败回喂（is_error），供 prompt 使用 */
+/** 从会话消息抽工具失败回喂（is_error），供 prompt 使用；兼容 string 与 content blocks 数组（issue #92） */
 export function extractFailures(messages: unknown[]): string[] {
   const out: string[] = [];
   for (const m of messages as any[]) {
     const blocks = Array.isArray(m?.content) ? m.content : [];
     for (const b of blocks) {
-      if (b?.type === "tool_result" && b.is_error && typeof b.content === "string") {
-        out.push(b.content.slice(0, 500));
+      if (b?.type !== "tool_result" || !b.is_error) continue;
+      const c = b.content;
+      if (typeof c === "string" && c.trim()) {
+        out.push(c.slice(0, 500));
+        continue;
+      }
+      if (Array.isArray(c)) {
+        const text = c
+          .filter((x: any) => x?.type === "text" && typeof x.text === "string")
+          .map((x: any) => x.text)
+          .join("\n")
+          .trim();
+        if (text) out.push(text.slice(0, 500));
       }
     }
   }

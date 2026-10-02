@@ -6,8 +6,9 @@
  * - 支持回放和调试
  * - 可导出为多种格式
  */
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from "fs";
+import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync, unlinkSync, statSync } from "fs";
 import { join } from "path";
+import { TRAJECTORY_MAX_EVENTS, TRAJECTORY_RESULT_MAX_CHARS, TRAJECTORY_KEEP_FILES } from "../engine/constants.js";
 
 export type TrajectoryEventType =
   | "user_message"
@@ -47,6 +48,9 @@ export interface Trajectory {
   };
 }
 
+/** 同 ms save 的全局序号后缀，防文件名冲突互相覆盖（模块级：跨 recorder 实例也唯一） */
+let globalSaveSeq = 0;
+
 /**
  * 轨迹记录器
  */
@@ -54,6 +58,8 @@ export class TrajectoryRecorder {
   private trajectory: Trajectory;
   private enabled: boolean;
   private savePath?: string;
+  /** 环形丢弃计数（issue #94）：超上限被挤出的最旧事件数 */
+  private dropped = 0;
 
   constructor(
     sessionId: string,
@@ -75,7 +81,7 @@ export class TrajectoryRecorder {
     }
   }
 
-  /** 记录事件 */
+  /** 记录事件（环形上限：超限丢最旧并计 dropped，issue #94） */
   record(type: TrajectoryEventType, data: Record<string, unknown>, duration?: number): void {
     if (!this.enabled) return;
 
@@ -85,6 +91,15 @@ export class TrajectoryRecorder {
       data,
       duration,
     });
+    while (this.trajectory.events.length > TRAJECTORY_MAX_EVENTS) {
+      this.trajectory.events.shift();
+      this.dropped++;
+    }
+  }
+
+  /** 环形期间被丢弃的事件数 */
+  getDropped(): number {
+    return this.dropped;
   }
 
   /** 记录用户消息 */
@@ -102,9 +117,13 @@ export class TrajectoryRecorder {
     this.record("tool_use", { toolName, input, toolUseId });
   }
 
-  /** 记录工具结果 */
+  /** 记录工具结果（入库前截断，issue #94） */
   recordToolResult(toolUseId: string, result: string, isError: boolean, duration: number): void {
-    this.record("tool_result", { toolUseId, result, isError }, duration);
+    const clipped =
+      result.length > TRAJECTORY_RESULT_MAX_CHARS
+        ? result.slice(0, TRAJECTORY_RESULT_MAX_CHARS - 1) + "…"
+        : result;
+    this.record("tool_result", { toolUseId, result: clipped, isError }, duration);
   }
 
   /** 记录压缩 */
@@ -133,19 +152,33 @@ export class TrajectoryRecorder {
     return { ...this.trajectory };
   }
 
-  /** 保存轨迹到文件 */
+  /** 保存轨迹到文件（同 sessionId 只留最近 N 份，issue #94） */
   save(): string | null {
-    if (!this.savePath) return null;
+    const saveDir = this.savePath;
+    if (!saveDir) return null;
 
-    const filename = `trajectory-${this.trajectory.sessionId}-${Date.now()}.json`;
-    const filepath = join(this.savePath, filename);
+    const seq = globalSaveSeq++ === 0 ? "" : `-${globalSaveSeq}`;
+    const filename = `trajectory-${this.trajectory.sessionId}-${Date.now()}${seq}.json`;
+    const filepath = join(saveDir, filename);
 
     try {
       writeFileSync(filepath, JSON.stringify(this.trajectory, null, 2), "utf-8");
-      return filepath;
     } catch {
       return null;
     }
+
+    // 滚动清理：只留最近 TRAJECTORY_KEEP_FILES 份（不动其他 sessionId）
+    try {
+      const prefix = `trajectory-${this.trajectory.sessionId}-`;
+      const mine = readdirSync(saveDir)
+        .filter((f) => f.startsWith(prefix) && f.endsWith(".json"))
+        .map((f) => ({ f, m: statSync(join(saveDir, f)).mtimeMs }))
+        .sort((a, b) => a.m - b.m);
+      for (const { f } of mine.slice(0, Math.max(0, mine.length - TRAJECTORY_KEEP_FILES))) {
+        unlinkSync(join(saveDir, f));
+      }
+    } catch { /* 清理失败不影响已写入的轨迹 */ }
+    return filepath;
   }
 }
 

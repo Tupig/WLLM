@@ -79,7 +79,9 @@ export function formatSkillCatalog(skills: SkillMeta[]): string {
   let used = 0;
   let shown = 0;
   for (const s of skills) {
-    const line = `- ${s.name}：${s.description}`;
+    // 超长 description 截断（issue #92）：frontmatter 无长度上限，单条会打爆预算
+    const desc = s.description.length > 200 ? s.description.slice(0, 200) + "…" : s.description;
+    const line = `- ${s.name}：${desc}`;
     if (used + line.length > SKILL_CATALOG_BUDGET) break;
     lines.push(line);
     used += line.length + 1;

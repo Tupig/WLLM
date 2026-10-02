@@ -42,28 +42,33 @@ export async function commitMemory(
   return true;
 }
 
+/** 共享解析（issue #92：原 async/sync 两份逐字重复循环合并） */
+function parseEntries(raw: string): MemoryEntry[] {
+  const out: MemoryEntry[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const e = JSON.parse(line);
+      if (typeof e.content === "string" && e.content.trim()) {
+        out.push({
+          id: String(e.id ?? ""),
+          category: String(e.category ?? "通用"),
+          content: e.content,
+          createdAt: String(e.createdAt ?? ""),
+          approved: true,
+        });
+      }
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+
 export async function loadMemories(workDir: string): Promise<MemoryEntry[]> {
   try {
     const raw = await readFile(entriesPath(workDir), "utf-8");
-    const out: MemoryEntry[] = [];
-    for (const line of raw.split("\n")) {
-      if (!line.trim()) continue;
-      try {
-        const e = JSON.parse(line);
-        if (typeof e.content === "string" && e.content.trim()) {
-          out.push({
-            id: String(e.id ?? ""),
-            category: String(e.category ?? "通用"),
-            content: e.content,
-            createdAt: String(e.createdAt ?? ""),
-            approved: true,
-          });
-        }
-      } catch {
-        continue;
-      }
-    }
-    return out;
+    return parseEntries(raw);
   } catch {
     return [];
   }
@@ -72,25 +77,7 @@ export async function loadMemories(workDir: string): Promise<MemoryEntry[]> {
 export function loadMemoriesSync(workDir: string): MemoryEntry[] {
   try {
     const raw = readFileSync(entriesPath(workDir), "utf-8");
-    const out: MemoryEntry[] = [];
-    for (const line of raw.split("\n")) {
-      if (!line.trim()) continue;
-      try {
-        const e = JSON.parse(line);
-        if (typeof e.content === "string" && e.content.trim()) {
-          out.push({
-            id: String(e.id ?? ""),
-            category: String(e.category ?? "通用"),
-            content: e.content,
-            createdAt: String(e.createdAt ?? ""),
-            approved: true,
-          });
-        }
-      } catch {
-        continue;
-      }
-    }
-    return out;
+    return parseEntries(raw);
   } catch {
     return [];
   }

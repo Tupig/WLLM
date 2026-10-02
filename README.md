@@ -102,7 +102,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 
 ### 内核特性
 
-- **上下文工程**：预算制压缩（`compact`）含阈值梯子与熔断、**等值检查**（micro/snip 压不动时不计数、不误报、不开熔断），**force 档 LLM 摘要三链路可用**（openai 本地非流式与 anthropic 均 30s 短超时 / mock，失败回退预算削减且 keep_first）；`TUPIG_MAX_CONTEXT_TOKENS` 自适应（30k ~ 10M 窗口）、轨迹（trajectory）记录与复盘
+- **上下文工程**：预算制压缩（`compact`）含阈值梯子与熔断、**等值检查**（micro/snip 压不动时不计数、不误报、不开熔断），**force 档 LLM 摘要三链路可用**（openai 本地非流式与 anthropic 均 30s 短超时 / mock，失败回退预算削减且 keep_first）；`TUPIG_MAX_CONTEXT_TOKENS` 自适应（30k ~ 10M 窗口）、轨迹（trajectory）记录与复盘（事件环形上限 2000 + dropped 计数、tool_result 截断 2000 字符、落盘每会话滚动留 8 份）
 - **多 Provider 容错**：Anthropic / OpenAI / 本地代理统一接入，`TUPIG_FAILOVER` 链式降级；错误标准分类（`services/errors.ts`：rate_limit / auth / context_too_long / overloaded / server / network / invalid_request，429/529/5xx/断连触发切换，401 与业务错误不切换），`TUPIG_ROLE_MODELS` 分角色选模型
 - **hook 信任 TOFU**：shell hook 首次触发询问、确认后写 `.tupigcode/hook-trust.json`（规则 hash：event/matcher/command/timeout 任一变更即重询），拒绝不持久化、异常/超时仍 fail-closed；非 TTY 与 `TUPIG_HOOK_TRUST=0` 不打断；`/hooks` 查看、`/hooks clear` 清除、`/hooks reload` 手动重载 hooks.json、`/doctor` 有信任清单
 - **会话列表可辨识**：`/resume`（无 id）与 `/sessions` 统一行格式 `id + 相对时间 + 条数 + 首条用户 prompt 预览`（截断 60 字，空会话显示「无预览」占位），按 updatedAt 倒序
@@ -140,7 +140,7 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **变更史注入（Context Lineage）**：`git log` 近 30 条 → 模型压成短摘要 → `.tupigcode/cache/lineage.json` 缓存（HEAD 变更才重算），以「## 近期变更」注入 system prompt 尾部；预算截断取最近（`TUPIG_LINEAGE_MAX_CHARS` 默认 800）；无 git/无模型/超时（5s）静默跳过零影响
 - **`/compact [focusing on X]` 手动压缩**：走既有压缩流水线（snip → micro → collapse → LLM 摘要），支持焦点指令透传；`/context` 分段明细（系统提示/对话消息/工具结果/工具 schema/记忆 各段 token+条数，求和=总量，估算 chars/4）
 - **内置技能包（10 个）**：git-workflow / git-log / gitingest / shell-command-engager / code-review / debugging / test-first / docs-sync / release-check / refactor-safe，`src/knowledge/skills/` 静态装载（build 拷贝到 dist），用户 `.tupigcode/skills/` 同名覆盖、无效回落内置，三重门禁与 3000 字目录预算对内置同样生效
-- **三级 diff 审查**：每轮写操作聚合为结构化 diff（自研 LCS，上下文 3），REPL 全局 a/r/s → 文件 y/n/h/q → 块 y/n 三级判定；拒绝按文件回滚（同文件多次修改回到首次之前）；超大 diff 降级为仅文件级；`TUPIG_DIFF_REVIEW=0` 关闭；**plan 模式改动暂存** `.tupigcode/staging/`，**`/apply` 才落盘**（越界条目拒绝）
+- **三级 diff 审查**：每轮写操作聚合为结构化 diff（自研 LCS，上下文 3），REPL 全局 a/r/s → 文件 y/n/h/q → 块 y/n 三级判定；拒绝按文件回滚（同文件多次修改回到首次之前）；超大 diff 降级为仅文件级；`TUPIG_DIFF_REVIEW=0` 关闭；**plan 模式改动暂存** `.tupigcode/staging/`，**`/apply` 才落盘**（越界条目拒绝；落盘前自动建 `before:apply` 检查点，回滚有介质）
 - **Bash 输出双端裁剪**：超长输出 head+tail 双端保留（both 默认 60/40，`keep=head|tail` 单端），预算 `TUPIG_BASH_OUTPUT_CHARS`（默认 50000）可调；截断标注原始大小/省略量/keep 模式，预算内原样返回
 - **截断续取交接提示**：统一 `已截断 total=N，本次显示 x~y，用 offset=… 续取` 文案（`truncationHint`，unit 条/字符可配）；Grep 支持 `offset` 分页（越界返回「无更多结果」），WebFetch 按字符窗口 `offset`+`maxLength` 续取（此前砍头后不可达）
 - **工具延迟装载**：核心集（Read/Write/Edit/Bash/Glob/Grep/TodoWrite/Question）+ `ToolSearch` 元工具常驻，其余（git/测试/网页/子代理/仓库地图等）按需检索挂载（下一轮生效）；`TUPIG_EXTRA_TOOLS` 显式指定与 MCP 工具保持常驻；`TUPIG_LAZY_TOOLS=0` 回退全量注入
@@ -350,12 +350,12 @@ gameqa 环境变量见上文 [gameqa 节](#-gameqa--unity-自动化测试平台)
 ## 🧪 测试与 CI
 
 ```bash
- npm test              # = npx vitest run，108 文件 / 1000 用例
+ npm test              # = npx vitest run，111 文件 / 1016 用例
  npx tsc --noEmit      # 类型门槛
  npm run build         # 构建门槛（含 gameqa 静态资源拷贝 + 入口 chmod）
  ```
 
-用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e81`
+用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e84`
 （Provider/配置/护栏/容错/工具/并行/路由/优化/图像输入/模糊编辑/错误分类/MCP）、`f*`（压缩/权限）、`i1~i4`
 （记忆/技能/hooks/反思）、`g1~g7`（gameqa store/服务/内置执行器/Unity 真执行全链路/
 airtest·性能·AI 集成/TLS·CLI/轻量报告/Allure 报告）、`proxy-*`（三协议转换/SSE/流式 usage）、`smoke`、`cli`、`ctx10m`。

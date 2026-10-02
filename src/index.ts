@@ -576,6 +576,12 @@ async function startREPL(): Promise<void> {
         if (staged.length === 0) {
           console.log(chalk.gray("暂存区为空（plan 模式改动会先暂存，/apply 落盘）\n"));
         } else {
+          // issue #93：applyStaged 成功即清 staging、/apply 不走工具钩子——落盘前先建回滚介质
+          try {
+            await snapshot(workDir, "before:apply");
+          } catch {
+            // 非 git/无改动/检查点失败不阻断落盘
+          }
           const r = await applyStaged(workDir);
           const lines = r.applied.map((f) => `  - ${f}`).join("\n");
           const skip = r.skipped.length ? `\n跳过越界条目 ${r.skipped.length} 个` : "";

@@ -46,7 +46,7 @@ import { autoSnapshot } from "../session/checkpoint.js";
 
 const WRITE_SNAP_TOOLS = new Set(["Write", "Edit", "NotebookEdit", "Bash"]);
 import {
-  loadSession, createSessionState,
+  createSessionState,
   generateSessionId, type SessionState,
 } from "../session/sessionState.js";
 
@@ -177,21 +177,8 @@ export class QueryEngine {
     this.toolState = createToolState(config.cwd);
     this.modeManager = new ModeManager(config.initialMode ?? "act");
 
-    // 加载或创建会话
-    if (config.sessionId) {
-      this.sessionState = loadSession(config.cwd, config.sessionId);
-      if (this.sessionState && config.verbose) {
-        console.log(`\n已恢复会话：${config.sessionId}`);
-      }
-    }
-
-    if (!this.sessionState) {
-      this.sessionState = createSessionState(
-        config.sessionId ?? generateSessionId(),
-        config.model,
-        config.cwd,
-      );
-    }
+    // 会话身份（issue #92：原恒返回 null 的会话恢复死路径已删）
+    this.sessionState = createSessionState(config.sessionId ?? generateSessionId());
 
     // 初始化轨迹记录器
     if (config.enableTrajectory) {

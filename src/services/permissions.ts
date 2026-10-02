@@ -122,13 +122,14 @@ export async function canUseTool(
       return { behavior: "allow", decisionReason: "plan 模式：只读工具" };
     }
     // 可写面①：spec/plan 产物（阶段②落盘），路径逃逸在 resolve 后失效
+    // 基线用 workDir 而非 cwd（issue #92：-w 后两者分裂，cwd 基线会误判仓外路径）
+    const workDir = appStore.getState().workDir;
     const artifact = String((input as any).file_path ?? (input as any).path ?? "");
-    if (artifact && (toolName === "Write" || toolName === "Edit") && resolve(artifact).includes("/.tupigcode/specs/")) {
+    if (artifact && (toolName === "Write" || toolName === "Edit") && resolve(workDir, artifact).includes("/.tupigcode/specs/")) {
       return { behavior: "allow", decisionReason: "plan 模式：计划产物可写" };
     }
     // 可写面②：工作区内改动暂存 staging（issue #18），/apply 指令才落盘
     if (artifact && (toolName === "Write" || toolName === "Edit")) {
-      const workDir = appStore.getState().workDir;
       const staged = planRerouteTarget(workDir, artifact);
       if (staged) {
         await ensureStagedSeed(resolve(workDir, artifact), staged);
@@ -322,6 +323,11 @@ export async function promptUserDecision(
   return withPromptLock(() => promptUserDecisionLocked(toolName, input, opts));
 }
 
+/** 审批应答解析（issue #92）：粘贴多行取首行判定，y⏎后杂散内容不再误拒 */
+export function parseApprovalAnswer(data: string): string {
+  return data.split("\n", 1)[0].trim().toLowerCase();
+}
+
 async function promptUserDecisionLocked(
   toolName: string,
   input: Record<string, unknown>,
@@ -359,7 +365,7 @@ async function promptUserDecisionLocked(
     process.stdin.resume();
 
     process.stdin.once("data", (data: string) => {
-      const answer = data.trim().toLowerCase();
+      const answer = parseApprovalAnswer(data);
       if (answer === "y" || answer === "yes") return finish("allow");
       if (allowAlways && (answer === "a" || answer === "always")) {
         addAlwaysAllow(appStore.getState().workDir, deriveAlwaysPattern(toolName, input));

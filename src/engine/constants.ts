@@ -61,3 +61,8 @@ export function resolveStreamIdleTimeoutMs(env: NodeJS.ProcessEnv = process.env)
  */
 export const TOKEN_BYTES_PER_TOKEN = 4;
 export const MAX_RETRIES = 3;
+
+/** trajectory 治理（issue #94）：内存环形上限 / tool_result 截断 / 落盘滚动份数 */
+export const TRAJECTORY_MAX_EVENTS = 2_000;
+export const TRAJECTORY_RESULT_MAX_CHARS = 2_000;
+export const TRAJECTORY_KEEP_FILES = 8;
