@@ -4,7 +4,6 @@
  * 支持独立工具的并行执行，提升性能。
  * 灵感来自 Cline 的并行工具调用和 SWE-agent 的 ACI 设计。
  */
-import type { Tool, ToolResult } from "../engine/Tool.js";
 
 /**
  * 并发映射（fail-soft，issue #43）：settled 语义，单任务异常不整批 reject，

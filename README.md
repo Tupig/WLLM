@@ -266,7 +266,7 @@ tupigcode/
 ├── scripts/                   # gameqa 运维：e2e/start/stop/status/install-service…
 │
 ├── src/
-│   ├── index.ts / config.ts   # CLI 入口 + 全局配置
+│   ├── index.ts               # CLI 入口（配置走环境变量，无配置文件读取）
 │   ├── engine/                # 主链路：QueryEngine prompt Tool toolRegistry router harness mcp
 │   ├── tools/                 # 20+ 工具实现
 │   ├── services/              # api bashSafety permissions sandbox failover errors
