@@ -8,11 +8,6 @@ import { homedir } from "os";
 const RULE_FILE_NAMES = [".tupigcoderules", ".cursorrules", ".clinerules"];
 const LOCAL_RULE_NAMES = ["rules.md", ".tupigcoderules"];
 
-export interface ProjectRules {
-  source: string;
-  content: string;
-}
-
 export type RuleTier = "global" | "project" | "local";
 
 export type RuleLayer = {
@@ -106,15 +101,3 @@ export function formatLayersForPrompt(layers: RuleLayer[]): string {
   return blocks.join("\n");
 }
 
-export function loadProjectRules(workDir: string): ProjectRules | null {
-  for (const name of RULE_FILE_NAMES) {
-    const path = join(workDir, name);
-    const c = readIfExists(path);
-    if (c) return { source: name, content: c };
-  }
-  return null;
-}
-
-export function formatRulesForPrompt(rules: ProjectRules): string {
-  return ["", "## 项目规则", `（来源：${rules.source}）`, "", rules.content, ""].join("\n");
-}

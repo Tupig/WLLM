@@ -214,59 +214,6 @@ export async function undoLastCommit(workDir: string): Promise<boolean> {
 }
 
 /**
- * 获取最近 N 条提交记录
- */
-export async function getRecentCommits(
-  workDir: string,
-  n = 10,
-): Promise<GitCommit[]> {
-  if (!(await isGitRepo(workDir))) return [];
-
-  try {
-    const { stdout } = await execFileAsync(
-      "git",
-      [
-        "log",
-        `-n${n}`,
-        "--pretty=format:%H|%s|%ai",
-      ],
-      { cwd: workDir, timeout: 5000 },
-    );
-
-    return stdout
-      .trim()
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => {
-        const [hash, message, timestamp] = line.split("|");
-        return { hash, message, timestamp };
-      });
-  } catch {
-    return [];
-  }
-}
-
-/**
- * 检查文件是否被 Git 忽略
- */
-export async function isIgnored(
-  workDir: string,
-  filePath: string,
-): Promise<boolean> {
-  if (!(await isGitRepo(workDir))) return false;
-
-  try {
-    await execFileAsync("git", ["check-ignore", filePath], {
-      cwd: workDir,
-      timeout: 5000,
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * 格式化 Git 状态为可读文本
  */
 export function formatGitStatus(status: GitStatus): string {

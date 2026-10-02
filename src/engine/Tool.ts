@@ -56,8 +56,6 @@ export type PermissionDecision<Input> =
 
 export type PermissionResult<Input = unknown> = PermissionDecision<Input>;
 
-export type ToolProgressData = Record<string, unknown>;
-
 export type Message = {
   uuid: string;
   role: "user" | "assistant" | "system";

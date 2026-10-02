@@ -5,7 +5,6 @@
  * 纯文本/命令行实现，无第三方依赖。adb 可通过 ADB_PATH 覆盖可执行文件（测试用）。
  */
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import type { Json, Job } from "./store.js";
 import { outcomeFailure, type Outcome } from "./outcome.js";
@@ -206,6 +205,3 @@ export async function executeAgentJobType(
   }
 }
 
-export function agentWorkDirRoot(): string {
-  return path.join(os.tmpdir(), "gameqa-agent");
-}

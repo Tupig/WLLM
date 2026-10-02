@@ -14,8 +14,6 @@ export type ReviewDecision = {
 };
 
 export const RETRO_DIFF_BUDGET = 12_000;
-export const RETRO_FAILURE_BUDGET = 2_000;
-
 export function buildRetroPrompt(input: { diff: string; failures?: string[] }): string {
   const failures = (input.failures ?? []).filter(Boolean);
   if (!input.diff.trim() && failures.length === 0) {

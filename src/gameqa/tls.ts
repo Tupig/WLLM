@@ -5,7 +5,7 @@
  * 启动时打印 SHA-256 指纹（与 Go 版同格式：大写 hex 冒号分隔）供 Agent 侧核对。
  */
 import { execFileSync } from "node:child_process";
-import { X509Certificate, createHash } from "node:crypto";
+import { X509Certificate } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -98,9 +98,3 @@ export function ensureTLSCertificate(dataDir: string, userCert: string, userKey:
   return { certFile: certPath, keyFile: keyPath, fingerprint: fingerprintFromCertFile(certPath), selfSigned: true };
 }
 
-/** 计算证书文件指纹（供 trust-cert 类脚本使用） */
-export function certFileFingerprint(certFile: string): string {
-  const pem = fs.readFileSync(certFile);
-  const md = createHash("sha256").update(new X509Certificate(pem).raw).digest("hex").toUpperCase();
-  return (md.match(/.{2}/g) ?? []).join(":");
-}

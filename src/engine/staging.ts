@@ -6,7 +6,7 @@
  * 用户执行 /apply 才把暂存内容落盘到真实路径。
  */
 import { existsSync } from "fs";
-import { mkdir, readFile, writeFile, rm, readdir, copyFile, stat } from "fs/promises";
+import { mkdir, writeFile, rm, readdir, copyFile } from "fs/promises";
 import { dirname, join, relative, resolve, sep } from "path";
 
 export function stagingRoot(workDir: string): string {
@@ -90,18 +90,3 @@ export async function discardStaged(workDir: string): Promise<void> {
   await rm(stagingRoot(workDir), { recursive: true, force: true });
 }
 
-/** 暂存区体积（bytes），供 /apply 前提示 */
-export async function stagedBytes(workDir: string): Promise<number> {
-  let total = 0;
-  const root = stagingRoot(workDir);
-  for (const rel of await listStaged(workDir)) {
-    try {
-      total += (await stat(resolve(root, rel))).size;
-    } catch { /* ignore */ }
-  }
-  return total;
-}
-
-export async function readStaged(relPath: string, workDir: string): Promise<string> {
-  return readFile(resolve(stagingRoot(workDir), relPath), "utf-8");
-}

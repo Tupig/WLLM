@@ -646,4 +646,3 @@ export async function runMlxCmd(argv: string[]): Promise<void> {
   if (code) process.exitCode = code;
 }
 
-export const _internals = { modelDirFor, portPid, humanSize, readCatalog, alive, lsofPid };

@@ -12,7 +12,7 @@ import * as tls from "node:tls";
 import * as dns from "node:dns";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Store, type Json, type Job, BUILTIN_TYPES } from "./store.js";
+import { Store, type Json, type Job } from "./store.js";
 import { SKILLS } from "./skills.js";
 import { VERSION } from "./server.js";
 import { notifyJobFailure } from "./notify.js";
@@ -549,8 +549,6 @@ export function executeSelfCheck(job: Job, store: Store): [boolean, Record<strin
 
 // ---------- 分发 / worker ----------
 
-export type BuiltinFn = (job: Job) => Promise<[boolean, Record<string, Json>]> | [boolean, Record<string, Json>];
-
 export async function executeBuiltin(job: Job, store: Store): Promise<[boolean, Record<string, Json>]> {
   const jt = str(extraOf(job), "job_type");
   switch (jt) {
@@ -637,5 +635,3 @@ export function startBuiltinWorker(store: Store, intervalMs: number, staleMs: nu
   return () => clearInterval(timer);
 }
 
-/** 供 server 路由/自检引用：内置任务类型集合（store.BUILTIN_TYPES 的一致性锚点） */
-export const BUILTIN_JOB_TYPES: ReadonlySet<string> = BUILTIN_TYPES;

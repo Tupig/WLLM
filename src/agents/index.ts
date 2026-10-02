@@ -329,6 +329,3 @@ export class SubAgentExecutor {
   }
 }
 
-export function createSubAgent(tools: Tool[], opts?: SubAgentOptions): SubAgentExecutor {
-  return new SubAgentExecutor(tools, opts);
-}

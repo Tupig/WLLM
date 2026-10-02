@@ -4,7 +4,7 @@
  * 保存/恢复会话状态，支持断点续传。
  * 灵感来自 Cline 的 Task 持久化和 SWE-agent 的 trajectory recording。
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from "fs";
+import { readFileSync, existsSync, readdirSync } from "fs";
 import { join } from "path";
 import type Anthropic from "@anthropic-ai/sdk";
 
@@ -30,27 +30,6 @@ export interface SessionState {
 }
 
 const SESSIONS_DIR = ".tupigcode/sessions";
-
-/**
- * 保存会话状态
- */
-export function saveSession(workDir: string, state: SessionState): string | null {
-  const sessionsDir = join(workDir, SESSIONS_DIR);
-  if (!existsSync(sessionsDir)) {
-    mkdirSync(sessionsDir, { recursive: true });
-  }
-
-  const filename = `session-${state.sessionId}.json`;
-  const filepath = join(sessionsDir, filename);
-
-  try {
-    state.updatedAt = Date.now();
-    writeFileSync(filepath, JSON.stringify(state, null, 2), "utf-8");
-    return filepath;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * 加载会话状态
@@ -95,40 +74,6 @@ export function listSessions(workDir: string): SessionState[] {
 }
 
 /**
- * 删除会话
- */
-export function deleteSession(workDir: string, sessionId: string): boolean {
-  const filepath = join(workDir, SESSIONS_DIR, `session-${sessionId}.json`);
-  if (!existsSync(filepath)) return false;
-
-  try {
-    unlinkSync(filepath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * 清理过期会话（保留最近 N 个）
- */
-export function cleanupSessions(workDir: string, keepCount = 10): number {
-  const sessions = listSessions(workDir);
-  if (sessions.length <= keepCount) return 0;
-
-  const toDelete = sessions.slice(keepCount);
-  let deleted = 0;
-
-  for (const session of toDelete) {
-    if (deleteSession(workDir, session.sessionId)) {
-      deleted++;
-    }
-  }
-
-  return deleted;
-}
-
-/**
  * 生成会话 ID
  */
 export function generateSessionId(): string {
@@ -158,23 +103,3 @@ export function createSessionState(
   };
 }
 
-/**
- * 格式化会话列表为可读文本
- */
-export function formatSessionList(sessions: SessionState[]): string {
-  if (sessions.length === 0) return "没有保存的会话";
-
-  const lines: string[] = ["会话列表："];
-
-  for (const session of sessions.slice(0, 10)) {
-    const date = new Date(session.updatedAt).toLocaleString();
-    const msgCount = session.messages.length;
-    lines.push(`  ${session.sessionId} - ${date} (${msgCount} 条消息)`);
-  }
-
-  if (sessions.length > 10) {
-    lines.push(`  ... 还有 ${sessions.length - 10} 个会话`);
-  }
-
-  return lines.join("\n");
-}

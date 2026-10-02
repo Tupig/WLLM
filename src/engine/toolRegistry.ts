@@ -72,10 +72,3 @@ export function getToolByName(tools: Tool[], name: string): Tool | undefined {
   return tools.find((t) => t.name === name || t.aliases?.includes(name));
 }
 
-export function filterToolsByReadOnly(tools: Tool[], input: Record<string, unknown>): Tool[] {
-  return tools.filter((t) => t.isReadOnly(input));
-}
-
-export function filterToolsByConcurrency(tools: Tool[], input: Record<string, unknown>): Tool[] {
-  return tools.filter((t) => t.isConcurrencySafe(input));
-}

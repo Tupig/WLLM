@@ -11,9 +11,6 @@ import type { Json, Job } from "./store.js";
 import { adbBase } from "./adb.js";
 import { outcomeFailure, type Outcome } from "./outcome.js";
 
-/** 模型可输出的动作空间（与 Python 版一致，供文档与校验参考） */
-export const ALLOWED_ACTIONS = ["tap", "swipe", "text", "key", "wait", "finish"] as const;
-
 export const SYSTEM_PROMPT = `你是一个游戏 QA 自动化测试 Agent，通过观察屏幕截图来操作设备完成测试任务。
 每一步你只能输出一个 JSON 对象（不要 markdown 代码块、不要解释），动作为以下之一：
 {"action": "tap", "x": 0.5, "y": 0.3}          # 点击，坐标为归一化 0~1（相对截图宽高）
