@@ -25,8 +25,6 @@ export interface SessionState {
   tokenUsage: { input: number; output: number };
   /** 压缩次数 */
   compactionCount: number;
-  /** 工具调用次数 */
-  turnCount: number;
   /** 元数据 */
   metadata: Record<string, unknown>;
 }
@@ -156,7 +154,6 @@ export function createSessionState(
     messages: [],
     tokenUsage: { input: 0, output: 0 },
     compactionCount: 0,
-    turnCount: 0,
     metadata: {},
   };
 }

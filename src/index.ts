@@ -167,7 +167,6 @@ async function startREPL(): Promise<void> {
           ...s,
           tokenUsage: { input: 0, output: 0 },
           compactionCount: 0,
-          turnCount: 0,
         })),
       );
       console.log(chalk.gray("对话历史已清空。\n"));
