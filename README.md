@@ -271,7 +271,7 @@ tupigcode/
 │   ├── tools/                 # 20+ 工具实现
 │   ├── services/              # api bashSafety permissions sandbox failover errors
 │   ├── session/               # session sessionState checkpoint trajectory
-│   ├── context/               # compact/ budget cache rules repomap
+│   ├── context/               # compact/ rules repomap
 │   ├── knowledge/             # memory skills reflexion（知识沉淀）
 │   ├── modes/                 # plan/act + spec
 │   ├── agents/                # 子代理
