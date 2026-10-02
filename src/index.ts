@@ -7,6 +7,7 @@ import chalk from "chalk";
 import { parseOptimizeCommand, optimizePrompt, needsClarification, appendPromptStyle } from "./engine/promptOptimize.js";
 import { join } from "path";
 import { createInterface, Interface } from "readline";
+import { TurnGate } from "./services/turnGate.js";
 import { snapshot, listCheckpoints, rollbackCheckpoint, rewind, autoSnapshot, pruneCheckpoints } from "./session/checkpoint.js";
 import {
   drainTurnOps, buildReview, decideGlobal, decideFile, decideHunk,
@@ -150,7 +151,19 @@ async function startREPL(): Promise<void> {
 
   rl.prompt();
 
+  // 输入重入门闩（issue #86）：turn 进行中的行（含审批弹问 y⏎ 的双路幻影）直接丢弃
+  const turnGate = new TurnGate();
+
   rl.on("line", async (line: string) => {
+    if (!turnGate.enter()) return;
+    try {
+      await handleLine(line);
+    } finally {
+      turnGate.exit();
+    }
+  });
+
+  async function handleLine(line: string): Promise<void> {
     const input = line.trim();
     if (!input) { rl.prompt(); return; }
 
@@ -660,7 +673,7 @@ async function startREPL(): Promise<void> {
     }
     await maybeReviewTurn(rl);
     rl.prompt();
-  });
+  }
 
   rl.on("close", () => { console.log(chalk.gray("\n再见！")); process.exit(0); });
 }

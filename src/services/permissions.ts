@@ -71,8 +71,8 @@ function evaluateRules(
 
 const WRITE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
 
-/** 系统敏感路径（写入一律 deny） */
-const SENSITIVE_PATH = /(^|[\s'"=])(\/etc(\/|$)|\/usr\/|\/bin\/|\/sbin\/|\/System\/|\/Library\/|\/private\/|\/dev\/(sd|disk|nvme)|\/\.ssh(\/|$))/;
+/** 系统敏感路径（写入一律 deny）；边界含 `.`、`/` 前导，认相对穿越（issue #87） */
+const SENSITIVE_PATH = /(^|[\s'"=/.])(\/etc(\/|$)|\/usr\/|\/bin\/|\/sbin\/|\/System\/|\/Library\/|\/private\/|\/dev\/(sd|disk|nvme)|\/\.ssh(\/|$))/;
 
 /** 远程/发布类命令：即使 mutate 也恒 ask（issue #13） */
 const REMOTE_PUBLISH = /\bgit\s+push\b|\bpublish\b|\brelease\b|\bdeploy\b/;
@@ -143,10 +143,18 @@ export async function canUseTool(
   }
 
   // 敏感路径写 deny 前移（issue #28）：任何 allow 规则（含持久 always）都不得绕过
+  // 相对路径先 resolve（workDir 基线，issue #87），防穿越漏检
   if (WRITE_TOOLS.has(toolName)) {
     const rawP = String((input as any).file_path ?? (input as any).path ?? (input as any).notebook_path ?? "");
-    if (rawP && touchesSensitivePath(rawP)) {
+    if (rawP && touchesSensitivePath(resolve(appStore.getState().workDir, rawP))) {
       return { behavior: "deny", message: `目标为系统敏感路径，已拒绝：${rawP}` };
+    }
+  }
+  // Bash 写类命令同样前移（issue #87）：allow 规则不得旁路敏感命令检测；只读命令不拦
+  if (toolName === "Bash") {
+    const cmd = String(input.command ?? "");
+    if (cmd && classifyBash(cmd) !== "safe" && touchesSensitivePath(cmd)) {
+      return { behavior: "deny", message: `命令触及系统敏感路径，已拒绝：${cmd.slice(0, 200)}` };
     }
   }
 
@@ -211,10 +219,7 @@ export async function canUseTool(
       return { behavior: "ask", message: `危险命令（destructive）：${cmd.slice(0, 200)}` };
     }
     if (safety === "mutate") {
-      // 风险分类器（issue #13）：敏感路径 deny → 远程发布 ask → 其余 mutate 自动放行
-      if (touchesSensitivePath(cmd)) {
-        return { behavior: "deny", message: `命令触及系统敏感路径，已拒绝：${cmd.slice(0, 200)}` };
-      }
+      // 风险分类器（issue #13）：敏感路径已在上方前移 deny（issue #87），此处只剩远程发布 ask
       if (REMOTE_PUBLISH.test(cmd)) {
         return { behavior: "ask", message: `远程/发布类命令需确认：${cmd.slice(0, 200)}` };
       }
