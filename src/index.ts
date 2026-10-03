@@ -39,7 +39,7 @@ import { buildRetroPrompt, parseReviewDecision, applyReviewDecision, extractFail
 import { promptUserDecision } from "./services/permissions.js";
 import { loadAlwaysAllow, clearAlwaysAllow } from "./services/approvalStore.js";
 import type Anthropic from "@anthropic-ai/sdk";
-import { query, type SDKMessage } from "./engine/QueryEngine.js";
+import { query, interruptActiveTurn, activeTurnInterrupted, type SDKMessage } from "./engine/QueryEngine.js";
 import { appStore, adoptSessionId } from "./state/AppState.js";
 
 import { createRequire } from "module";
@@ -124,12 +124,18 @@ async function startREPL(): Promise<void> {
   });
 
   // SIGINT 同步抢救（issue #27）：不等 Promise，直接落盘 interrupted 标记
+  // turn 进行中 → interrupt() 优雅中断，不直接退出；空闲 → 抢救 + 退出（issue #98）
   const onSignal = () => {
+    const already = activeTurnInterrupted(); // 请求前状态：首按 false、二按 true
+    if (interruptActiveTurn() && !already) {
+      console.log(chalk.yellow("\n⏹ 已请求中断，正在结束当前任务…（再次 Ctrl+C 强制退出）"));
+      return;
+    }
     rescueSessionSync(appStore.getState().workDir, sessionId, sessionHistory as unknown[]);
     process.exit(130);
   };
-  process.once("SIGINT", onSignal);
-  process.once("SIGTERM", onSignal);
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
 
   // 输入空闲 Notification（issue #52）：prompt 布防、line 重置，一轮只 fire 一次
   const idleNotifyMs = resolveIdleNotifyMs();

@@ -15,9 +15,16 @@ export type ToolResult<T = unknown> = {
   data: T;
   resultForAssistant?: string;
   output?: ToolResultOutput;
+  /** 工具级错误（issue #99）：不 throw 也应让 QueryEngine 置 is_error 并触发 PostToolUseFailure */
+  isError?: boolean;
   newMessages?: Message[];
   contextModifier?: (ctx: ToolUseContext) => ToolUseContext;
 };
+
+/** 工具结果是否错误：显式 isError 或 output.type=error（约定唯一入口） */
+export function isToolResultError(r: Pick<ToolResult, "isError" | "output">): boolean {
+  return r.isError === true || r.output?.type === "error";
+}
 
 /**
  * 工具结果 → Anthropic tool_result.content。

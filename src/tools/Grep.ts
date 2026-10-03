@@ -46,7 +46,7 @@ export const GrepTool = buildTool<string>({
     try {
       new RegExp(input.pattern);
     } catch (e) {
-      return { data: `错误：无效的正则表达式「${input.pattern}」：${e instanceof Error ? e.message : e}` };
+      return { data: `错误：无效的正则表达式「${input.pattern}」：${e instanceof Error ? e.message : e}`, isError: true };
     }
 
     const args: string[] = [];
@@ -118,13 +118,13 @@ export const GrepTool = buildTool<string>({
 
       const timer = setTimeout(() => {
         try { child.kill("SIGTERM"); } catch {}
-        finish({ data: "错误：搜索超时" });
+        finish({ data: "错误：搜索超时", isError: true });
       }, TOOL_TIMEOUT_MS + 5000);
 
       child.on("close", () => {
         if (rgFailed) return;
         if (stderr && !stdout) {
-          finish({ data: `错误：${stderr.trim()}` });
+          finish({ data: `错误：${stderr.trim()}`, isError: true });
           return;
         }
         finish(format(stdout));
@@ -148,7 +148,7 @@ export const GrepTool = buildTool<string>({
         });
         fallback.on("error", () => {
           fbFailed = true;
-          finish({ data: "错误：ripgrep 和 find+grep 均不可用" });
+          finish({ data: "错误：ripgrep 和 find+grep 均不可用", isError: true });
         });
       });
     });

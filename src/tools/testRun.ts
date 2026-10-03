@@ -111,7 +111,7 @@ export const RunTestsTool = buildTool({
       const msg =
         "未检测到测试命令。可设置环境变量 TUPIG_TEST_CMD（如 `TUPIG_TEST_CMD=\"npm run test:unit\"`），" +
         "或在 package.json 配置有效 test script（当前无/为占位）。";
-      return { data: msg, resultForAssistant: msg };
+      return { data: msg, resultForAssistant: msg, isError: true };
     }
     if (r.success) {
       const msg = `✓ 测试通过（${r.command}）\n${r.output}`;
@@ -120,6 +120,6 @@ export const RunTestsTool = buildTool({
     const msg =
       `✗ 测试未通过（${r.command}）：\n${r.output}\n\n` +
       "请根据以上输出定位并修复问题，修复后再次调用 RunTests 复跑验证。";
-    return { data: msg, resultForAssistant: msg };
+    return { data: msg, resultForAssistant: msg, isError: true };
   },
 });

@@ -137,7 +137,7 @@ export const ToolSearchTool = buildTool({
         `未命中任何非常驻工具（query: ${input.query}）。请换关键词重试，` +
         `或确认所需能力是否已由常驻工具覆盖。当前常驻：${resident}。\n` +
         `可用 ToolSearch 检索的能力包括：git / 测试 / 网页 / 子代理 / 仓库地图 等。`;
-      return { data: msg, resultForAssistant: msg };
+      return { data: msg, resultForAssistant: msg, isError: true };
     }
     markLoaded(hits.map((t) => t.name));
     const lines = hits.map((t) => {

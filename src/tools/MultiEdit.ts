@@ -55,7 +55,7 @@ export const MultiEditTool = buildTool<string>({
     try {
       content = await readFile(resolved, "utf-8");
     } catch {
-      return { data: `错误：文件未找到：${resolved}` };
+      return { data: `错误：文件未找到：${resolved}`, isError: true };
     }
 
     const cached = context.readFileState.get(resolved);
@@ -63,7 +63,7 @@ export const MultiEditTool = buildTool<string>({
       try {
         const s = await stat(resolved);
         if (s.mtimeMs !== cached.mtime && cached.mtime !== 0) {
-          return { data: "错误：文件在上次读取后已被修改，请重新读取后再编辑。" };
+          return { data: "错误：文件在上次读取后已被修改，请重新读取后再编辑。", isError: true };
         }
       } catch {}
     }
@@ -81,7 +81,7 @@ export const MultiEditTool = buildTool<string>({
         const msg =
           `错误：第 ${i + 1} 处不匹配（old_string: ${JSON.stringify(e.old_string.slice(0, 120))}）；` +
           `原子语义：本次共 ${input.edits.length} 处编辑，全部未生效。请重新读取文件核对第 ${i + 1} 处后重试。`;
-        return { data: msg, resultForAssistant: msg };
+        return { data: msg, resultForAssistant: msg, isError: true };
       }
       content = next;
     }
@@ -94,7 +94,7 @@ export const MultiEditTool = buildTool<string>({
     const r = await writeWithRollback(resolved, content, lintFn);
     if (!r.ok) {
       const msg = `${r.error}\n${formatLintResult(r.lint!)}\n请修正后重试，本次编辑未生效。`;
-      return { data: msg, resultForAssistant: msg };
+      return { data: msg, resultForAssistant: msg, isError: true };
     }
 
     pushTurnOp({ path: resolved, before: r.prev, after: content });

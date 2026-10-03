@@ -246,6 +246,7 @@ export async function* withIdleWatchdog(
 async function* streamMessageInner(
   client: ApiClient, model: string, maxTokens: number, system: SystemInput,
   messages: Anthropic.MessageParam[], tools: Anthropic.Tool[],
+  signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent> {
   if (client.type === "mock") {
     const msg = mockResponse(messages);
@@ -274,7 +275,7 @@ async function* streamMessageInner(
       model, max_tokens: maxTokens, system,
       messages: withMessageCacheBreakpoint(messages),
       tools: tools.length > 0 ? withToolsCacheBreakpoint(tools) : undefined,
-    });
+    }, signal ? { signal } : undefined);
     let curToolId = "";
     for await (const ev of stream) {
       if (ev.type === "message_start") { yield { type: "message_start", message: ev.message }; continue; }
@@ -304,7 +305,7 @@ async function* streamMessageInner(
     return;
   }
 
-  if (client.type === "openai") { yield* streamOpenAI(model, maxTokens, systemText(system), messages, tools); }
+  if (client.type === "openai") yield* streamOpenAI(model, maxTokens, systemText(system), messages, tools, signal);
 }
 
 /**
@@ -314,11 +315,12 @@ async function* streamMessageInner(
 export async function* streamMessage(
   client: ApiClient, model: string, maxTokens: number, system: SystemInput,
   messages: Anthropic.MessageParam[], tools: Anthropic.Tool[],
+  signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent> {
   // 空闲看门狗（issue #46）：内容进度超时即中断，交给 retry/failover
   const guarded = () =>
     withIdleWatchdog(
-      streamMessageInner(client, model, maxTokens, system, messages, tools),
+      streamMessageInner(client, model, maxTokens, system, messages, tools, signal),
       resolveStreamIdleTimeoutMs(),
     );
   if (!wireEnabled()) {
@@ -416,6 +418,7 @@ export function toOpenAIMessages(messages: Anthropic.MessageParam[], system: str
 async function* streamOpenAI(
   model: string, maxTokens: number, system: string,
   messages: Anthropic.MessageParam[], tools: Anthropic.Tool[],
+  signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent> {
   const base = process.env.OPENAI_BASE_URL;
   const key = process.env.OPENAI_API_KEY;
@@ -430,6 +433,12 @@ async function* streamOpenAI(
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), API_FETCH_TIMEOUT_MS);
+  // 外部中断（Ctrl+C → interrupt）：联动 abort，与超时共用同一 controller（issue #98）
+  const onOuterAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener("abort", onOuterAbort, { once: true });
+  }
 
   const resp = await fetch(chatUrl(base), {
     method: "POST",
@@ -442,7 +451,7 @@ async function* streamOpenAI(
       stream_options: { include_usage: true },
     }),
     signal: controller.signal,
-  }).finally(() => clearTimeout(timeout));
+  }).finally(() => { clearTimeout(timeout); signal?.removeEventListener("abort", onOuterAbort); });
 
   if (!resp.ok) throw new Error(`OpenAI API 返回错误 ${resp.status}：${await resp.text()}`);
 

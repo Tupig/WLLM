@@ -53,13 +53,13 @@ export const FileReadTool = buildTool<string>({
     try {
       fileStat = await stat(resolved);
       if (fileStat.isDirectory()) {
-        return { data: `错误：${resolved} 是一个目录，请使用 Glob 工具。` };
+        return { data: `错误：${resolved} 是一个目录，请使用 Glob 工具。`, isError: true };
       }
       if (fileStat.size > MAX_FILE_SIZE_BYTES) {
-        return { data: `错误：文件过大（${(fileStat.size / 1024 / 1024).toFixed(1)}MB）` };
+        return { data: `错误：文件过大（${(fileStat.size / 1024 / 1024).toFixed(1)}MB）`, isError: true };
       }
     } catch {
-      return { data: `错误：文件未找到：${resolved}` };
+      return { data: `错误：文件未找到：${resolved}`, isError: true };
     }
 
     const existing = context.readFileState.get(resolved);
@@ -70,7 +70,7 @@ export const FileReadTool = buildTool<string>({
     const mime = IMAGE_EXT_MIME[extname(resolved).toLowerCase()];
     if (mime) {
       if (fileStat.size > MAX_IMAGE_BYTES) {
-        return { data: `错误：图片过大（${(fileStat.size / 1024 / 1024).toFixed(1)}MB），单图上限 5MB` };
+        return { data: `错误：图片过大（${(fileStat.size / 1024 / 1024).toFixed(1)}MB），单图上限 5MB`, isError: true };
       }
       const buf = await readFile(resolved);
       context.readFileState.set(resolved, { mtime: fileStat.mtimeMs });

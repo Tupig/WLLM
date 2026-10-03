@@ -103,7 +103,7 @@ export const BashTool = buildTool<string>({
       });
 
       child.on("error", (err) => {
-        finish({ data: `错误：${err.message}` });
+        finish({ data: `错误：${err.message}`, isError: true });
       });
     });
   },

@@ -12,6 +12,7 @@ import { dirname, join } from "path";
 import chalk from "chalk";
 import type { ShellHookConfig } from "./hooks.js";
 import { withPromptLock } from "../services/promptLock.js";
+import { parseApprovalAnswer } from "../services/permissions.js";
 
 export const TRUST_FILE = join(".tupigcode", "hook-trust.json");
 
@@ -106,10 +107,20 @@ export async function promptHookTrust(h: ShellHookConfig): Promise<boolean> {
   // 与审批弹问共用串行锁（issue #64）：同一时刻只占一个 readline
   return withPromptLock(() => new Promise((resolve) => {
     let settled = false;
+    const onData = (d: string) => {
+      const a = parseApprovalAnswer(d);
+      finish(a === "y" || a === "yes");
+    };
+    const onClose = () => finish(false);
+    const onEnd = () => finish(false);
     const finish = (r: boolean) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      // 显式移除三处监听（issue #101）：超时后不残留吃后续 stdin 数据
+      process.stdin.removeListener("data", onData);
+      process.stdin.removeListener("close", onClose);
+      process.stdin.removeListener("end", onEnd);
       process.stdin.pause();
       resolve(r);
     };
@@ -118,12 +129,9 @@ export async function promptHookTrust(h: ShellHookConfig): Promise<boolean> {
     process.stdout.write(chalk.cyan("允许该 hook 持续执行？(y/N) "));
     process.stdin.setEncoding("utf-8");
     process.stdin.resume();
-    process.stdin.once("data", (d: string) => {
-      const a = d.trim().toLowerCase();
-      finish(a === "y" || a === "yes");
-    });
-    process.stdin.once("close", () => finish(false));
-    process.stdin.once("end", () => finish(false));
+    process.stdin.once("data", onData);
+    process.stdin.once("close", onClose);
+    process.stdin.once("end", onEnd);
     const timer = setTimeout(() => finish(false), 30_000);
   }));
 }

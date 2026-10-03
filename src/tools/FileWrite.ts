@@ -46,7 +46,7 @@ export const FileWriteTool = buildTool<string>({
     );
     if (!r.ok) {
       const msg = `${r.error}\n${formatLintResult(r.lint!)}\n请修正后重试，本次写入未生效。`;
-      return { data: msg, resultForAssistant: msg };
+      return { data: msg, resultForAssistant: msg, isError: true };
     }
 
     pushTurnOp({ path: resolved, before: r.prev, after: input.content });

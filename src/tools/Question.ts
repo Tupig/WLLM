@@ -2,7 +2,7 @@
  * tools/Question.ts — 向用户提问工具（A19）
  */
 import { z } from "zod";
-import { buildTool } from "../engine/Tool.js";
+import { buildTool, type ToolResult } from "../engine/Tool.js";
 
 export const QuestionInput = z.object({
   question: z.string().describe("要向用户提出的问题，一句话说清"),
@@ -24,9 +24,9 @@ export const QuestionTool = buildTool<string>({
     return { behavior: "allow", updatedInput: input };
   },
 
-  async call(input): Promise<{ data: string }> {
+  async call(input): Promise<ToolResult<string>> {
     if (!process.stdin.isTTY) {
-      return { data: "错误：当前为非交互环境，无法提问。请基于已有信息继续，或在回复中直接给出你的假设。" };
+      return { data: "错误：当前为非交互环境，无法提问。请基于已有信息继续，或在回复中直接给出你的假设。", isError: true };
     }
 
     console.log(`\n❓ ${input.question}`);

@@ -40,7 +40,7 @@ export const GlobTool = buildTool<string>({
       if (truncated) result += `\n（已截断，显示前 ${MAX_GLOB_RESULTS} 个，共 ${matches.length} 个）`;
       return { data: result, resultForAssistant: result };
     } catch (err) {
-      return { data: `错误：无效的 glob 模式「${input.pattern}」：${err instanceof Error ? err.message : err}` };
+      return { data: `错误：无效的 glob 模式「${input.pattern}」：${err instanceof Error ? err.message : err}`, isError: true };
     }
   },
 

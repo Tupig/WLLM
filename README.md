@@ -139,6 +139,10 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **上下文溢出自动恢复**：API 报 prompt too long 不再直接失败——走压缩流水线重建 messages 后重试本轮（限 2 次、触发 PreCompact/PostCompact hook、`compactionCount+1`），与 max_tokens 输出升级额度互不干扰；该类错误 `failoverEligible=false`（切 provider 解决不了超限）
 - **结果语义与截断保真（fix #95/#96）**：错误/中断路径只产出一条 `error` result（不再追加「任务已完成」），`route.log` feedback 记真实成败（A23 画像不被污染）；Anthropic `stop_reason=max_tokens` 与 OpenAI `finish_reason=length` 一律进入输出额度升级重试（基线跟随 `maxTokens`，阶梯 `[8192,16384,32768,65536]`，耗尽才报错），截断不再静默成功
 - **failover 状态回滚（fix #97）**：主源中途 infra 断流切换兜底前回滚 `fullText`/`toolBuffers`/早派发遗留与 `events`，assistant 消息只含兜底全量输出（无重复文本、无幽灵 tool_use/tool_result）
+- **兜底模型接线（fix #98）**：`config.fallbackModel` 优先，缺省按兜底 provider 解析云模型（`TUPIG_CLOUD_MODEL`/`OPENAI_MODEL`，anthropic 默认 `claude-sonnet-4-20250514`）——兜底不再沿用本地模型名打云端 404；**Ctrl+C 优雅中断**：turn 进行中 SIGINT 调 `interrupt()`（`interruptActiveTurn` 活跃注册表）——信号接进 LLM 流（`streamMessage` 收 signal）、在途工具 per-call controller 联动 abort（取消文案、不 fire PostToolUseFailure），`AbortError` 不切兜底、收尾 fire `Stop(output=任务已中断)` + 单条 error result；空闲时仍走抢救 + exit(130)，二按强制退出
+- **工具执行健壮性（fix #99）**：`withTimeout` 超时即 abort 本次调用的 controller 并附副作用提示（写类操作可能已部分落盘）；工具返回 `isError`/`output.type=error` → `tool_result.is_error=true` + 触发 `PostToolUseFailure`（不再当成功、不快照）；流报错返回前 await 在途早期派发，events/toolResults 不脱钩
+- **doom loop 批内去重（fix #100）**：同一批/轮内相同只读调用只计一次（轮界清批内集合），并行同参检索不再误杀；detector 在 `submitMessage` 入口 reset，跨轮连续 ≥3 同动作仍拦截
+- **hook 信任输入健壮性（fix #101）**：`promptHookTrust` 复用审批的 `parseApprovalAnswer` 首行解析（粘贴 `y⏎杂散内容` 不再误拒）；30s 超时显式移除 data/close/end 三处 stdin listener，不残留吞后续输入
 - **变更史注入（Context Lineage）**：`git log` 近 30 条 → 模型压成短摘要 → `.tupigcode/cache/lineage.json` 缓存（HEAD 变更才重算），以「## 近期变更」注入 system prompt 尾部；预算截断取最近（`TUPIG_LINEAGE_MAX_CHARS` 默认 800）；无 git/无模型/超时（5s）静默跳过零影响
 - **`/compact [focusing on X]` 手动压缩**：走既有压缩流水线（snip → micro → collapse → LLM 摘要），支持焦点指令透传；`/context` 分段明细（系统提示/对话消息/工具结果/工具 schema/记忆 各段 token+条数，求和=总量，估算 chars/4）
 - **内置技能包（10 个）**：git-workflow / git-log / gitingest / shell-command-engager / code-review / debugging / test-first / docs-sync / release-check / refactor-safe，`src/knowledge/skills/` 静态装载（build 拷贝到 dist），用户 `.tupigcode/skills/` 同名覆盖、无效回落内置，三重门禁与 3000 字目录预算对内置同样生效
@@ -352,12 +356,12 @@ gameqa 环境变量见上文 [gameqa 节](#-gameqa--unity-自动化测试平台)
 ## 🧪 测试与 CI
 
 ```bash
- npm test              # = npx vitest run，114 文件 / 1026 用例
+ npm test              # = npx vitest run，119 文件 / 1053 用例
  npx tsc --noEmit      # 类型门槛
  npm run build         # 构建门槛（含 gameqa 静态资源拷贝 + 入口 chmod）
  ```
 
-用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e87`
+用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e92`
 （Provider/配置/护栏/容错/工具/并行/路由/优化/图像输入/模糊编辑/错误分类/MCP）、`f*`（压缩/权限）、`i1~i4`
 （记忆/技能/hooks/反思）、`g1~g7`（gameqa store/服务/内置执行器/Unity 真执行全链路/
 airtest·性能·AI 集成/TLS·CLI/轻量报告/Allure 报告）、`proxy-*`（三协议转换/SSE/流式 usage）、`smoke`、`cli`、`ctx10m`。

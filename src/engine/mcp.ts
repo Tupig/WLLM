@@ -283,12 +283,12 @@ export function wrapMcpTool(serverName: string, def: McpToolDef, client: Pick<Cl
         const texts = content.filter((b) => b.type === "text").map((b) => b.text ?? "");
         const joined = texts.length > 0 ? texts.join("\n") : JSON.stringify(content);
         if ((r as any)?.isError) {
-          return { data: `错误：MCP 工具 ${toolName} 返回失败\n${joined}` };
+          return { data: `错误：MCP 工具 ${toolName} 返回失败\n${joined}`, isError: true };
         }
         return { data: joined, resultForAssistant: joined };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        return { data: `错误：调用 MCP 工具 ${toolName} 失败：${msg}` };
+        return { data: `错误：调用 MCP 工具 ${toolName} 失败：${msg}`, isError: true };
       }
     },
     mapToolResultToToolResultBlockParam(content, toolUseID) {

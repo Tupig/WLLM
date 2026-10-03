@@ -76,7 +76,7 @@ export const FileEditTool = buildTool<string>({
     try {
       content = await readFile(resolved, "utf-8");
     } catch {
-      return { data: `错误：文件未找到：${resolved}` };
+      return { data: `错误：文件未找到：${resolved}`, isError: true };
     }
 
     const cached = context.readFileState.get(resolved);
@@ -84,7 +84,7 @@ export const FileEditTool = buildTool<string>({
       try {
         const s = await stat(resolved);
         if (s.mtimeMs !== cached.mtime && cached.mtime !== 0) {
-          return { data: "错误：文件在上次读取后已被修改，请重新读取后再编辑。" };
+          return { data: "错误：文件在上次读取后已被修改，请重新读取后再编辑。", isError: true };
         }
       } catch {}
     }
@@ -99,7 +99,7 @@ export const FileEditTool = buildTool<string>({
         const fr = await writeWithRollback(resolved, next, lintFn);
         if (!fr.ok) {
           const msg = `${fr.error}\n${formatLintResult(fr.lint!)}\n请修正后重试，本次编辑未生效。`;
-          return { data: msg, resultForAssistant: msg };
+          return { data: msg, resultForAssistant: msg, isError: true };
         }
         pushTurnOp({ path: resolved, before: fr.prev, after: next });
 
@@ -111,16 +111,16 @@ export const FileEditTool = buildTool<string>({
       }
       if (fuzzy.length > 1) {
         const msg = `错误：old_string 精确匹配失败，且有 ${fuzzy.length} 处模糊相似位置，无法确定目标。请重新读取文件并提供更多上下文（或更精确的 old_string）。`;
-        return { data: msg, resultForAssistant: msg };
+        return { data: msg, resultForAssistant: msg, isError: true };
       }
       const fb = formatNoMatchFeedback(content, input.old_string, resolved);
-      return { data: fb, resultForAssistant: fb };
+      return { data: fb, resultForAssistant: fb, isError: true };
     }
 
     if (!input.replace_all) {
       const secondIdx = findActualString(content.slice(idx + input.old_string.length), input.old_string);
       if (secondIdx !== -1) {
-        return { data: "错误：old_string 匹配了多次。请使用 replace_all 或提供更多上下文。" };
+        return { data: "错误：old_string 匹配了多次。请使用 replace_all 或提供更多上下文。", isError: true };
       }
     }
 
@@ -132,7 +132,7 @@ export const FileEditTool = buildTool<string>({
       const r = await writeWithRollback(resolved, next, lintFn);
       if (!r.ok) {
         const msg = `${r.error}\n${formatLintResult(r.lint!)}\n请修正后重试，本次替换未生效（${count} 处待替换）`;
-        return { data: msg, resultForAssistant: msg };
+        return { data: msg, resultForAssistant: msg, isError: true };
       }
       const s = await stat(resolved);
       context.readFileState.set(resolved, { mtime: s.mtimeMs });
@@ -145,7 +145,7 @@ export const FileEditTool = buildTool<string>({
     const r = await writeWithRollback(resolved, next, lintFn);
     if (!r.ok) {
       const msg = `${r.error}\n${formatLintResult(r.lint!)}\n请修正后重试，本次编辑未生效。`;
-      return { data: msg, resultForAssistant: msg };
+      return { data: msg, resultForAssistant: msg, isError: true };
     }
 
     const s = await stat(resolved);

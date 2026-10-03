@@ -7,14 +7,14 @@ import Anthropic from "@anthropic-ai/sdk";
 import chalk from "chalk";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { Tool, ToolUseContext, CanUseToolFn } from "./Tool.js";
-import { anthropicToolResultContent } from "./Tool.js";
+import { anthropicToolResultContent, isToolResultError } from "./Tool.js";
 import { connectMcpServers } from "./mcp.js";
 import { getDefaultTools, getToolByName, resolveExtraTools } from "./toolRegistry.js";
 import { promptTools, setExplicitExtras, setSearchPool, markLoaded } from "./lazyTools.js";
 import { resetTurnOps } from "./diffReview.js";
 import { createClient, streamMessage, UsageTracker, type ApiClient } from "../services/api.js";
 import { resolveHarness, parseXmlToolCalls } from "./harness.js";
-import { resolveFallback, streamWithFailover } from "../services/failover.js";
+import { resolveFallback, resolveFallbackModel, streamWithFailover } from "../services/failover.js";
 import { renderSystemPrompt } from "./prompt.js";
 import { routeTask, formatRouteLog, profileTask, appendRouteFeedback } from "./router.js";
 import { appendFileSync, mkdirSync } from "fs";
@@ -152,6 +152,8 @@ export class QueryEngine {
   private trajectory: TrajectoryRecorder | null = null;
   private sessionState: SessionState | null = null;
   private doomDetector = createDoomDetector(3);
+  /** doom 批内已计签名（issue #100）：同一批相同调用只 feed 一次，批界清空 */
+  private doomBatchSigs = new Set<string>();
   private mcpInitialized = false;
   private fallbackClient: ApiClient | null = null;
   private fallbackLabel: string | null = null;
@@ -262,6 +264,9 @@ export class QueryEngine {
 
   async *submitMessage(prompt: string): AsyncGenerator<SDKMessage, void, unknown> {
     await this.ensureMcpTools();
+    // doom detector 按用户轮次重置（issue #100）：跨 submitMessage 不累计，保留同轮跨批保护
+    this.doomDetector.reset();
+    this.doomBatchSigs.clear();
     reloadShellHooksIfChanged(); // hooks.json 热加载（issue #51）：mtime 变更才重载
     // 记录用户消息
     this.trajectory?.recordUserMessage(prompt);
@@ -417,6 +422,12 @@ export class QueryEngine {
       // API 错误（issue #95）：error result 已随 events 产出，结束循环且不进成功分支
       if (turnResult.stopReason === "error") { turnFailed = true; break; }
 
+      // 中断（issue #98）：不再派发后续工具、不进成功分支
+      if (turnResult.stopReason === "aborted" || this.abortController.signal.aborted) {
+        aborted = true;
+        break;
+      }
+
       if (turnResult.stopReason === "end_turn" || turnResult.stopReason === "stop" || !turnResult.stopReason) {
         break;
       }
@@ -453,6 +464,12 @@ export class QueryEngine {
     } else if (aborted) {
       const msg = "任务已中断";
       this.trajectory?.recordError(msg);
+      // 中断也 fire Stop（issue #98 期望）：output 标记 aborted 语义，供 hooks 感知
+      await fireStop(undefined, {
+        turnNumber: loopState.turnCount,
+        sessionId: this.sessionState?.sessionId ?? "",
+        output: msg,
+      });
       yield {
         type: "result",
         subtype: "error",
@@ -535,6 +552,9 @@ export class QueryEngine {
   }> {
     const events: SDKMessage[] = [];
     const toolDefs: Anthropic.Tool[] = this.buildToolDefs();
+    // doom 批内去重边界（issue #100）：轮界清一次——同轮（含 early dispatch 与各批次）共享，
+    // 相同调用只 feed 一次；跨轮由 submitMessage 的 detector.reset 拦 ≥3 次
+    this.doomBatchSigs.clear();
 
     const toolBuffers = new Map<string, { id: string; name: string; inputJson: string }>();
     const toolResults: Array<{ tool_use_id: string; content: string; is_error?: boolean }> = [];
@@ -564,12 +584,16 @@ export class QueryEngine {
       try {
         const stream = () => streamMessage(
           this.client, this.config.model, loopState.maxOutputTokensOverride,
-          systemInput, loopState.messages, toolDefs,
+          systemInput, loopState.messages, toolDefs, this.abortController.signal,
         );
+        // 兜底流用云端模型名（issue #98）：本地模型名打到云端必 404，config.fallbackModel 优先
+        const fbModel = this.fallbackLabel
+          ? resolveFallbackModel(this.fallbackLabel as "anthropic" | "openai", this.config.fallbackModel)
+          : this.config.model;
         const fbStream = this.fallbackClient
           ? () => streamMessage(
-              this.fallbackClient!, this.config.model, loopState.maxOutputTokensOverride,
-              systemInput, loopState.messages, toolDefs,
+              this.fallbackClient!, fbModel, loopState.maxOutputTokensOverride,
+              systemInput, loopState.messages, toolDefs, this.abortController.signal,
             )
           : null;
         // 切换兜底前回滚本轮已累计状态（issue #97）：文本/工具缓冲/早期派发结果清零，
@@ -586,6 +610,8 @@ export class QueryEngine {
           process.stdout.write(chalk.yellow(`\n⚡ 本地推理故障，已回退到 ${l}\n`));
           this.trajectory?.recordError(`基础设施故障，回退 ${l}`);
         }, onFailoverReset)) {
+          // 中断（issue #98）：signal 已 abort 立即停止消费，mock/未接 signal 链路同样生效
+          if (this.abortController.signal.aborted) break;
           switch (event.type) {
             case "text_delta":
               process.stdout.write(event.text);
@@ -633,6 +659,11 @@ export class QueryEngine {
         }
         inputTokens = usage.inputTokens;
         outputTokens = usage.outputTokens;
+        // 中断（issue #98）：流被 abort 后不当成功/错误路径，交 submitMessage 走 aborted 分支
+        if (this.abortController.signal.aborted) {
+          await Promise.allSettled([...earlyExecutions.values()]);
+          return { stopReason: "aborted", toolResults: [], events };
+        }
         // 链路正常返回的 max_tokens 截断（issue #96）：与异常路径同权升级重试，耗尽即失败
         if (stopReason === "max_tokens") {
           const next = nextOutputTokenEscalation(loopState.maxOutputTokensOverride);
@@ -643,13 +674,20 @@ export class QueryEngine {
           }
           const errMsg = `输出被 max_tokens 截断（${loopState.maxOutputTokensOverride}），升级重试已耗尽，任务未完成`;
           process.stdout.write(chalk.red(`\n❌ ${errMsg}\n`));
+          // 错误返回前等在途早期派发落地（issue #99）：否则后台结果与 events 脱钩
+          await Promise.allSettled([...earlyExecutions.values()]);
           return {
-            stopReason: "error", toolResults: [],
+            stopReason: "error", toolResults,
             events: [...events, { type: "result", subtype: "error", result: errMsg }],
           };
         }
         break;
       } catch (err: any) {
+        // 中断（issue #98）：abort 引发的 AbortError 不当 API 错误（不 fire error result、不升级重试）
+        if (this.abortController.signal.aborted) {
+          await Promise.allSettled([...earlyExecutions.values()]);
+          return { stopReason: "aborted", toolResults: [], events };
+        }
         if (err?.message?.includes("max_tokens") && attempt < MAX_OUTPUT_TOKEN_ESCALATION.length - 1) {
           const next = nextOutputTokenEscalation(loopState.maxOutputTokensOverride);
           if (next !== null) {
@@ -679,8 +717,10 @@ export class QueryEngine {
         }
 
         process.stdout.write(chalk.red(`\n❌ API 错误：${err?.message || err}\n`));
+        // 错误返回前等在途早期派发落地（issue #99）：异常进 recordToolFailure 写的仍是有效数组
+        await Promise.allSettled([...earlyExecutions.values()]);
         return {
-          stopReason: "error", toolResults: [],
+          stopReason: "error", toolResults,
           events: [...events, { type: "result", subtype: "error", result: String(err) }],
         };
       }
@@ -809,6 +849,7 @@ export class QueryEngine {
     events: any[],
     toolResults: Array<{ tool_use_id: string; content: string; is_error?: boolean }>,
   ): Promise<void> {
+    this.doomBatchSigs.clear(); // 批界（issue #100）
     const runOne = async (e: { buf: { id: string; name: string; inputJson: string }; input: Record<string, unknown> | null }) => {
       await this.runToolBuffer(e.buf, e.input ?? {}, getToolByName(this.tools, e.buf.name), toolContext, canUseToolFn, loopState, events, toolResults);
     };
@@ -842,6 +883,7 @@ export class QueryEngine {
     events: any[],
     toolResults: Array<{ tool_use_id: string; content: string; is_error?: boolean }>,
   ): Promise<void> {
+    this.doomBatchSigs.clear(); // 批界（issue #100）
     const keyOf = (e: { input: Record<string, unknown> | null }): string | null => {
       const fp = e.input?.file_path;
       if (typeof fp !== "string" || !fp) return null;
@@ -964,14 +1006,19 @@ export class QueryEngine {
 
         // 流式锁已移除（issue #43）：同批只读工具并发执行不再互斥，
         // 写/不安全项由 partitionRuns 独立成批 + 批间顺序循环天然互斥
+        // doom loop（issue #100）：签名只在同一批内计一次——批内并行的相同只读调用是合法行为，
+        // 不构成循环；跨批/跨轮重复仍累计，连续 ≥3 轮同动作才拦
         const doomSig = JSON.stringify({ name: buf.name, input });
-        if (this.doomDetector.feed(doomSig)) {
-          const errMsg = "检测到连续重复动作（doom loop），已中断。请换一种方式完成任务。";
-          process.stdout.write(chalk.red(`\n🛑 ${errMsg}\n`));
-          toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
-          events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
-          this.trajectory?.recordError(errMsg);
-          return;
+        if (!this.doomBatchSigs.has(doomSig)) {
+          this.doomBatchSigs.add(doomSig);
+          if (this.doomDetector.feed(doomSig)) {
+            const errMsg = "检测到连续重复动作（doom loop），已中断。请换一种方式完成任务。";
+            process.stdout.write(chalk.red(`\n🛑 ${errMsg}\n`));
+            toolResults.push({ tool_use_id: buf.id, content: errMsg, is_error: true });
+            events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
+            this.trajectory?.recordError(errMsg);
+            return;
+          }
         }
 
         // 记录工具调用
@@ -980,12 +1027,30 @@ export class QueryEngine {
 
         process.stdout.write(chalk.gray("⏳ "));
         let result;
+        // per-call AbortController（issue #99）：超时即 abort，工具读 context.abortController 可真取消
+        const callAc = new AbortController();
+        const callCtx = { ...toolContext, abortController: callAc };
+        // 引擎中断联动（issue #98）：Ctrl+C → interrupt() → 在途工具一并 abort
+        const onEngineAbort = () => callAc.abort();
+        this.abortController.signal.addEventListener("abort", onEngineAbort, { once: true });
+        const isReadOnlyTool = tool.isReadOnly(parsed.data);
         try {
           result = await withTimeout(
-            tool.call(parsed.data, toolContext, canUseToolFn),
+            tool.call(parsed.data, callCtx as ToolUseContext, canUseToolFn),
             TOOL_TIMEOUT_MS, `工具 ${buf.name}`,
+            {
+              controller: callAc,
+              sideEffectHint: isReadOnlyTool ? undefined : "写类操作可能已部分落盘，请核对文件状态",
+            },
           );
         } catch (e) {
+          if (this.abortController.signal.aborted) {
+            // 中断引发的 abort（issue #98）：不按工具失败计，不 fire PostToolUseFailure
+            const msg = "任务已中断，工具调用已取消";
+            toolResults.push({ tool_use_id: buf.id, content: msg, is_error: true });
+            events.push({ type: "tool_result", toolUseId: buf.id, content: msg, isError: true });
+            return;
+          }
           const errMsg = e instanceof Error ? e.message : String(e);
           void firePostToolUseFailure(hookSystem, {
             toolName: buf.name, input, output: errMsg,
@@ -996,6 +1061,8 @@ export class QueryEngine {
           events.push({ type: "tool_result", toolUseId: buf.id, content: errMsg, isError: true });
           this.trajectory?.recordError(errMsg);
           return;
+        } finally {
+          this.abortController.signal.removeEventListener("abort", onEngineAbort);
         }
 
         // 记录工具执行状态
@@ -1004,24 +1071,34 @@ export class QueryEngine {
         recordToolExecution(this.toolState, buf.name, filePath, operation);
 
         const resultStr = result.resultForAssistant || JSON.stringify(result.data);
-        toolResults.push({ tool_use_id: buf.id, content: anthropicToolResultContent(result, resultStr) as never, is_error: false });
-        events.push({ type: "tool_result", toolUseId: buf.id, content: resultStr, isError: false });
+        // 工具级错误（issue #99）：isError/output=error → is_error + PostToolUseFailure（不再当成功）
+        const toolErr = isToolResultError(result);
+        toolResults.push({ tool_use_id: buf.id, content: anthropicToolResultContent(result, resultStr) as never, is_error: toolErr });
+        events.push({ type: "tool_result", toolUseId: buf.id, content: resultStr, isError: toolErr });
 
         // 记录工具结果
         const toolDuration = Date.now() - toolStartTime;
-        this.trajectory?.recordToolResult(buf.id, resultStr, false, toolDuration);
+        this.trajectory?.recordToolResult(buf.id, resultStr, toolErr, toolDuration);
 
-        process.stdout.write(chalk.green(`✅（${resultStr.length} 字符）\n`));
+        process.stdout.write(toolErr ? chalk.red(`❌（${resultStr.length} 字符）\n`) : chalk.green(`✅（${resultStr.length} 字符）\n`));
 
-        await hookSystem.trigger("PostToolUse", {
-          toolName: buf.name, input, output: resultStr,
-          turnNumber: loopState.turnCount,
-          sessionId: appStore.getState().sessionId,
-          durationMs: toolDuration,
-        });
+        if (toolErr) {
+          // 工具级错误（issue #99）：错误结果同样进 PostToolUseFailure（含 durationMs）
+          void firePostToolUseFailure(hookSystem, {
+            toolName: buf.name, input, output: resultStr,
+            durationMs: toolDuration,
+          }, { turnNumber: loopState.turnCount, sessionId: appStore.getState().sessionId });
+        } else {
+          await hookSystem.trigger("PostToolUse", {
+            toolName: buf.name, input, output: resultStr,
+            turnNumber: loopState.turnCount,
+            sessionId: appStore.getState().sessionId,
+            durationMs: toolDuration,
+          });
+        }
 
-        // 自动快照（issue #14）：写类工具成功后（防抖 5s；无改动/非 git 静默）
-        if (process.env.TUPIG_AUTOSNAPSHOT !== "0" && WRITE_SNAP_TOOLS.has(buf.name)) {
+        // 自动快照（issue #14）：写类工具成功后（防抖 5s；无改动/非 git 静默）；错误结果不快照
+        if (!toolErr && process.env.TUPIG_AUTOSNAPSHOT !== "0" && WRITE_SNAP_TOOLS.has(buf.name)) {
           void autoSnapshot(toolContext.workDir, `auto:tool:${buf.name}`).catch(() => {});
         }
       } else {
@@ -1120,6 +1197,11 @@ export class QueryEngine {
     this.abortController.abort();
   }
 
+  /** 是否已请求中断（SIGINT 二按判定，issue #98） */
+  get interrupted(): boolean {
+    return this.abortController.signal.aborted;
+  }
+
   getTools(): Tool[] {
     return this.tools;
   }
@@ -1155,6 +1237,32 @@ export async function* query(params: {
   });
 
   await engine.preloadLineage(); // 变更史摘要（失败静默跳过，~5s 超时兜底）
-  yield* engine.submitMessage(params.prompt);
+  activeEngine = engine; // 注册活跃 turn（issue #98）：供 SIGINT 优雅中断
+  try {
+    yield* engine.submitMessage(params.prompt);
+  } finally {
+    activeEngine = null;
+  }
   yield { type: "session", messages: engine.getSessionMessages() };
+}
+
+// ─── Ctrl+C 优雅中断接线（issue #98） ───────────────────────────────────────────
+// 每次 query() 注册活跃 engine；turn 进行中 SIGINT → interrupt() 结束流/取消工具，
+// 替代直接 process.exit(130)。无活跃 turn（REPL 空闲）时调用方维持原抢救+退出行为。
+let activeEngine: QueryEngine | null = null;
+
+/**
+ * 中断当前进行中的 turn。返回是否有活跃 turn 可中断：
+ * true → 已请求优雅中断，调用方应继续等待本轮结束（不要 exit）；
+ * false → 无活跃 turn，调用方走原有的抢救会话 + 退出。
+ */
+export function interruptActiveTurn(): boolean {
+  if (!activeEngine) return false;
+  activeEngine.interrupt();
+  return true;
+}
+
+/** 活跃 turn 是否已请求过中断（供 SIGINT 区分首按/二按：二按强制退出） */
+export function activeTurnInterrupted(): boolean {
+  return activeEngine?.interrupted ?? false;
 }

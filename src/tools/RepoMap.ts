@@ -33,7 +33,7 @@ export const RepoMapTool = buildTool<string>({
       const cacheNote = r.fromCache ? "（缓存命中）" : "";
       return { data: `${r.text}\n${cacheNote}`.trim(), resultForAssistant: r.text };
     } catch (err) {
-      return { data: `错误：${err instanceof Error ? err.message : String(err)}` };
+      return { data: `错误：${err instanceof Error ? err.message : String(err)}`, isError: true };
     }
   },
 });
