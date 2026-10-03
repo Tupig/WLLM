@@ -137,6 +137,8 @@ PLATFORM_URL=https://localhost:9111 AGENT_ID=agent-1 PLATFORM=mac \
 - **Notification hook**：`permission_prompt`（`promptUserDecision` 弹问前 fire-and-forget，非 TTY 不 fire）与 `idle_prompt`（REPL 输入空闲，`TUPIG_IDLE_NOTIFY_MS` 默认 300s、0 关闭，prompt 布防/line 重置/一轮一次）；`matcher.notificationType` 过滤，shell hooks.json 解析透传，TOFU hash 覆盖
 - **重试抖动 + 预算上限**：`callWithRetry` full-jitter 退避（`rand(0, min(10s, 1s·2^n))`）防同步重试风暴，总预算 `TUPIG_RETRY_BUDGET_MS`（默认 60s）超限即抛最后错误，401/403 仍立即抛
 - **上下文溢出自动恢复**：API 报 prompt too long 不再直接失败——走压缩流水线重建 messages 后重试本轮（限 2 次、触发 PreCompact/PostCompact hook、`compactionCount+1`），与 max_tokens 输出升级额度互不干扰；该类错误 `failoverEligible=false`（切 provider 解决不了超限）
+- **结果语义与截断保真（fix #95/#96）**：错误/中断路径只产出一条 `error` result（不再追加「任务已完成」），`route.log` feedback 记真实成败（A23 画像不被污染）；Anthropic `stop_reason=max_tokens` 与 OpenAI `finish_reason=length` 一律进入输出额度升级重试（基线跟随 `maxTokens`，阶梯 `[8192,16384,32768,65536]`，耗尽才报错），截断不再静默成功
+- **failover 状态回滚（fix #97）**：主源中途 infra 断流切换兜底前回滚 `fullText`/`toolBuffers`/早派发遗留与 `events`，assistant 消息只含兜底全量输出（无重复文本、无幽灵 tool_use/tool_result）
 - **变更史注入（Context Lineage）**：`git log` 近 30 条 → 模型压成短摘要 → `.tupigcode/cache/lineage.json` 缓存（HEAD 变更才重算），以「## 近期变更」注入 system prompt 尾部；预算截断取最近（`TUPIG_LINEAGE_MAX_CHARS` 默认 800）；无 git/无模型/超时（5s）静默跳过零影响
 - **`/compact [focusing on X]` 手动压缩**：走既有压缩流水线（snip → micro → collapse → LLM 摘要），支持焦点指令透传；`/context` 分段明细（系统提示/对话消息/工具结果/工具 schema/记忆 各段 token+条数，求和=总量，估算 chars/4）
 - **内置技能包（10 个）**：git-workflow / git-log / gitingest / shell-command-engager / code-review / debugging / test-first / docs-sync / release-check / refactor-safe，`src/knowledge/skills/` 静态装载（build 拷贝到 dist），用户 `.tupigcode/skills/` 同名覆盖、无效回落内置，三重门禁与 3000 字目录预算对内置同样生效
@@ -350,12 +352,12 @@ gameqa 环境变量见上文 [gameqa 节](#-gameqa--unity-自动化测试平台)
 ## 🧪 测试与 CI
 
 ```bash
- npm test              # = npx vitest run，111 文件 / 1016 用例
+ npm test              # = npx vitest run，114 文件 / 1026 用例
  npx tsc --noEmit      # 类型门槛
  npm run build         # 构建门槛（含 gameqa 静态资源拷贝 + 入口 chmod）
  ```
 
-用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e84`
+用例分组：`n1~n12`（编辑/会话/沙箱/子代理/规格/RepoMap/harness…）、`e1~e87`
 （Provider/配置/护栏/容错/工具/并行/路由/优化/图像输入/模糊编辑/错误分类/MCP）、`f*`（压缩/权限）、`i1~i4`
 （记忆/技能/hooks/反思）、`g1~g7`（gameqa store/服务/内置执行器/Unity 真执行全链路/
 airtest·性能·AI 集成/TLS·CLI/轻量报告/Allure 报告）、`proxy-*`（三协议转换/SSE/流式 usage）、`smoke`、`cli`、`ctx10m`。

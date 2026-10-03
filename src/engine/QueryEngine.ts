@@ -104,6 +104,11 @@ type LoopState = {
 
 const MAX_OUTPUT_TOKEN_ESCALATION = [8192, 16384, 32768, 65536];
 
+/** 升级基线跟随当前上限（issue #96）：取阶梯中第一个严格大于当前值的档位，耗尽返回 null */
+function nextOutputTokenEscalation(current: number): number | null {
+  return MAX_OUTPUT_TOKEN_ESCALATION.find((v) => v > current) ?? null;
+}
+
 export function createDoomDetector(threshold = 3) {
   let lastSig = "";
   let count = 0;
@@ -341,8 +346,10 @@ export class QueryEngine {
     this.currentMessages = loopState.messages;
 
     let hitMaxTurns = false;
+    let turnFailed = false; // API 错误（issue #95）：不进成功分支
+    let aborted = false; // 中断（issue #95）：同不进成功分支
     for (let turn = 0; turn < this.config.maxTurns; turn++) {
-      if (this.abortController.signal.aborted) break;
+      if (this.abortController.signal.aborted) { aborted = true; break; }
       loopState.turnCount = turn + 1;
 
       // 模型主动压缩（issue #41）：上一轮 CompactContext 置信号 → 此处执行
@@ -407,6 +414,9 @@ export class QueryEngine {
         yield event;
       }
 
+      // API 错误（issue #95）：error result 已随 events 产出，结束循环且不进成功分支
+      if (turnResult.stopReason === "error") { turnFailed = true; break; }
+
       if (turnResult.stopReason === "end_turn" || turnResult.stopReason === "stop" || !turnResult.stopReason) {
         break;
       }
@@ -437,6 +447,18 @@ export class QueryEngine {
         result: errorMsg,
         num_turns: loopState.turnCount,
       };
+    } else if (turnFailed) {
+      // 错误 result 已在 executeTurn 的 events 中产出（issue #95）：不 fireStop、不重复 yield
+      this.trajectory?.recordError("API 调用失败，任务未完成");
+    } else if (aborted) {
+      const msg = "任务已中断";
+      this.trajectory?.recordError(msg);
+      yield {
+        type: "result",
+        subtype: "error",
+        result: msg,
+        num_turns: loopState.turnCount,
+      };
     } else {
       await fireStop(undefined, {
         turnNumber: loopState.turnCount,
@@ -458,12 +480,13 @@ export class QueryEngine {
       console.log(chalk.gray(`\n轨迹已保存：${trajectoryPath}`));
     }
 
-    // routelog 反馈回填（A23 闭环，供画像选型）
+    // routelog 反馈回填（A23 闭环，供画像选型）：错误/中断不记 success（issue #95）
+    const feedbackOk = !hitMaxTurns && !turnFailed && !aborted;
     appendRouteFeedback(this.config.cwd, {
       model: this.config.model,
       kind: profileTask(prompt).kind,
-      success: !hitMaxTurns,
-      oneShot: !hitMaxTurns && loopState.turnCount <= 2,
+      success: feedbackOk,
+      oneShot: feedbackOk && loopState.turnCount <= 2,
     });
   }
 
@@ -480,6 +503,25 @@ export class QueryEngine {
         input_schema: schema as Anthropic.Tool["input_schema"],
       };
     });
+  }
+
+  /** 清空早期派发遗留（issue #47/#97）：等在途完成并移除其 tool_result/events 条目 */
+  private async discardEarlyExecutions(
+    earlyExecutions: Map<string, Promise<void>>,
+    toolResults: Array<{ tool_use_id: string; content: string; is_error?: boolean }>,
+    events: SDKMessage[],
+  ): Promise<void> {
+    if (earlyExecutions.size === 0) return;
+    const staleIds = new Set(earlyExecutions.keys());
+    await Promise.allSettled([...earlyExecutions.values()]);
+    earlyExecutions.clear();
+    for (let i = toolResults.length - 1; i >= 0; i--) {
+      if (staleIds.has(toolResults[i].tool_use_id)) toolResults.splice(i, 1);
+    }
+    for (let i = events.length - 1; i >= 0; i--) {
+      const ev: any = events[i];
+      if (ev?.type === "tool_result" && staleIds.has(ev.toolUseId)) events.splice(i, 1);
+    }
   }
 
   private async executeTurn(
@@ -512,21 +554,11 @@ export class QueryEngine {
 
     for (let attempt = 0; attempt < MAX_OUTPUT_TOKEN_ESCALATION.length; attempt++) {
       // 重试前清空上一轮早期派发（issue #47）：等在途完成并移除其遗留结果
-      if (earlyExecutions.size > 0) {
-        const staleIds = new Set(earlyExecutions.keys());
-        await Promise.allSettled([...earlyExecutions.values()]);
-        earlyExecutions.clear();
-        for (let i = toolResults.length - 1; i >= 0; i--) {
-          if (staleIds.has(toolResults[i].tool_use_id)) toolResults.splice(i, 1);
-        }
-        for (let i = events.length - 1; i >= 0; i--) {
-          const ev: any = events[i];
-          if (ev?.type === "tool_result" && staleIds.has(ev.toolUseId)) events.splice(i, 1);
-        }
-      }
+      await this.discardEarlyExecutions(earlyExecutions, toolResults, events);
       toolBuffers.clear();
       fullText = "";
       stopReason = null;
+      const eventsMark = events.length; // failover 回滚边界（issue #97）
       const usage = new UsageTracker(); // 每次尝试独立记账（issue #44）
 
       try {
@@ -540,10 +572,20 @@ export class QueryEngine {
               systemInput, loopState.messages, toolDefs,
             )
           : null;
+        // 切换兜底前回滚本轮已累计状态（issue #97）：文本/工具缓冲/早期派发结果清零，
+        // 否则 primary 半截文本与 fallback 全量重复、残留 tool_use_start 变幽灵块
+        const onFailoverReset = async () => {
+          await this.discardEarlyExecutions(earlyExecutions, toolResults, events);
+          toolBuffers.clear();
+          fullText = "";
+          stopReason = null;
+          events.length = eventsMark;
+          process.stdout.write("\n");
+        };
         for await (const event of streamWithFailover(stream, fbStream, this.fallbackLabel, (l) => {
           process.stdout.write(chalk.yellow(`\n⚡ 本地推理故障，已回退到 ${l}\n`));
           this.trajectory?.recordError(`基础设施故障，回退 ${l}`);
-        })) {
+        }, onFailoverReset)) {
           switch (event.type) {
             case "text_delta":
               process.stdout.write(event.text);
@@ -591,12 +633,30 @@ export class QueryEngine {
         }
         inputTokens = usage.inputTokens;
         outputTokens = usage.outputTokens;
+        // 链路正常返回的 max_tokens 截断（issue #96）：与异常路径同权升级重试，耗尽即失败
+        if (stopReason === "max_tokens") {
+          const next = nextOutputTokenEscalation(loopState.maxOutputTokensOverride);
+          if (next !== null && attempt < MAX_OUTPUT_TOKEN_ESCALATION.length - 1) {
+            loopState.maxOutputTokensOverride = next;
+            process.stdout.write(chalk.yellow(`\n⚠️  输出被 max_tokens 截断，正在以 ${next} 重试...\n`));
+            continue;
+          }
+          const errMsg = `输出被 max_tokens 截断（${loopState.maxOutputTokensOverride}），升级重试已耗尽，任务未完成`;
+          process.stdout.write(chalk.red(`\n❌ ${errMsg}\n`));
+          return {
+            stopReason: "error", toolResults: [],
+            events: [...events, { type: "result", subtype: "error", result: errMsg }],
+          };
+        }
         break;
       } catch (err: any) {
         if (err?.message?.includes("max_tokens") && attempt < MAX_OUTPUT_TOKEN_ESCALATION.length - 1) {
-          loopState.maxOutputTokensOverride = MAX_OUTPUT_TOKEN_ESCALATION[attempt + 1];
-          process.stdout.write(chalk.yellow(`\n⚠️  输出 Token 超限，正在以 ${loopState.maxOutputTokensOverride} 重试...\n`));
-          continue;
+          const next = nextOutputTokenEscalation(loopState.maxOutputTokensOverride);
+          if (next !== null) {
+            loopState.maxOutputTokensOverride = next;
+            process.stdout.write(chalk.yellow(`\n⚠️  输出 Token 超限，正在以 ${loopState.maxOutputTokensOverride} 重试...\n`));
+            continue;
+          }
         }
 
         // 上下文溢出自动恢复（issue #24）：压缩重建 messages 后重试本轮，限 2 次

@@ -509,7 +509,11 @@ export async function* parseOpenAISSE(
         }
         if (ch.finish_reason) {
           for (const [, tc] of tcs) yield { type: "tool_use_stop", id: tc.id };
-          stopReason = ch.finish_reason === "tool_calls" ? "tool_use" : "end_turn";
+          // length=输出截断（issue #96）：保留 max_tokens 语义交给升级阶梯，不能吞成 end_turn
+          stopReason =
+            ch.finish_reason === "tool_calls" ? "tool_use" :
+            ch.finish_reason === "length" ? "max_tokens" :
+            "end_turn";
         }
       } catch { /* SSE 解析失败时跳过 */ }
     }

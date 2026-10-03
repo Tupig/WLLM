@@ -29,11 +29,15 @@ export async function* streamWithFailover(
   fallback: (() => AsyncGenerator<StreamEvent>) | null,
   label: string | null,
   onFallback?: (label: string) => void,
+  onReset?: () => void | Promise<void>,
 ): AsyncGenerator<StreamEvent> {
   try {
     yield* primary();
   } catch (err) {
     if (!isInfraError(err) || !fallback || !label) throw err;
+    // 部分产出后切换（issue #97）：先让消费方回滚已累计的文本/工具缓冲，
+    // 再重放兜底流——否则 fullText 重复、半个 tool_use 变幽灵块
+    await onReset?.();
     onFallback?.(label);
     yield* fallback();
   }
